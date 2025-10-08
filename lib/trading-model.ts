@@ -82,6 +82,7 @@ export interface BacktestResult {
   avgWin: number
   avgLoss: number
   trades: TradeHistory[]
+  equity_curve?: { date: string; equity: number }[] // Added for backtest
 }
 
 class TradingModel {
@@ -491,85 +492,81 @@ class TradingModel {
     endDate: string,
     settings: TradingSettings,
     historicalData: { [symbol: string]: MarketData[] },
-    newsSentimentData: { [symbol: string]: NewsSentiment[] }
+    newsSentimentData: { [symbol: string]: NewsSentiment[] },
+    historicalData5m?: { [symbol: string]: MarketData[] }
   ): Promise<BacktestResult> {
     const results: TradeHistory[] = []
     let portfolioValue = settings.cash_balance || 100000
     let positions: { [symbol: string]: number } = {}
     let peakValue = portfolioValue
     let maxDrawdown = 0
-    
+    const equityCurve: { date: string; equity: number }[] = []
+
+    // For each symbol, get 1-min and 5-min indicators
+    const indicators1m: { [symbol: string]: TechnicalIndicators[] } = {}
+    const indicators5m: { [symbol: string]: TechnicalIndicators[] } = {}
+    for (const symbol of Object.keys(historicalData)) {
+      indicators1m[symbol] = this.calculateTechnicalIndicators(historicalData[symbol])
+      if (historicalData5m && historicalData5m[symbol]) {
+        indicators5m[symbol] = this.calculateTechnicalIndicators(historicalData5m[symbol])
+      } else {
+        indicators5m[symbol] = []
+      }
+    }
+
     // Process each day in the backtest period
     const start = new Date(startDate)
     const end = new Date(endDate)
-    
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
       const dateStr = date.toISOString().split('T')[0]
-      
-      // Get data for this date
-      const dayData: { [symbol: string]: MarketData } = {}
-      const daySentiment: { [symbol: string]: number } = {}
-      
+      // For each symbol, get the latest 1-min and 5-min indicators for this date
       for (const symbol of Object.keys(historicalData)) {
-        const dayBar = historicalData[symbol].find(d => 
-          d.timestamp.startsWith(dateStr)
-        )
-        if (dayBar) {
-          dayData[symbol] = dayBar
-          
-          const sentiment = newsSentimentData[symbol]?.find(s => 
-            s.timestamp.startsWith(dateStr)
-          )
-          daySentiment[symbol] = sentiment?.score || 0
+        const oneMinBars = historicalData[symbol].filter(d => d.timestamp.startsWith(dateStr))
+        const fiveMinBars = historicalData5m && historicalData5m[symbol] ? historicalData5m[symbol].filter(d => d.timestamp.startsWith(dateStr)) : []
+        if (oneMinBars.length === 0 || fiveMinBars.length === 0) continue
+        const oneMinIndicators = this.calculateTechnicalIndicators(oneMinBars)
+        const fiveMinIndicators = this.calculateTechnicalIndicators(fiveMinBars)
+        // Combine timeframes
+        const combinedIndicators = this.combineTimeframes(oneMinIndicators, fiveMinIndicators)
+        if (combinedIndicators.length === 0) continue
+        // Use the latest combined indicator
+        const latestIndicator = combinedIndicators[combinedIndicators.length - 1]
+        const sentiment = (newsSentimentData[symbol]?.find(s => s.timestamp.startsWith(dateStr))?.score) || 0
+        const features = this.prepareFeatures(latestIndicator, sentiment)
+        // Predict
+        const predictions = await this.predict([features])
+        // Multi-timeframe confirmation: only allow trade if 5-min EMA(10) aligns with 1-min signal
+        const signal = predictions[0]
+        const ema10_1min = latestIndicator.ema10_1min
+        const ema10_5min = latestIndicator.ema10_5min
+        let allowTrade = false
+        if (signal.action === 'buy' && ema10_5min > ema10_1min) allowTrade = true
+        if (signal.action === 'sell' && ema10_5min < ema10_1min) allowTrade = true
+        if (!allowTrade) continue
+        // Generate trading signal and execute trade
+        const price = oneMinBars[oneMinBars.length - 1].close
+        const tradeSignal: TradingSignal = {
+          symbol,
+          action: signal.action as 'buy' | 'sell' | 'hold',
+          confidence: signal.confidence,
+          price,
+          timestamp: date.toISOString(),
+          reasoning: 'Multi-timeframe EMA(10) confirmed'
         }
-      }
-      
-      // Generate signals for this day
-      if (Object.keys(dayData).length > 0) {
-        const features: TradingFeatures[] = []
-        const symbols: string[] = []
-        
-        for (const symbol of Object.keys(dayData)) {
-          const data = historicalData[symbol]
-          const indicators = this.calculateTechnicalIndicators(data)
-          
-          if (indicators.length > 0) {
-            const latestIndicator = indicators[indicators.length - 1]
-            const featuresForSymbol = this.prepareFeatures(latestIndicator, daySentiment[symbol])
-            features.push(featuresForSymbol)
-            symbols.push(symbol)
-          }
-        }
-        
-        if (features.length > 0) {
-          const predictions = await this.predict(features)
-          const signals = this.generateTradingSignals(
-            predictions,
-            symbols,
-            settings,
-            symbols.map(s => dayData[s].close)
-          )
-          
-          // Execute trades
-          for (const signal of signals) {
-            const trade = this.executeTrade(signal, settings, portfolioValue)
-            if (trade) {
-              results.push(trade)
-              
-              // Update portfolio
-              if (trade.action === 'buy') {
-                positions[trade.symbol] = (positions[trade.symbol] || 0) + trade.quantity
-                portfolioValue -= trade.price * trade.quantity
-              } else {
-                positions[trade.symbol] = (positions[trade.symbol] || 0) - trade.quantity
-                portfolioValue += trade.price * trade.quantity
-              }
-            }
+        const trade = this.executeTrade(tradeSignal, settings, portfolioValue)
+        if (trade) {
+          results.push(trade)
+          if (trade.action === 'buy') {
+            positions[trade.symbol] = (positions[trade.symbol] || 0) + trade.quantity
+            portfolioValue -= trade.price * trade.quantity
+          } else {
+            positions[trade.symbol] = (positions[trade.symbol] || 0) - trade.quantity
+            portfolioValue += trade.price * trade.quantity
           }
         }
       }
-      
-      // Update drawdown tracking
+      // Track equity curve
+      equityCurve.push({ date: dateStr, equity: portfolioValue })
       if (portfolioValue > peakValue) {
         peakValue = portfolioValue
       } else {
@@ -579,7 +576,6 @@ class TradingModel {
         }
       }
     }
-    
     // Calculate final metrics
     const totalReturn = (portfolioValue - (settings.cash_balance || 100000)) / (settings.cash_balance || 100000)
     const winningTrades = results.filter(t => t.price > 0).length // Simplified
@@ -587,10 +583,7 @@ class TradingModel {
     const winRate = results.length > 0 ? winningTrades / results.length : 0
     const avgWin = winningTrades > 0 ? results.filter(t => t.price > 0).reduce((sum, t) => sum + t.price, 0) / winningTrades : 0
     const avgLoss = losingTrades > 0 ? Math.abs(results.filter(t => t.price <= 0).reduce((sum, t) => sum + t.price, 0) / losingTrades) : 0
-    
-    // Simplified Sharpe ratio calculation
     const sharpeRatio = totalReturn / (maxDrawdown || 0.01)
-    
     return {
       totalReturn,
       winRate,
@@ -601,7 +594,8 @@ class TradingModel {
       losingTrades,
       avgWin,
       avgLoss,
-      trades: results
+      trades: results,
+      equity_curve: equityCurve
     }
   }
 

@@ -12,8 +12,9 @@ import { Loader2, TrendingUp, BarChart3, AlertTriangle } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 
 interface BacktestResult {
-  id: number
+  id?: number
   strategy: string
+  account_type?: string
   date_range: {
     start: string
     end: string
@@ -28,14 +29,17 @@ interface BacktestResult {
     losing_trades: number
     avg_win: number
     avg_loss: number
+    trades?: any[]
+    equity_curve?: { date: string; equity: number }[]
   }
-  created_at: string
+  created_at?: string
 }
 
 interface BacktestRequest {
   startDate: string
   endDate: string
   strategy: string
+  account_type: string
   symbols: string[]
 }
 
@@ -50,6 +54,7 @@ export default function BacktestPage() {
     startDate: '',
     endDate: '',
     strategy: 'cash',
+    account_type: 'cash',
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY']
   })
 
@@ -109,11 +114,9 @@ export default function BacktestPage() {
       setRunningBacktest(true)
       setMessage(null)
 
-      const response = await fetch('/api/trading', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const response = await fetch('/api/dashboard/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backtestForm),
       })
 
@@ -122,6 +125,14 @@ export default function BacktestPage() {
       if (result.success) {
         setMessage({ type: 'success', text: 'Backtest completed successfully!' })
         loadBacktests() // Refresh the list
+        if (result.result) {
+          setSelectedBacktest({
+            strategy: backtestForm.strategy,
+            account_type: backtestForm.account_type,
+            date_range: { start: backtestForm.startDate, end: backtestForm.endDate },
+            metrics: result.result,
+          })
+        }
       } else {
         setMessage({ type: 'error', text: result.error || 'Backtest failed' })
       }
@@ -148,23 +159,23 @@ export default function BacktestPage() {
     return new Date(dateString).toLocaleDateString()
   }
 
-  // Generate mock equity curve data for visualization
+  // Use actual equity curve if available, else fallback
   const generateEquityCurve = (backtest: BacktestResult) => {
-    const days = 30 // Mock 30 days
-    const data = []
-    let equity = 100000 // Starting with $100k
-    
-    for (let i = 0; i < days; i++) {
-      const dailyReturn = (Math.random() - 0.5) * 0.05 // Random daily returns
-      equity = equity * (1 + dailyReturn)
-      
-      data.push({
-        day: i + 1,
-        equity: Math.round(equity),
-        date: new Date(Date.now() - (days - i) * 24 * 60 * 60 * 1000).toLocaleDateString()
-      })
+    if (backtest.metrics.equity_curve && backtest.metrics.equity_curve.length > 0) {
+      return backtest.metrics.equity_curve.map((pt, i) => ({
+        ...pt,
+        day: i + 1
+      }))
     }
-    
+    // fallback: mock
+    const days = 30
+    const data = []
+    let equity = 100000
+    for (let i = 0; i < days; i++) {
+      const dailyReturn = (Math.random() - 0.5) * 0.05
+      equity = equity * (1 + dailyReturn)
+      data.push({ day: i + 1, equity: Math.round(equity), date: new Date(Date.now() - (days - i) * 24 * 60 * 60 * 1000).toLocaleDateString() })
+    }
     return data
   }
 
@@ -205,7 +216,7 @@ export default function BacktestPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
             <div>
               <Label htmlFor="startDate">Start Date</Label>
               <Input
@@ -235,6 +246,19 @@ export default function BacktestPage() {
                 <SelectContent>
                   <SelectItem value="cash">Cash Trading</SelectItem>
                   <SelectItem value="25k_plus">$25k+ Rules</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="account_type">Account Type</Label>
+              <Select value={backtestForm.account_type} onValueChange={(value) => setBacktestForm(prev => ({ ...prev, account_type: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="margin">Margin</SelectItem>
                 </SelectContent>
               </Select>
             </div>
