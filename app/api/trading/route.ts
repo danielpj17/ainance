@@ -77,13 +77,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const signals = await generateTradingSignals(symbols, settings, supabase)
 
     // Log the prediction request
-    await supabase.from('predictions').insert({
+    const { error: predictionError } = await supabase.from('predictions').insert({
       user_id: user.id,
-      symbols: symbols.join(','),
+      symbol: symbols.join(','),
+      signal: signals.length > 0 ? signals[0].action : 'hold',
+      confidence: signals.length > 0 ? signals[0].confidence : 0,
+      timestamp: new Date().toISOString(),
       signal_count: signals.length,
       strategy: settings.strategy,
       account_type: settings.account_type
     })
+
+    if (predictionError) {
+      console.error('Error logging prediction:', predictionError)
+    }
 
     return NextResponse.json({
       success: true,
@@ -236,7 +243,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse<BacktestRespon
     const result = await runBacktest(startDate, endDate, settings, symbols, supabase)
 
     // Save backtest results
-    await supabase.from('backtests').insert({
+    const { error: backtestError } = await supabase.from('backtests').insert({
       user_id: user.id,
       strategy: settings.strategy,
       date_range: { start: startDate, end: endDate },
@@ -245,9 +252,17 @@ export async function PUT(req: NextRequest): Promise<NextResponse<BacktestRespon
         win_rate: result.winRate,
         sharpe_ratio: result.sharpeRatio,
         max_drawdown: result.maxDrawdown,
-        total_trades: result.totalTrades
+        total_trades: result.totalTrades,
+        winning_trades: result.winningTrades,
+        losing_trades: result.losingTrades,
+        avg_win: result.avgWin,
+        avg_loss: result.avgLoss
       }
     })
+
+    if (backtestError) {
+      console.error('Error saving backtest:', backtestError)
+    }
 
     return NextResponse.json({
       success: true,
