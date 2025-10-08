@@ -2,6 +2,7 @@
 
 import * as Tabs from '@radix-ui/react-tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import StrategySettings from '@/components/StrategySettings'
 
 export default function DashboardPage() {
   return (
@@ -18,7 +19,9 @@ export default function DashboardPage() {
           </Tabs.Trigger>
         </Tabs.List>
         
-        <Tabs.Content value="paper" className="mt-6">
+        <Tabs.Content value="paper" className="mt-6 space-y-6">
+          <StrategySettings mode="paper" />
+          
           <Card>
             <CardHeader>
               <CardTitle>Paper Trading</CardTitle>
@@ -34,7 +37,9 @@ export default function DashboardPage() {
           </Card>
         </Tabs.Content>
         
-        <Tabs.Content value="live" className="mt-6">
+        <Tabs.Content value="live" className="mt-6 space-y-6">
+          <StrategySettings mode="live" />
+          
           <Card>
             <CardHeader>
               <CardTitle>Live Trading</CardTitle>
