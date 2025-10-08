@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react'
+import TradingBot from '@/components/TradingBot'
 
 interface Trade {
   id: number
@@ -201,6 +202,9 @@ export default function PaperTradingPage() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Trading Bot */}
+      <TradingBot mode="paper" />
 
       {/* Portfolio Summary */}
       {portfolioSummary && (

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, AlertTriangle, Shield } from 'lucide-react'
+import TradingBot from '@/components/TradingBot'
 
 interface Trade {
   id: number
@@ -227,6 +228,9 @@ export default function LiveTradingPage() {
           </Card>
         </div>
       )}
+
+      {/* Trading Bot */}
+      {hasApiKeys && <TradingBot mode="live" />}
 
       {/* Risk Warning */}
       <Alert className="border-red-200 bg-red-50">

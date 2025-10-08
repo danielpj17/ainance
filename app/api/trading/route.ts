@@ -1,104 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
-import { tradingModel, TradingSettings, TradingSignal, BacktestResult } from '@/lib/trading-model'
+import { tradingModel, TradingSignal, TradingSettings } from '@/lib/trading-model'
+import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
 import { initializeNewsAnalyzer, getNewsAnalyzer } from '@/lib/news-sentiment'
+import { TradingErrorHandler, withRetry } from '@/lib/error-handler'
 
-// Initialize news analyzer with API key from environment
-const NEWS_API_KEY = process.env.NEWS_API_KEY || ''
-if (NEWS_API_KEY) {
-  initializeNewsAnalyzer(NEWS_API_KEY)
-}
-
-export interface PredictRequest {
-  symbols: string[]
-  settings: TradingSettings
-}
-
-export interface PredictResponse {
-  success: boolean
-  signals?: TradingSignal[]
+export interface BotStatus {
+  isRunning: boolean
+  lastRun: string | null
+  totalTrades: number
+  activePositions: number
+  currentSignals: TradingSignal[]
   error?: string
 }
 
-export interface BacktestRequest {
-  startDate: string
-  endDate: string
-  settings: TradingSettings
+export interface BotConfig {
   symbols: string[]
+  interval: number // seconds
+  settings: TradingSettings
+  accountType: string
+  strategy: string
 }
 
-export interface BacktestResponse {
-  success: boolean
-  result?: BacktestResult
-  error?: string
+// Global bot state (in production, use Redis or database)
+let botState: {
+  isRunning: boolean
+  intervalId: NodeJS.Timeout | null
+  config: BotConfig | null
+  lastRun: Date | null
+  error: string | null
+} = {
+  isRunning: false,
+  intervalId: null,
+  config: null,
+  lastRun: null,
+  error: null
 }
 
-// POST /api/trading/predict - Generate trading signals
+// POST - Start/Stop trading bot
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = createServerClient(req, {})
     
-    // Authenticate user
+    // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await req.json()
-    const { symbols, settings }: PredictRequest = body
+    const { action, config }: { action: 'start' | 'stop', config?: BotConfig } = body
 
-    // Validate input
-    if (!symbols || symbols.length === 0) {
-      return NextResponse.json({ success: false, error: 'Symbols are required' }, { status: 400 })
+    if (action === 'start') {
+      return await startBot(supabase, user.id, config!)
+    } else if (action === 'stop') {
+      return await stopBot(supabase, user.id)
+    } else {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid action. Use "start" or "stop"' 
+      }, { status: 400 })
     }
-
-    if (!settings) {
-      return NextResponse.json({ success: false, error: 'Trading settings are required' }, { status: 400 })
-    }
-
-    // Get user's current settings from database
-    const { data: userSettings } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-
-    if (userSettings) {
-      // Merge with request settings
-      settings.strategy = userSettings.strategy as 'cash' | '25k_plus'
-      settings.account_type = userSettings.account_type as 'cash' | 'margin'
-      settings.max_trade_size = userSettings.max_trade_size
-      settings.daily_loss_limit = userSettings.daily_loss_limit
-      settings.take_profit = userSettings.take_profit
-      settings.stop_loss = userSettings.stop_loss
-    }
-
-    // Generate trading signals
-    const signals = await generateTradingSignals(symbols, settings, supabase)
-
-    // Log the prediction request
-    const { error: predictionError } = await supabase.from('predictions').insert({
-      user_id: user.id,
-      symbol: symbols.join(','),
-      signal: signals.length > 0 ? signals[0].action : 'hold',
-      confidence: signals.length > 0 ? signals[0].confidence : 0,
-      timestamp: new Date().toISOString(),
-      signal_count: signals.length,
-      strategy: settings.strategy,
-      account_type: settings.account_type
-    })
-
-    if (predictionError) {
-      console.error('Error logging prediction:', predictionError)
-    }
-
-    return NextResponse.json({
-      success: true,
-      signals
-    })
 
   } catch (error) {
-    console.error('Error in trading prediction:', error)
+    console.error('Error in POST /api/trading:', error)
     return NextResponse.json({ 
       success: false, 
       error: 'Internal server error' 
@@ -106,343 +71,457 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-// Generate trading signals for given symbols
-async function generateTradingSignals(
-  symbols: string[],
-  settings: TradingSettings,
-  supabase: any
-): Promise<TradingSignal[]> {
-  const signals: TradingSignal[] = []
-
-  try {
-    // Get news sentiment for symbols
-    const newsAnalyzer = getNewsAnalyzer()
-    const sentimentData = await newsAnalyzer.getSentimentForSymbols(symbols)
-
-    // Get market data (mock for now - would integrate with Alpaca API)
-    const marketData = await getMarketData(symbols)
-
-    // Prepare features for each symbol
-    const features = []
-    const currentPrices = []
-
-    for (const symbol of symbols) {
-      const symbolData = marketData[symbol]
-      const sentiment = sentimentData[symbol] || { score: 0, confidence: 0 }
-
-      if (symbolData && symbolData.length > 0) {
-        // Calculate technical indicators
-        const indicators = tradingModel.calculateTechnicalIndicators(symbolData)
-        
-        if (indicators.length > 0) {
-          const latestIndicator = indicators[indicators.length - 1]
-          const feature = tradingModel.prepareFeatures(latestIndicator, sentiment.score)
-          
-          features.push(feature)
-          currentPrices.push(symbolData[symbolData.length - 1].close)
-        }
-      }
-    }
-
-    if (features.length > 0) {
-      // Make predictions
-      const predictions = await tradingModel.predict(features)
-      
-      // Generate trading signals with conditional logic
-      const tradingSignals = tradingModel.generateTradingSignals(
-        predictions,
-        symbols.slice(0, features.length),
-        settings,
-        currentPrices
-      )
-
-      signals.push(...tradingSignals)
-    }
-
-  } catch (error) {
-    console.error('Error generating trading signals:', error)
-  }
-
-  return signals
-}
-
-// Mock function to get market data (would integrate with Alpaca API)
-async function getMarketData(symbols: string[]): Promise<{ [symbol: string]: any[] }> {
-  // This would typically fetch real-time data from Alpaca API
-  // For now, return mock data
-  const mockData: { [symbol: string]: any[] } = {}
-
-  for (const symbol of symbols) {
-    mockData[symbol] = generateMockMarketData(symbol)
-  }
-
-  return mockData
-}
-
-// Generate mock market data for testing
-function generateMockMarketData(symbol: string): any[] {
-  const data = []
-  const basePrice = symbol === 'AAPL' ? 150 : symbol === 'MSFT' ? 300 : symbol === 'TSLA' ? 200 : 400
-  
-  for (let i = 0; i < 100; i++) {
-    const price = basePrice + (Math.random() - 0.5) * 10
-    data.push({
-      timestamp: new Date(Date.now() - (100 - i) * 60000).toISOString(),
-      open: price - Math.random() * 2,
-      high: price + Math.random() * 3,
-      low: price - Math.random() * 3,
-      close: price,
-      volume: Math.floor(Math.random() * 1000000) + 100000,
-      symbol
-    })
-  }
-
-  return data
-}
-
-// PUT /api/trading/backtest - Run backtest
-export async function PUT(req: NextRequest): Promise<NextResponse<BacktestResponse>> {
-  try {
-    const supabase = createServerClient(req, {})
-    
-    // Authenticate user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await req.json()
-    const { startDate, endDate, settings, symbols }: BacktestRequest = body
-
-    // Validate input
-    if (!startDate || !endDate) {
-      return NextResponse.json({ success: false, error: 'Start and end dates are required' }, { status: 400 })
-    }
-
-    if (!symbols || symbols.length === 0) {
-      return NextResponse.json({ success: false, error: 'Symbols are required' }, { status: 400 })
-    }
-
-    if (!settings) {
-      return NextResponse.json({ success: false, error: 'Trading settings are required' }, { status: 400 })
-    }
-
-    // Get user's current settings from database
-    const { data: userSettings } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-
-    if (userSettings) {
-      settings.cash_balance = userSettings.max_trade_size * 10 // Mock cash balance
-      settings.buying_power = userSettings.max_trade_size * 20 // Mock buying power
-    }
-
-    // Run backtest
-    const result = await runBacktest(startDate, endDate, settings, symbols, supabase)
-
-    // Save backtest results
-    const { error: backtestError } = await supabase.from('backtests').insert({
-      user_id: user.id,
-      strategy: settings.strategy,
-      date_range: { start: startDate, end: endDate },
-      metrics: {
-        total_return: result.totalReturn,
-        win_rate: result.winRate,
-        sharpe_ratio: result.sharpeRatio,
-        max_drawdown: result.maxDrawdown,
-        total_trades: result.totalTrades,
-        winning_trades: result.winningTrades,
-        losing_trades: result.losingTrades,
-        avg_win: result.avgWin,
-        avg_loss: result.avgLoss
-      }
-    })
-
-    if (backtestError) {
-      console.error('Error saving backtest:', backtestError)
-    }
-
-    return NextResponse.json({
-      success: true,
-      result
-    })
-
-  } catch (error) {
-    console.error('Error in backtest:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Internal server error' 
-    }, { status: 500 })
-  }
-}
-
-// Run backtest with historical data
-async function runBacktest(
-  startDate: string,
-  endDate: string,
-  settings: TradingSettings,
-  symbols: string[],
-  supabase: any
-): Promise<BacktestResult> {
-  try {
-    // Get historical data (mock for now - would fetch from Alpaca API)
-    const historicalData = await getHistoricalData(startDate, endDate, symbols)
-    
-    // Get historical news sentiment data
-    const newsSentimentData = await getHistoricalSentiment(startDate, endDate, symbols)
-
-    // Run backtest using the trading model
-    const result = await tradingModel.backtest(
-      startDate,
-      endDate,
-      settings,
-      historicalData,
-      newsSentimentData
-    )
-
-    return result
-
-  } catch (error) {
-    console.error('Error running backtest:', error)
-    // Return mock result if backtest fails
-    return {
-      totalReturn: 0.05,
-      winRate: 0.55,
-      sharpeRatio: 1.2,
-      maxDrawdown: 0.08,
-      totalTrades: 25,
-      winningTrades: 14,
-      losingTrades: 11,
-      avgWin: 0.03,
-      avgLoss: 0.02,
-      trades: []
-    }
-  }
-}
-
-// Mock function to get historical data
-async function getHistoricalData(
-  startDate: string,
-  endDate: string,
-  symbols: string[]
-): Promise<{ [symbol: string]: any[] }> {
-  // This would typically fetch historical data from Alpaca API
-  // For now, return mock data
-  const historicalData: { [symbol: string]: any[] } = {}
-
-  for (const symbol of symbols) {
-    historicalData[symbol] = generateMockHistoricalData(symbol, startDate, endDate)
-  }
-
-  return historicalData
-}
-
-// Generate mock historical data
-function generateMockHistoricalData(symbol: string, startDate: string, endDate: string): any[] {
-  const data = []
-  const basePrice = symbol === 'AAPL' ? 150 : symbol === 'MSFT' ? 300 : symbol === 'TSLA' ? 200 : 400
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  
-  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-    const price = basePrice + (Math.random() - 0.5) * 20
-    data.push({
-      timestamp: date.toISOString(),
-      open: price - Math.random() * 3,
-      high: price + Math.random() * 5,
-      low: price - Math.random() * 5,
-      close: price,
-      volume: Math.floor(Math.random() * 2000000) + 500000,
-      symbol
-    })
-  }
-
-  return data
-}
-
-// Mock function to get historical sentiment data
-async function getHistoricalSentiment(
-  startDate: string,
-  endDate: string,
-  symbols: string[]
-): Promise<{ [symbol: string]: any[] }> {
-  // This would typically fetch historical news sentiment
-  // For now, return mock data
-  const sentimentData: { [symbol: string]: any[] } = {}
-
-  for (const symbol of symbols) {
-    sentimentData[symbol] = generateMockSentimentData(symbol, startDate, endDate)
-  }
-
-  return sentimentData
-}
-
-// Generate mock sentiment data
-function generateMockSentimentData(symbol: string, startDate: string, endDate: string): any[] {
-  const data = []
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  
-  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-    data.push({
-      score: (Math.random() - 0.5) * 2, // -1 to 1
-      headlines: [`Mock headline for ${symbol} on ${date.toDateString()}`],
-      timestamp: date.toISOString(),
-      confidence: Math.random() * 0.5 + 0.5, // 0.5 to 1.0
-      articleCount: Math.floor(Math.random() * 10) + 1
-    })
-  }
-
-  return data
-}
-
-// GET /api/trading/status - Get model status and recent predictions
+// GET - Get bot status
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = createServerClient(req, {})
     
-    // Authenticate user
+    // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get recent predictions
-    const { data: predictions } = await supabase
-      .from('predictions')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    // Get recent backtests
-    const { data: backtests } = await supabase
-      .from('backtests')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(5)
-
-    // Get model status
-    const modelSummary = tradingModel.getModelSummary()
+    const status = await getBotStatus(supabase, user.id)
 
     return NextResponse.json({
       success: true,
-      data: {
-        modelTrained: tradingModel.isTrained,
-        modelSummary,
-        recentPredictions: predictions || [],
-        recentBacktests: backtests || []
-      }
+      status
     })
 
   } catch (error) {
-    console.error('Error getting trading status:', error)
+    console.error('Error in GET /api/trading:', error)
     return NextResponse.json({ 
       success: false, 
       error: 'Internal server error' 
     }, { status: 500 })
+  }
+}
+
+// Start the trading bot
+async function startBot(supabase: any, userId: string, config: BotConfig): Promise<NextResponse> {
+  try {
+    // Stop existing bot if running
+    if (botState.isRunning) {
+      await stopBot(supabase, userId)
+    }
+
+    // Validate configuration
+    if (!config.symbols || config.symbols.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'No symbols specified for trading' 
+      }, { status: 400 })
+    }
+
+    // Get user's API keys
+    const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+      user_uuid: userId
+    })
+
+    if (keysError || !apiKeys?.[0]) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'API keys not found. Please configure your trading keys.' 
+      }, { status: 400 })
+    }
+
+    const keys = apiKeys[0]
+    
+    // Initialize news analyzer if NewsAPI key exists
+    if (keys.news_api_key) {
+      try {
+        initializeNewsAnalyzer(keys.news_api_key)
+      } catch (error) {
+        console.warn('Failed to initialize news analyzer:', error)
+      }
+    }
+
+    // Store bot configuration
+    botState.config = config
+    botState.isRunning = true
+    botState.error = null
+
+    // Start the trading loop
+    const intervalId = setInterval(async () => {
+      try {
+        await executeTradingLoop(supabase, userId, config, keys)
+        botState.lastRun = new Date()
+        botState.error = null
+  } catch (error) {
+        console.error('Trading loop error:', error)
+        botState.error = error instanceof Error ? error.message : 'Unknown error'
+      }
+    }, config.interval * 1000)
+
+    botState.intervalId = intervalId
+
+    // Log bot start
+    await supabase
+      .from('bot_logs')
+      .insert({
+        user_id: userId,
+        action: 'start',
+        message: `Bot started with symbols: ${config.symbols.join(', ')}`,
+        config: config
+      })
+
+    console.log(`Trading bot started for user ${userId} with symbols: ${config.symbols.join(', ')}`)
+
+    return NextResponse.json({
+      success: true,
+      message: 'Trading bot started successfully',
+      config
+    })
+
+  } catch (error) {
+    console.error('Error starting bot:', error)
+    botState.isRunning = false
+    botState.error = error instanceof Error ? error.message : 'Unknown error'
+    
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to start trading bot' 
+    }, { status: 500 })
+  }
+}
+
+// Stop the trading bot
+async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
+  try {
+    if (botState.intervalId) {
+      clearInterval(botState.intervalId)
+      botState.intervalId = null
+    }
+
+    const wasRunning = botState.isRunning
+    botState.isRunning = false
+    botState.config = null
+    botState.error = null
+
+    if (wasRunning) {
+      // Log bot stop
+      await supabase
+        .from('bot_logs')
+        .insert({
+          user_id: userId,
+          action: 'stop',
+          message: 'Bot stopped by user'
+        })
+
+      console.log(`Trading bot stopped for user ${userId}`)
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Trading bot stopped successfully'
+    })
+
+  } catch (error) {
+    console.error('Error stopping bot:', error)
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to stop trading bot' 
+    }, { status: 500 })
+  }
+}
+
+// Execute the main trading loop
+async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
+  try {
+    console.log(`Executing trading loop for ${config.symbols.join(', ')}`)
+
+    // Initialize Alpaca client
+    const alpacaKeys = getAlpacaKeys(apiKeys, config.accountType, config.strategy)
+    const alpacaClient = createAlpacaClient({
+      apiKey: alpacaKeys.apiKey,
+      secretKey: alpacaKeys.secretKey,
+      baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+      paper: alpacaKeys.paper
+    })
+
+    await alpacaClient.initialize()
+
+    // Check if market is open (skip if closed for live trading)
+    if (!alpacaKeys.paper) {
+      const marketOpen = await alpacaClient.isMarketOpen()
+      if (!marketOpen) {
+        console.log('Market is closed, skipping trading loop')
+        return
+      }
+    }
+
+    // Get market data for all symbols
+    const marketData = await alpacaClient.getMarketData(config.symbols, '1Min')
+    
+    if (marketData.length === 0) {
+      console.log('No market data available')
+      return
+    }
+
+    // Get news sentiment for symbols (if news API is available)
+    let sentimentData: { [symbol: string]: number } = {}
+    try {
+      const newsAnalyzer = getNewsAnalyzer()
+      const sentimentResults = await newsAnalyzer.getSentimentForSymbols(config.symbols, 1)
+      
+      for (const [symbol, sentiment] of Object.entries(sentimentResults)) {
+        sentimentData[symbol] = sentiment.score
+      }
+    } catch (error) {
+      console.warn('Failed to get news sentiment:', error)
+      // Continue without sentiment data
+    }
+
+    // Calculate technical indicators and prepare features
+    const features = []
+    const symbols = []
+    const currentPrices = []
+
+    for (const data of marketData) {
+      // For simplicity, we'll use basic price data as features
+      // In a real implementation, you'd calculate proper technical indicators
+      const featuresForSymbol = {
+        rsi: 0.5, // Placeholder - should be calculated from historical data
+        macd: 0,
+        bbWidth: 0.02,
+        volumeRatio: 1,
+        newsSentiment: sentimentData[data.symbol] || 0,
+        emaTrend: data.close > data.open ? 1 : 0
+      }
+      
+      features.push(featuresForSymbol)
+      symbols.push(data.symbol)
+      currentPrices.push(data.close)
+    }
+
+    // Make predictions using the trading model
+    if (!tradingModel.isTrained) {
+      console.log('Model not trained, skipping predictions')
+      return
+    }
+
+    const predictions = await tradingModel.predict(features)
+    
+    // Generate trading signals
+    const signals = tradingModel.generateTradingSignals(
+      predictions,
+      symbols,
+      config.settings,
+      currentPrices
+    )
+
+    console.log(`Generated ${signals.length} trading signals`)
+
+    // Execute trades for signals with error handling
+    for (const signal of signals) {
+      try {
+        await withRetry(
+          () => executeTradeSignal(supabase, userId, signal, alpacaClient, config),
+          {
+            operation: 'execute_trade_signal',
+            symbol: signal.symbol,
+            quantity: 1, // Will be calculated in executeTradeSignal
+            userId
+          }
+        )
+      } catch (error) {
+        console.error(`Error executing trade for ${signal.symbol}:`, error)
+        
+        // Log the error to database
+        await supabase
+          .from('bot_logs')
+          .insert({
+            user_id: userId,
+            action: 'error',
+            message: `Failed to execute trade for ${signal.symbol}: ${error.message || 'Unknown error'}`,
+            data: { signal, error: error.message }
+          })
+      }
+    }
+
+    // Log the trading loop execution
+    await supabase
+      .from('bot_logs')
+      .insert({
+        user_id: userId,
+        action: 'execute',
+        message: `Trading loop executed. Generated ${signals.length} signals`,
+        data: {
+          symbols: config.symbols,
+          signals: signals.map(s => ({
+            symbol: s.symbol,
+            action: s.action,
+            confidence: s.confidence
+          }))
+        }
+      })
+
+  } catch (error) {
+    console.error('Error in trading loop:', error)
+    throw error
+  }
+}
+
+// Execute a trade signal
+async function executeTradeSignal(
+  supabase: any,
+  userId: string,
+  signal: TradingSignal,
+  alpacaClient: any,
+  config: BotConfig
+) {
+  try {
+    // Get account info for validation
+    const account = await alpacaClient.getAccount()
+    const buyingPower = parseFloat(account.buying_power)
+    const cash = parseFloat(account.cash)
+
+    // Calculate position size
+    const positionSize = await alpacaClient.calculatePositionSize(
+      signal.symbol,
+      signal.price,
+      config.settings.max_trade_size / 100, // Convert percentage to decimal
+      config.settings.account_type === 'margin'
+    )
+
+    // Validate trade parameters
+    const validation = TradingErrorHandler.validateTradeParams({
+      symbol: signal.symbol,
+      quantity: positionSize,
+      price: signal.price,
+      accountBalance: cash,
+      buyingPower: buyingPower
+    })
+
+    if (!validation.valid) {
+      console.log(`Trade validation failed for ${signal.symbol}: ${validation.error}`)
+      return
+    }
+
+    if (positionSize <= 0) {
+      console.log(`Invalid position size for ${signal.symbol}`)
+      return
+    }
+
+    // Check if market is open (for live trading)
+    if (!alpacaClient.getConfig().paper) {
+      const marketOpen = await alpacaClient.isMarketOpen()
+      if (!marketOpen) {
+        console.log(`Market is closed, skipping trade for ${signal.symbol}`)
+        return
+      }
+    }
+
+    // Place the order
+    let order
+    if (signal.action === 'buy') {
+      order = await alpacaClient.placeMarketOrder(
+        signal.symbol,
+        positionSize,
+        'buy',
+        'day'
+      )
+    } else if (signal.action === 'sell') {
+      order = await alpacaClient.placeMarketOrder(
+        signal.symbol,
+        positionSize,
+        'sell',
+        'day'
+      )
+    } else {
+      return // Skip hold signals
+    }
+
+    // Log the trade
+    const { error: tradeError } = await supabase
+      .from('trades')
+      .insert({
+        user_id: userId,
+        symbol: signal.symbol,
+        action: signal.action,
+        qty: positionSize,
+        price: signal.price,
+        timestamp: new Date().toISOString(),
+        strategy: config.strategy,
+        account_type: config.accountType,
+        alpaca_order_id: order.id,
+        order_status: order.status,
+        confidence: signal.confidence,
+        reasoning: signal.reasoning
+      })
+
+    if (tradeError) {
+      console.error('Error logging trade:', tradeError)
+    }
+
+    console.log(`Trade executed: ${signal.action} ${positionSize} ${signal.symbol} @ $${signal.price}`)
+
+  } catch (error) {
+    console.error(`Error executing trade signal for ${signal.symbol}:`, error)
+    throw error
+  }
+}
+
+// Get bot status
+async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
+  try {
+    // Get recent trades count
+    const { data: trades, error: tradesError } = await supabase.rpc('get_user_trades', {
+      user_uuid: userId,
+      limit_count: 1000,
+      offset_count: 0
+    })
+
+    // Get active positions (simplified - would need to query Alpaca)
+    const { data: positions, error: positionsError } = await supabase
+      .from('trades')
+      .select('symbol, action, qty')
+      .eq('user_id', userId)
+      .eq('order_status', 'filled')
+
+    // Get recent signals (from bot logs)
+    const { data: recentLogs, error: logsError } = await supabase
+      .from('bot_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('action', 'execute')
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    const currentSignals: TradingSignal[] = []
+    if (recentLogs && recentLogs.length > 0) {
+      const latestLog = recentLogs[0]
+      if (latestLog.data?.signals) {
+        currentSignals.push(...latestLog.data.signals.map((s: any) => ({
+          symbol: s.symbol,
+          action: s.action as 'buy' | 'sell' | 'hold',
+          confidence: s.confidence,
+          price: 0, // Would need to fetch current price
+          timestamp: latestLog.created_at,
+          reasoning: `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
+        })))
+      }
+    }
+
+    return {
+      isRunning: botState.isRunning,
+      lastRun: botState.lastRun?.toISOString() || null,
+      totalTrades: trades?.length || 0,
+      activePositions: positions?.length || 0,
+      currentSignals,
+      error: botState.error || undefined
+    }
+
+  } catch (error) {
+    console.error('Error getting bot status:', error)
+    return {
+      isRunning: false,
+      lastRun: null,
+      totalTrades: 0,
+      activePositions: 0,
+      currentSignals: [],
+      error: 'Failed to get bot status'
+    }
   }
 }

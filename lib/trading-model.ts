@@ -673,9 +673,57 @@ export async function trainModel(data: { features: TradingFeatures[], targets: n
 }
 
 export async function predict(symbols: string[], settings: TradingSettings): Promise<TradingSignal[]> {
-  // This would typically fetch real-time data and news sentiment
-  // For now, return empty array as placeholder
-  return []
+  try {
+    // Import news analyzer dynamically to avoid initialization issues
+    const { getNewsAnalyzer } = await import('./news-sentiment')
+    
+    // Get news sentiment for symbols
+    let sentimentData: { [symbol: string]: number } = {}
+    try {
+      const newsAnalyzer = getNewsAnalyzer()
+      const sentimentResults = await newsAnalyzer.getSentimentForSymbols(symbols, 1)
+      
+      for (const [symbol, sentiment] of Object.entries(sentimentResults)) {
+        sentimentData[symbol] = sentiment.score
+      }
+    } catch (error) {
+      console.warn('Failed to get news sentiment:', error)
+      // Continue without sentiment data
+    }
+
+    // Generate mock market data for prediction
+    // In a real implementation, you would fetch actual market data
+    const features = symbols.map(symbol => ({
+      rsi: 0.5, // Would be calculated from real market data
+      macd: 0,
+      bbWidth: 0.02,
+      volumeRatio: 1,
+      newsSentiment: sentimentData[symbol] || 0,
+      emaTrend: 1
+    }))
+
+    // Make predictions
+    if (!tradingModel.isTrained) {
+      console.log('Model not trained, returning empty predictions')
+      return []
+    }
+
+    const predictions = await tradingModel.predict(features)
+    
+    // Generate trading signals
+    const currentPrices = symbols.map(() => 150) // Mock prices
+    const signals = tradingModel.generateTradingSignals(
+      predictions,
+      symbols,
+      settings,
+      currentPrices
+    )
+
+    return signals
+  } catch (error) {
+    console.error('Error in predict function:', error)
+    return []
+  }
 }
 
 export async function backtest(

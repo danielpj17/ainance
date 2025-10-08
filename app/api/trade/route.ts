@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
+import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
 
 export interface TradeRequest {
   symbol: string
@@ -54,50 +55,57 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
 
     const keys = apiKeys[0]
     
-    // Determine which API keys to use based on account type
-    const isPaper = account_type === 'paper' || strategy === 'cash'
-    const alpacaKey = isPaper ? keys.alpaca_paper_key : keys.alpaca_live_key
-    const alpacaSecret = isPaper ? keys.alpaca_paper_secret : keys.alpaca_live_secret
-    const baseUrl = isPaper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
-
-    if (!alpacaKey || !alpacaSecret) {
+    // Use the new Alpaca client wrapper
+    const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
+    
+    if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
       return NextResponse.json({ 
         success: false, 
-        error: `No ${isPaper ? 'paper' : 'live'} trading API keys configured` 
+        error: `No ${alpacaKeys.paper ? 'paper' : 'live'} trading API keys configured` 
       }, { status: 400 })
     }
 
-    // Prepare trade order for Alpaca
-    const orderData = {
-      symbol: symbol.toUpperCase(),
-      side,
-      qty: qty.toString(),
-      type,
-      time_in_force,
-      ...(limit_price && { limit_price: limit_price.toString() })
-    }
-
-    // Execute trade via Alpaca API
-    const alpacaResponse = await fetch(`${baseUrl}/v2/orders`, {
-      method: 'POST',
-      headers: {
-        'APCA-API-KEY-ID': alpacaKey,
-        'APCA-API-SECRET-KEY': alpacaSecret,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(orderData)
+    // Initialize Alpaca client
+    const alpacaClient = createAlpacaClient({
+      apiKey: alpacaKeys.apiKey,
+      secretKey: alpacaKeys.secretKey,
+      baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+      paper: alpacaKeys.paper
     })
 
-    if (!alpacaResponse.ok) {
-      const errorData = await alpacaResponse.json()
-      console.error('Alpaca API error:', errorData)
+    await alpacaClient.initialize()
+
+    // Execute trade using the client
+    let tradeResult
+    try {
+      if (type === 'market') {
+        tradeResult = await alpacaClient.placeMarketOrder(
+          symbol.toUpperCase(),
+          qty,
+          side,
+          time_in_force
+        )
+      } else if (type === 'limit' && limit_price) {
+        tradeResult = await alpacaClient.placeLimitOrder(
+          symbol.toUpperCase(),
+          qty,
+          side,
+          limit_price,
+          time_in_force
+        )
+      } else {
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Invalid order type or missing limit price' 
+        }, { status: 400 })
+      }
+    } catch (error: any) {
+      console.error('Alpaca client error:', error)
       return NextResponse.json({ 
         success: false, 
-        error: `Alpaca API error: ${errorData.message || errorData.error || 'Unknown error'}` 
+        error: `Trade execution failed: ${error.message || 'Unknown error'}` 
       }, { status: 400 })
     }
-
-    const tradeResult = await alpacaResponse.json()
 
     // Log trade to database
     const { data: tradeRecord, error: tradeError } = await supabase
