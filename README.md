@@ -34,3 +34,39 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+# Ainance
+
+## Vercel Deployment Instructions
+
+1. **Connect to GitHub**
+   - Push your code to a GitHub repository.
+   - Go to [Vercel](https://vercel.com/) and import your GitHub repo.
+   - Vercel will auto-detect Next.js and set up the build.
+
+2. **Set Environment Variables**
+   - In the Vercel dashboard, go to Project Settings > Environment Variables.
+   - Add the following (copy from your `.env.local`):
+     - `SUPABASE_URL`
+     - `SUPABASE_KEY`
+     - `ALPACA_PAPER_KEY`
+     - `ALPACA_PAPER_SECRET`
+     - `ALPACA_LIVE_KEY`
+     - `ALPACA_LIVE_SECRET`
+     - `NEWS_API_KEY`
+
+3. **Local Development**
+   - Copy `.env.local.example` to `.env.local` and fill in your keys for local testing.
+
+4. **Expected Behavior**
+   - **Tabs**: Switch between Paper, Live, and Backtest dashboards.
+   - **Strategy Toggles**: Adjust bot settings and see changes reflected in trading logic.
+   - **Supabase Realtime**: Trades and backtests update live in the UI.
+   - **Dark Mode**: Toggle dark/light theme in the navbar.
+   - **Logout**: Use the logout button in the navbar to sign out.
+   - **Route Protection**: Unauthenticated users are redirected to `/auth`.
+   - **Global Error Handling**: All errors are caught by a friendly error page.
+
+5. **Deploy**
+   - Push to your main branch. Vercel will auto-build and deploy.
+   - Visit your Vercel project URL to use Ainance live!
