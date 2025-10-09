@@ -309,14 +309,16 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       } catch (error) {
         console.error(`Error executing trade for ${signal.symbol}:`, error)
         
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        
         // Log the error to database
         await supabase
           .from('bot_logs')
           .insert({
             user_id: userId,
             action: 'error',
-            message: `Failed to execute trade for ${signal.symbol}: ${error.message || 'Unknown error'}`,
-            data: { signal, error: error.message }
+            message: `Failed to execute trade for ${signal.symbol}: ${errorMessage}`,
+            data: { signal, error: errorMessage }
           })
       }
     }
