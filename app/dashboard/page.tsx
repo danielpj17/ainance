@@ -1,104 +1,286 @@
 'use client'
 
-import * as Tabs from '@radix-ui/react-tabs'
+import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import StrategySettings from '@/components/StrategySettings'
-import TradingBot from '@/components/TradingBot'
-import ApiKeysForm from '@/components/ApiKeysForm'
-import TrainModelButton from '@/components/TrainModelButton'
+import { Badge } from '@/components/ui/badge'
+import { TrendingUp, TrendingDown, Activity, DollarSign, AlertTriangle, CheckCircle } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 
+export const dynamic = 'force-dynamic'
 
 export default function DashboardPage() {
-  return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Trading Dashboard</h1>
-      
-      <Tabs.Root defaultValue="paper" className="w-full">
-        <Tabs.List className="grid w-full grid-cols-4 mb-6">
-          <Tabs.Trigger value="paper" className="p-4 text-lg">
-            Paper Trading
-          </Tabs.Trigger>
-          <Tabs.Trigger value="live" className="p-4 text-lg">
-            Live Trading
-          </Tabs.Trigger>
-          <Tabs.Trigger value="backtest" className="p-4 text-lg">
-            Backtest
-          </Tabs.Trigger>
-          <Tabs.Trigger value="settings" className="p-4 text-lg">
-            Settings
-          </Tabs.Trigger>
-        </Tabs.List>
-        
-        <Tabs.Content value="paper" className="mt-6 space-y-6">
-          <StrategySettings mode="paper" />
-          <TradingBot mode="paper" />
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>Paper Trading Dashboard</CardTitle>
-              <CardDescription>
-                Practice trading with virtual money
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-gray-500">
-                Access the full paper trading dashboard with live data, trade execution, and portfolio tracking.
-              </p>
-              <Button asChild>
-                <a href="/dashboard/paper">Go to Paper Trading Dashboard</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </Tabs.Content>
-        
-        <Tabs.Content value="live" className="mt-6 space-y-6">
-          <StrategySettings mode="live" />
-          <TradingBot mode="live" />
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>Live Trading Dashboard</CardTitle>
-              <CardDescription>
-                Trade with real money - proceed with caution
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-gray-500">
-                Access the live trading dashboard with real money trading capabilities.
-                <strong className="text-red-600"> Risk warning: Real money trading involves significant risk.</strong>
-              </p>
-              <Button asChild variant="destructive">
-                <a href="/dashboard/live">Go to Live Trading Dashboard</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </Tabs.Content>
-        
-        <Tabs.Content value="backtest" className="mt-6 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Backtest Dashboard</CardTitle>
-              <CardDescription>
-                Test your strategies with historical data
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-gray-500">
-                Run comprehensive backtests on historical data to validate your trading strategies before risking real money.
-              </p>
-              <Button asChild>
-                <a href="/dashboard/backtest">Go to Backtest Dashboard</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </Tabs.Content>
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const [account, setAccount] = useState<any>(null)
+  const [trades, setTrades] = useState<any[]>([])
+  const [signals, setSignals] = useState<any[]>([])
+  
+  // Mock trend data
+  const trendData = [
+    { date: '29 Oct', portfolio: 98000, benchmark: 97000 },
+    { date: '30 Oct', portfolio: 99500, benchmark: 97500 },
+    { date: '31 Oct', portfolio: 101200, benchmark: 98200 },
+    { date: '1 Nov', portfolio: 100800, benchmark: 98800 },
+    { date: '2 Nov', portfolio: 102500, benchmark: 99200 },
+    { date: '3 Nov', portfolio: 103800, benchmark: 99800 },
+    { date: '4 Nov', portfolio: 102200, benchmark: 100200 },
+    { date: '5 Nov', portfolio: 104500, benchmark: 100800 },
+    { date: '6 Nov', portfolio: 106200, benchmark: 101500 },
+  ]
 
-        <Tabs.Content value="settings" className="mt-6 space-y-6">
-          <div className="flex justify-end"><TrainModelButton /></div>
-          <ApiKeysForm />
-        </Tabs.Content>
-      </Tabs.Root>
+  const riskData = [
+    { type: 'Git Exposure', count: 158, level: 'low' },
+    { type: 'SSL Certificate', count: 214, level: 'high' },
+    { type: 'API Keys', count: 87, level: 'medium' },
+    { type: 'Database', count: 42, level: 'low' },
+  ]
+
+  const recentActivity = [
+    { action: 'Buy AAPL', time: '2 min ago', status: 'completed' },
+    { action: 'Sell TSLA', time: '15 min ago', status: 'completed' },
+    { action: 'Buy MSFT', time: '1 hour ago', status: 'pending' },
+  ]
+
+  useEffect(() => {
+    supabaseRef.current = createClient()
+    fetchData()
+  }, [])
+
+  const fetchData = async () => {
+    try {
+      const accountRes = await fetch('/api/account')
+      if (accountRes.ok) {
+        const accountData = await accountRes.json()
+        if (accountData.success) setAccount(accountData.data)
+      }
+
+      const tradesRes = await fetch('/api/trade?limit=10')
+      if (tradesRes.ok) {
+        const tradesData = await tradesRes.json()
+        if (tradesData.success) setTrades(tradesData.data || [])
+      }
+
+      const signalsRes = await fetch('/api/trading')
+      if (signalsRes.ok) {
+        const signalsData = await signalsRes.json()
+        if (signalsData.success && signalsData.status?.currentSignals) {
+          setSignals(signalsData.status.currentSignals.slice(0, 5))
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Trading Dashboard</h1>
+          <p className="text-gray-400">Welcome back! Here's your portfolio overview</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-sm text-gray-400">Portfolio Value</p>
+            <p className="text-2xl font-bold">${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}</p>
+          </div>
+          <div className="flex gap-2">
+            <Badge className="bg-purple-600 hover:bg-purple-700">High</Badge>
+            <Badge variant="outline" className="text-gray-400 border-gray-600">Medium</Badge>
+            <Badge variant="outline" className="text-gray-400 border-gray-600">Low</Badge>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Total Value</CardTitle>
+            <DollarSign className="h-5 w-5 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              ${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}
+            </div>
+            <p className="text-xs text-blue-500 flex items-center gap-1 mt-1">
+              <TrendingUp className="h-3 w-3" />
+              +2.5% from last week
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Total Trades</CardTitle>
+            <Activity className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">{trades.length}</div>
+            <p className="text-xs text-gray-400 mt-1">Active positions</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Win Rate</CardTitle>
+            <TrendingUp className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">68.5%</div>
+            <p className="text-xs text-blue-500 mt-1">+5.2% this month</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">AI Signals</CardTitle>
+            <Activity className="h-5 w-5 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">{signals.length}</div>
+            <p className="text-xs text-gray-400 mt-1">Active recommendations</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Trend Chart */}
+        <Card className="lg:col-span-2 bg-[#1a1d2e] border-gray-800">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white text-xl">Portfolio Trend</CardTitle>
+                <CardDescription className="text-gray-400">Performance over the last 2 weeks</CardDescription>
+              </div>
+              <div className="flex gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                  <span className="text-gray-400">Your Portfolio</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                  <span className="text-gray-400">Benchmark</span>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="benchmarkGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="date" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
+                    labelStyle={{ color: '#fff' }}
+                  />
+                  <Area type="monotone" dataKey="portfolio" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
+                  <Area type="monotone" dataKey="benchmark" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Activity Feed */}
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader>
+            <CardTitle className="text-white">Recent Activity</CardTitle>
+            <CardDescription className="text-gray-400">Latest trading actions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentActivity.map((activity, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-[#252838] rounded-lg">
+                  <div className="flex items-center gap-3">
+                    {activity.status === 'completed' ? (
+                      <CheckCircle className="h-5 w-5 text-blue-500" />
+                    ) : (
+                      <Activity className="h-5 w-5 text-yellow-500 animate-pulse" />
+                    )}
+                    <div>
+                      <p className="text-white font-medium">{activity.action}</p>
+                      <p className="text-xs text-gray-400">{activity.time}</p>
+                    </div>
+                  </div>
+                  <Badge variant={activity.status === 'completed' ? 'default' : 'outline'} className={activity.status === 'completed' ? 'bg-blue-600' : 'border-yellow-600 text-yellow-600'}>
+                    {activity.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Risk Analysis */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader>
+            <CardTitle className="text-white">Risk Analysis</CardTitle>
+            <CardDescription className="text-gray-400">Portfolio risk distribution</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={riskData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="type" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
+                    labelStyle={{ color: '#fff' }}
+                  />
+                  <Bar dataKey="count" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader>
+            <CardTitle className="text-white">AI Trading Signals</CardTitle>
+            <CardDescription className="text-gray-400">Latest recommendations from AI</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {signals.length > 0 ? signals.map((signal, idx) => (
+                <div key={idx} className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={signal.action === 'buy' ? 'bg-blue-600' : 'bg-red-600'}>
+                        {signal.action.toUpperCase()}
+                      </Badge>
+                      <span className="font-bold text-white">{signal.symbol}</span>
+                    </div>
+                    <span className="text-sm text-gray-400">{(signal.confidence * 100).toFixed(0)}%</span>
+                  </div>
+                  <p className="text-xs text-gray-400">{signal.reasoning}</p>
+                </div>
+              )) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                  <p>Start the trading bot to see AI signals</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

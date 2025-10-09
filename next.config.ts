@@ -7,8 +7,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const nextConfig: NextConfig = {
-  // Ensure Turbopack uses this project directory as the workspace root
+  /* config options here */
   turbopack: {
+    // Ensure Turbopack uses this project as the root, not parent directories
     root: __dirname,
   },
 };

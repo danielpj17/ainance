@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-export const createServerClient = (req: any, res: any) => {
+export const createClient = () => {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -16,20 +16,8 @@ export const createServerClient = (req: any, res: any) => {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set')
   }
 
-  // Forward user's Authorization header if present so auth.getUser() works
-  let authorizationHeader: string | undefined
-  try {
-    // Next.js Route Handler Request has headers.get
-    authorizationHeader = typeof req?.headers?.get === 'function'
-      ? req.headers.get('Authorization') || undefined
-      : (req?.headers?.authorization || req?.headers?.Authorization)
-  } catch (_) {
-    authorizationHeader = undefined
-  }
-
-  return createClient(url, serviceRole, {
-    global: {
-      headers: authorizationHeader ? { Authorization: authorizationHeader } : undefined,
-    },
-  })
+  return createSupabaseClient(url, serviceRole)
 }
+
+// Accept optional args for compatibility with call sites using (req, res)
+export const createServerClient = (_req?: any, _res?: any) => createClient()

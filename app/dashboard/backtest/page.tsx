@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,13 +60,15 @@ export default function BacktestPage() {
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY']
   })
 
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
   useEffect(() => {
+    supabaseRef.current = createClient()
     loadBacktests()
     
     // Set up realtime subscriptions
-    const backtestsChannel = supabase
+    const sb = supabaseRef.current
+    const backtestsChannel = sb
       .channel('backtests')
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'backtests' },
@@ -73,7 +77,7 @@ export default function BacktestPage() {
       .subscribe()
 
     return () => {
-      backtestsChannel.unsubscribe()
+      backtestsChannel?.unsubscribe()
     }
   }, [])
 
@@ -81,9 +85,11 @@ export default function BacktestPage() {
     try {
       setLoading(true)
 
-      const { data: { user } } = await supabase.auth.getUser()
+      const sb = supabaseRef.current
+      if (!sb) return
+      const { data: { user } } = await sb.auth.getUser()
       if (user) {
-        const { data: backtestsData, error } = await supabase.rpc('get_user_backtests', {
+        const { data: backtestsData, error } = await sb.rpc('get_user_backtests', {
           user_uuid: user.id,
           limit_count: 20,
           offset_count: 0
@@ -200,8 +206,8 @@ export default function BacktestPage() {
       </div>
 
       {message && (
-        <Alert className={message.type === 'error' ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}>
-          <AlertDescription className={message.type === 'error' ? 'text-red-700' : 'text-green-700'}>
+        <Alert className={message.type === 'error' ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}>
+          <AlertDescription className={message.type === 'error' ? 'text-red-700' : 'text-blue-700'}>
             {message.text}
           </AlertDescription>
         </Alert>
@@ -317,7 +323,7 @@ export default function BacktestPage() {
                     </div>
                     <div className="text-right">
                       <div className={`font-medium ${
-                        backtest.metrics.total_return >= 0 ? 'text-green-600' : 'text-red-600'
+                        backtest.metrics.total_return >= 0 ? 'text-blue-600' : 'text-red-600'
                       }`}>
                         {formatPercentage(backtest.metrics.total_return)}
                       </div>
@@ -351,7 +357,7 @@ export default function BacktestPage() {
                 <div>
                   <div className="text-sm text-muted-foreground">Total Return</div>
                   <div className={`text-2xl font-bold ${
-                    selectedBacktest.metrics.total_return >= 0 ? 'text-green-600' : 'text-red-600'
+                    selectedBacktest.metrics.total_return >= 0 ? 'text-blue-600' : 'text-red-600'
                   }`}>
                     {formatPercentage(selectedBacktest.metrics.total_return)}
                   </div>
@@ -383,7 +389,7 @@ export default function BacktestPage() {
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Winning Trades</div>
-                  <div className="text-lg font-semibold text-green-600">{selectedBacktest.metrics.winning_trades}</div>
+                  <div className="text-lg font-semibold text-blue-600">{selectedBacktest.metrics.winning_trades}</div>
                 </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Losing Trades</div>

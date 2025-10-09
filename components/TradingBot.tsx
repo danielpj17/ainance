@@ -169,13 +169,13 @@ export default function TradingBot({ mode }: TradingBotProps) {
 
   const getStatusIcon = () => {
     if (!botStatus) return <Activity className="h-4 w-4" />
-    if (botStatus.isRunning) return <CheckCircle className="h-4 w-4 text-green-500" />
+    if (botStatus.isRunning) return <CheckCircle className="h-4 w-4 text-blue-500" />
     return <XCircle className="h-4 w-4 text-gray-500" />
   }
 
   const getStatusBadge = () => {
     if (!botStatus) return <Badge variant="secondary">Unknown</Badge>
-    if (botStatus.isRunning) return <Badge className="bg-green-500">Running</Badge>
+    if (botStatus.isRunning) return <Badge className="bg-blue-500">Running</Badge>
     return <Badge variant="secondary">Stopped</Badge>
   }
 

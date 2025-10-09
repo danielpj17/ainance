@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,22 +28,24 @@ export default function AuthPage() {
   })
   const [currentUser, setCurrentUser] = useState<any>(null)
 
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
   const router = useRouter()
 
   useEffect(() => {
     // Check if user is already logged in
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      if (!supabaseRef.current) return
+      const { data: { user } } = await supabaseRef.current.auth.getUser()
       if (user) {
         setCurrentUser(user)
         router.push('/dashboard')
       }
     }
+    supabaseRef.current = createClient()
     checkUser()
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabaseRef.current!.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         setCurrentUser(session.user)
         if (!showApiKeys) {
@@ -63,14 +67,14 @@ export default function AuthPage() {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        const { error } = await supabaseRef.current!.auth.signUp({
           email,
           password,
         })
         if (error) throw error
         setMessage('Check your email for the confirmation link!')
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabaseRef.current!.auth.signInWithPassword({
           email,
           password,
         })
@@ -253,9 +257,9 @@ export default function AuthPage() {
             </form>
             
             {message && (
-              <Alert className={`mt-4 ${message.includes('error') ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
+              <Alert className={`mt-4 ${message.includes('error') ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
                 <AlertTriangle className="h-4 w-4" />
-                <AlertDescription className={message.includes('error') ? 'text-red-700' : 'text-green-700'}>
+                <AlertDescription className={message.includes('error') ? 'text-red-700' : 'text-blue-700'}>
                   {message}
                 </AlertDescription>
               </Alert>
@@ -316,9 +320,9 @@ export default function AuthPage() {
           </form>
           
           {message && (
-            <Alert className={`mt-4 ${message.includes('error') ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
+            <Alert className={`mt-4 ${message.includes('error') ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription className={message.includes('error') ? 'text-red-700' : 'text-green-700'}>
+              <AlertDescription className={message.includes('error') ? 'text-red-700' : 'text-blue-700'}>
                 {message}
               </AlertDescription>
             </Alert>

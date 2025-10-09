@@ -122,9 +122,9 @@ export default function ApiKeysForm() {
         </form>
 
         {message && (
-          <Alert className={`mt-2 ${message.toLowerCase().includes('fail') ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
+          <Alert className={`mt-2 ${message.toLowerCase().includes('fail') ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
             <AlertTriangle className="h-4 w-4" />
-            <AlertDescription className={message.toLowerCase().includes('fail') ? 'text-red-700' : 'text-green-700'}>
+            <AlertDescription className={message.toLowerCase().includes('fail') ? 'text-red-700' : 'text-blue-700'}>
               {message}
             </AlertDescription>
           </Alert>

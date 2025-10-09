@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -37,14 +39,16 @@ export default function LiveTradingPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null)
   const [hasApiKeys, setHasApiKeys] = useState(false)
 
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
   useEffect(() => {
+    supabaseRef.current = createClient()
     checkApiKeys()
     loadData()
     
     // Set up realtime subscriptions
-    const tradesChannel = supabase
+    const sb = supabaseRef.current
+    const tradesChannel = sb
       .channel('live-trades')
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'trades' },
@@ -57,15 +61,17 @@ export default function LiveTradingPage() {
       .subscribe()
 
     return () => {
-      tradesChannel.unsubscribe()
+      tradesChannel?.unsubscribe()
     }
   }, [])
 
   const checkApiKeys = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const sb = supabaseRef.current
+      if (!sb) return
+      const { data: { user } } = await sb.auth.getUser()
       if (user) {
-        const { data: apiKeys, error } = await supabase.rpc('get_user_api_keys', {
+        const { data: apiKeys, error } = await sb.rpc('get_user_api_keys', {
           user_uuid: user.id
         })
 
@@ -88,7 +94,9 @@ export default function LiveTradingPage() {
       setLoading(true)
 
       // Load live trades only
-      const { data: tradesData, error: tradesError } = await supabase
+      const sb = supabaseRef.current
+      if (!sb) return
+      const { data: tradesData, error: tradesError } = await sb
         .from('trades')
         .select('*')
         .eq('account_type', 'live')
@@ -98,9 +106,9 @@ export default function LiveTradingPage() {
       if (tradesError) throw tradesError
 
       // Load portfolio summary for live trades
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user } } = await sb.auth.getUser()
       if (user) {
-        const { data: summaryData, error: summaryError } = await supabase
+        const { data: summaryData, error: summaryError } = await sb
           .rpc('get_portfolio_summary', { user_uuid: user.id })
 
         if (summaryError) throw summaryError
@@ -152,13 +160,13 @@ export default function LiveTradingPage() {
         <Alert className={
           message.type === 'error' ? 'border-red-200 bg-red-50' : 
           message.type === 'warning' ? 'border-yellow-200 bg-yellow-50' : 
-          'border-green-200 bg-green-50'
+          'border-blue-200 bg-blue-50'
         }>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className={
             message.type === 'error' ? 'text-red-700' : 
             message.type === 'warning' ? 'text-yellow-700' : 
-            'text-green-700'
+            'text-blue-700'
           }>
             {message.text}
           </AlertDescription>
@@ -192,12 +200,12 @@ export default function LiveTradingPage() {
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Real P&L</CardTitle>
               {portfolioSummary.total_pnl >= 0 ? 
-                <TrendingUp className="h-4 w-4 text-green-600" /> : 
+                <TrendingUp className="h-4 w-4 text-blue-600" /> : 
                 <TrendingDown className="h-4 w-4 text-red-600" />
               }
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${portfolioSummary.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <div className={`text-2xl font-bold ${portfolioSummary.total_pnl >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                 {formatCurrency(portfolioSummary.total_pnl)}
               </div>
             </CardContent>
@@ -290,7 +298,7 @@ export default function LiveTradingPage() {
                   <TableCell className="font-medium">{trade.symbol}</TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      trade.action === 'buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      trade.action === 'buy' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
                     }`}>
                       {trade.action.toUpperCase()}
                     </span>

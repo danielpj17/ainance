@@ -112,15 +112,11 @@ class AlpacaWrapper {
 
   constructor(config: AlpacaConfig) {
     this.config = config
-    this.client = new Alpaca({
-      credentials: {
-        key: config.apiKey,
-        secret: config.secretKey,
-        paper: config.paper
-      },
+    this.client = new (Alpaca as any)({
+      keyId: config.apiKey,
+      secretKey: config.secretKey,
+      paper: config.paper,
       rate_limit: true,
-      retry: true,
-      retry_delay: 1000
     })
   }
 
@@ -290,6 +286,29 @@ class AlpacaWrapper {
     }
   }
 
+  // Get OHLCV series for a single symbol
+  public async getBarsSeries(symbol: string, timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' = '1Min', limit = 300): Promise<Array<{ time: string, open: number, high: number, low: number, close: number, volume: number }>> {
+    try {
+      const bars = await (this.client as any).getBars({ symbols: [symbol], timeframe, limit })
+      const series: Array<{ time: string, open: number, high: number, low: number, close: number, volume: number }> = []
+      const rows = bars[symbol] || []
+      for (const b of rows) {
+        series.push({
+          time: new Date(b.Timestamp).toISOString(),
+          open: b.Open,
+          high: b.High,
+          low: b.Low,
+          close: b.Close,
+          volume: b.Volume,
+        })
+      }
+      return series
+    } catch (error) {
+      console.error('Error fetching bars series:', error)
+      throw this.handleAlpacaError(error)
+    }
+  }
+
   // Get latest quote for a symbol
   public async getLatestQuote(symbol: string): Promise<{ bid: number, ask: number, bidSize: number, askSize: number }> {
     try {
@@ -370,7 +389,7 @@ class AlpacaWrapper {
   // Subscribe to real-time data
   public async subscribeToData(symbols: string[], callback: (data: any) => void): Promise<void> {
     try {
-      this.stream = this.client.data_ws
+      this.stream = (this.client as any).data_ws
       
       // Subscribe to trades and quotes
       this.stream.subscribeForTrades(symbols)

@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tradingModel } from '@/lib/trading-model';
+import { tradingModel, type MarketData as TMMarketData, type NewsSentiment as TMNewsSentiment } from '@/lib/trading-model';
 import AlpacaWrapper, { getAlpacaKeys } from '@/lib/alpaca-client';
 import { createServerClient } from '@/utils/supabase/server';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { startDate, endDate, strategy, account_type, symbols } = body;
+    const { startDate, endDate, strategy, account_type, symbols } = body as {
+      startDate: string;
+      endDate: string;
+      strategy: string;
+      account_type: string;
+      symbols: string[];
+    };
     if (!startDate || !endDate || !strategy || !account_type || !symbols) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
@@ -18,6 +24,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
+    // Validate and narrow strategy/account_type to expected unions
+    const narrowedStrategy = strategy === 'cash' || strategy === '25k_plus' ? strategy : null;
+    const narrowedAccountType = account_type === 'cash' || account_type === 'margin' ? account_type : null;
+
+    if (!narrowedStrategy || !narrowedAccountType) {
+      return NextResponse.json({ error: 'Invalid strategy or account_type' }, { status: 400 });
+    }
+
     // Get API keys from user settings
     const { data: settings } = await supabase
       .from('user_settings')
@@ -27,7 +41,7 @@ export async function POST(req: NextRequest) {
     if (!settings) {
       return NextResponse.json({ error: 'No API keys found' }, { status: 403 });
     }
-    const alpacaKeys = getAlpacaKeys(settings, account_type, strategy);
+    const alpacaKeys = getAlpacaKeys(settings, narrowedAccountType, narrowedStrategy);
     const alpaca = new AlpacaWrapper({ ...alpacaKeys, baseUrl: 'https://paper-api.alpaca.markets' });
 
     // Fetch 1-min and 5-min bars for all symbols
@@ -36,14 +50,14 @@ export async function POST(req: NextRequest) {
     // TODO: Filter bars by date range and format as needed
 
     // Prepare historicalData for tradingModel.backtest
-    const historicalData: { [symbol: string]: any[] } = {};
+    const historicalData: Record<string, TMMarketData[]> = {};
     for (const symbol of symbols) {
-      historicalData[symbol] = bars1m.filter(bar => bar.symbol === symbol);
+      historicalData[symbol] = bars1m.filter(bar => bar.symbol === symbol) as unknown as TMMarketData[];
     }
     // For multi-timeframe, pass both 1m and 5m bars to the model
 
     // News sentiment mock (empty)
-    const newsSentimentData: { [symbol: string]: any[] } = {};
+    const newsSentimentData: Record<string, TMNewsSentiment[]> = {};
     for (const symbol of symbols) {
       newsSentimentData[symbol] = [];
     }
@@ -52,7 +66,7 @@ export async function POST(req: NextRequest) {
     const result = await tradingModel.backtest(
       startDate,
       endDate,
-      { strategy, account_type, cash_balance: 100000, max_trade_size: 5000, daily_loss_limit: -2000, take_profit: 0.5, stop_loss: 0.3 },
+      { strategy: narrowedStrategy, account_type: narrowedAccountType, cash_balance: 100000, max_trade_size: 5000, daily_loss_limit: -2000, take_profit: 0.5, stop_loss: 0.3 },
       historicalData,
       newsSentimentData
     );

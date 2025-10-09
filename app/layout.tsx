@@ -1,7 +1,8 @@
-import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
-import "./globals.css"
-import ClientLayout from "@/components/ClientLayout"
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import Sidebar from "@/components/Sidebar";
+import AuthGuard from "@/components/AuthGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,9 +15,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Ainance",
-  description: "AI-powered trading platform",
-}
+  title: "Ainance - AI Trading Platform",
+  description: "AI-powered trading platform with real-time analytics",
+};
 
 export default function RootLayout({
   children,
@@ -24,9 +25,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ClientLayout>{children}</ClientLayout>
+    <html lang="en" className="dark">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0f1117]`}>
+        <AuthGuard>
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <main className="flex-1 ml-20">
+              {children}
+            </main>
+          </div>
+        </AuthGuard>
       </body>
     </html>
   )
