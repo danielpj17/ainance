@@ -380,21 +380,21 @@ class AlpacaWrapper {
         console.log('Connected to Alpaca data stream')
       })
       
-      this.stream.onTradeUpdate((trade) => {
+      this.stream.onTradeUpdate((trade: any) => {
         callback({
           type: 'trade',
           data: trade
         })
       })
       
-      this.stream.onQuoteUpdate((quote) => {
+      this.stream.onQuoteUpdate((quote: any) => {
         callback({
           type: 'quote',
           data: quote
         })
       })
       
-      this.stream.onError((error) => {
+      this.stream.onError((error: any) => {
         console.error('Stream error:', error)
       })
       
