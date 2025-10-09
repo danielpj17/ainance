@@ -1,3 +1,4 @@
+export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
 import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'

@@ -4,6 +4,8 @@ import * as Tabs from '@radix-ui/react-tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import StrategySettings from '@/components/StrategySettings'
+import TradingBot from '@/components/TradingBot'
+import ApiKeysForm from '@/components/ApiKeysForm'
 
 export default function DashboardPage() {
   return (
@@ -11,7 +13,7 @@ export default function DashboardPage() {
       <h1 className="text-3xl font-bold mb-6">Trading Dashboard</h1>
       
       <Tabs.Root defaultValue="paper" className="w-full">
-        <Tabs.List className="grid w-full grid-cols-3 mb-6">
+        <Tabs.List className="grid w-full grid-cols-4 mb-6">
           <Tabs.Trigger value="paper" className="p-4 text-lg">
             Paper Trading
           </Tabs.Trigger>
@@ -21,10 +23,14 @@ export default function DashboardPage() {
           <Tabs.Trigger value="backtest" className="p-4 text-lg">
             Backtest
           </Tabs.Trigger>
+          <Tabs.Trigger value="settings" className="p-4 text-lg">
+            Settings
+          </Tabs.Trigger>
         </Tabs.List>
         
         <Tabs.Content value="paper" className="mt-6 space-y-6">
           <StrategySettings mode="paper" />
+          <TradingBot mode="paper" />
           
           <Card>
             <CardHeader>
@@ -46,6 +52,7 @@ export default function DashboardPage() {
         
         <Tabs.Content value="live" className="mt-6 space-y-6">
           <StrategySettings mode="live" />
+          <TradingBot mode="live" />
           
           <Card>
             <CardHeader>
@@ -83,6 +90,10 @@ export default function DashboardPage() {
               </Button>
             </CardContent>
           </Card>
+        </Tabs.Content>
+
+        <Tabs.Content value="settings" className="mt-6 space-y-6">
+          <ApiKeysForm />
         </Tabs.Content>
       </Tabs.Root>
     </div>

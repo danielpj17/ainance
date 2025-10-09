@@ -1,3 +1,4 @@
+export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
 
@@ -108,8 +109,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
       .single()
 
     if (error) {
+      // Surface validation errors to the client so users can correct inputs
       console.error('Error updating user settings:', error)
-      return NextResponse.json({ success: false, error: 'Failed to update settings' }, { status: 500 })
+      const message =
+        (error as any)?.message ||
+        (error as any)?.hint ||
+        (error as any)?.details ||
+        'Failed to update settings'
+      const status = (error as any)?.code === '23514' ? 400 : 500 // 23514 = check_violation
+      return NextResponse.json({ success: false, error: message }, { status })
     }
 
     console.log('User settings updated:', data)

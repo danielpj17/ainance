@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createClient } from '@/utils/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -73,7 +74,11 @@ export default function TradingBot({ mode }: TradingBotProps) {
 
   const fetchBotStatus = async () => {
     try {
-      const response = await fetch('/api/trading')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch('/api/trading', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+      })
       const data = await response.json()
       
       if (data.success) {
@@ -93,10 +98,13 @@ export default function TradingBot({ mode }: TradingBotProps) {
     setError(null)
     
     try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch('/api/trading', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
         body: JSON.stringify({
           action: 'start',
@@ -125,10 +133,13 @@ export default function TradingBot({ mode }: TradingBotProps) {
     setError(null)
     
     try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch('/api/trading', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
         body: JSON.stringify({
           action: 'stop'
