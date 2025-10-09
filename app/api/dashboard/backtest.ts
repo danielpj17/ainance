@@ -36,14 +36,14 @@ export async function POST(req: NextRequest) {
     // TODO: Filter bars by date range and format as needed
 
     // Prepare historicalData for tradingModel.backtest
-    const historicalData = {};
+    const historicalData: { [symbol: string]: any[] } = {};
     for (const symbol of symbols) {
       historicalData[symbol] = bars1m.filter(bar => bar.symbol === symbol);
     }
     // For multi-timeframe, pass both 1m and 5m bars to the model
 
     // News sentiment mock (empty)
-    const newsSentimentData = {};
+    const newsSentimentData: { [symbol: string]: any[] } = {};
     for (const symbol of symbols) {
       newsSentimentData[symbol] = [];
     }
