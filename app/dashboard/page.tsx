@@ -7,6 +7,7 @@ import StrategySettings from '@/components/StrategySettings'
 import TradingBot from '@/components/TradingBot'
 import ApiKeysForm from '@/components/ApiKeysForm'
 
+
 export default function DashboardPage() {
   return (
     <div className="container mx-auto p-6">
@@ -93,6 +94,11 @@ export default function DashboardPage() {
         </Tabs.Content>
 
         <Tabs.Content value="settings" className="mt-6 space-y-6">
+          <div className="flex justify-end">
+            <a href="/api/model/train" target="_blank" rel="noreferrer">
+              <Button>Re-Train Model</Button>
+            </a>
+          </div>
           <ApiKeysForm />
         </Tabs.Content>
       </Tabs.Root>

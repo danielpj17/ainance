@@ -274,43 +274,23 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       // Continue without sentiment data
     }
 
-    // Calculate technical indicators and prepare features
-    const features = []
-    const symbols = []
-    const currentPrices = []
-
-    for (const data of marketData) {
-      // For simplicity, we'll use basic price data as features
-      // In a real implementation, you'd calculate proper technical indicators
-      const featuresForSymbol = {
-        rsi: 0.5, // Placeholder - should be calculated from historical data
-        macd: 0,
-        bbWidth: 0.02,
-        volumeRatio: 1,
-        newsSentiment: sentimentData[data.symbol] || 0,
-        emaTrend: data.close > data.open ? 1 : 0
-      }
-      
-      features.push(featuresForSymbol)
-      symbols.push(data.symbol)
-      currentPrices.push(data.close)
-    }
-
-    // Make predictions using the trading model
-    if (!tradingModel.isTrained) {
-      console.log('Model not trained, skipping predictions')
-      return
-    }
-
-    const predictions = await tradingModel.predict(features)
-    
-    // Generate trading signals
-    const signals = tradingModel.generateTradingSignals(
-      predictions,
-      symbols,
-      config.settings,
-      currentPrices
-    )
+    // Offload signal generation to Python RF model endpoint
+    const symbols = marketData.map(d => d.symbol)
+    const currentPrices = marketData.map(d => d.close)
+    const predictRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/model/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbols, mode: config.accountType, settings: config.settings })
+    })
+    const predictJson = await predictRes.json().catch(() => ({ success: false }))
+    const signals: TradingSignal[] = (predictJson?.signals || []).map((s: any) => ({
+      symbol: s.symbol,
+      action: s.action,
+      confidence: s.confidence,
+      price: s.price,
+      timestamp: s.timestamp,
+      reasoning: s.reasoning || 'RF prediction'
+    }))
 
     console.log(`Generated ${signals.length} trading signals`)
 
