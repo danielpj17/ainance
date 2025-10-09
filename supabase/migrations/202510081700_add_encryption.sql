@@ -40,7 +40,7 @@ create or replace function update_user_api_keys(
   alpaca_paper_secret text,
   alpaca_live_key text default null,
   alpaca_live_secret text default null,
-  news_api_key text
+  news_api_key text default null
 )
 returns void as $$
 begin
@@ -118,7 +118,7 @@ returns table(
   action text,
   qty numeric,
   price numeric,
-  timestamp timestamptz,
+  trade_timestamp timestamptz,
   strategy text,
   account_type text,
   created_at timestamptz
@@ -131,14 +131,14 @@ begin
     t.action,
     t.qty,
     t.price,
-    t.timestamp,
+    t.trade_timestamp,
     t.strategy,
     t.account_type,
     t.created_at
   from trades t
   where t.user_id = user_uuid
     and (symbol_filter is null or t.symbol ilike '%' || symbol_filter || '%')
-  order by t.timestamp desc
+  order by t.trade_timestamp desc
   limit limit_count
   offset offset_count;
 end;
@@ -155,7 +155,7 @@ returns table(
   symbol text,
   signal text,
   confidence numeric,
-  timestamp timestamptz,
+  prediction_timestamp timestamptz,
   signal_count integer,
   strategy text,
   account_type text,
@@ -168,7 +168,7 @@ begin
     p.symbol,
     p.signal,
     p.confidence,
-    p.timestamp,
+    p.prediction_timestamp,
     p.signal_count,
     p.strategy,
     p.account_type,
@@ -228,7 +228,7 @@ begin
       sum(case when action = 'sell' then qty * price else -qty * price end) as total_pnl,
       count(*) filter (where action = 'sell') as sell_count,
       avg(qty * price) as avg_size,
-      max(timestamp) as last_trade
+      max(trade_timestamp) as last_trade
     from trades
     where user_id = user_uuid
   ),

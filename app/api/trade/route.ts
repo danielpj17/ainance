@@ -117,7 +117,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
         action: side,
         qty: parseFloat(tradeResult.qty || '0'),
         price: parseFloat(tradeResult.filled_avg_price || tradeResult.limit_price || '0'),
-        timestamp: new Date(tradeResult.created_at).toISOString(),
+        trade_timestamp: new Date(tradeResult.created_at).toISOString(),
         strategy,
         account_type,
         alpaca_order_id: tradeResult.id,

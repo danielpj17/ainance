@@ -9,7 +9,7 @@ symbol text not null,
 action text not null,
 qty numeric not null,
 price numeric not null,
-timestamp timestamptz not null,
+trade_timestamp timestamptz not null,
 strategy text not null,
 account_type text not null,
 created_at timestamptz default now()
@@ -38,7 +38,7 @@ user_id uuid references auth.users not null,
 symbol text not null,
 signal text not null,
 confidence numeric,
-timestamp timestamptz not null,
+prediction_timestamp timestamptz not null,
 created_at timestamptz default now()
 );
 

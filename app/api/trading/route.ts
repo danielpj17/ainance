@@ -425,7 +425,7 @@ async function executeTradeSignal(
         action: signal.action,
         qty: positionSize,
         price: signal.price,
-        timestamp: new Date().toISOString(),
+        trade_timestamp: new Date().toISOString(),
         strategy: config.strategy,
         account_type: config.accountType,
         alpaca_order_id: order.id,

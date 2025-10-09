@@ -19,7 +19,7 @@ interface Trade {
   action: string
   qty: number
   price: number
-  timestamp: string
+  trade_timestamp: string
   strategy: string
   account_type: string
   created_at: string
@@ -30,7 +30,7 @@ interface Prediction {
   symbol: string
   signal: string
   confidence: number
-  timestamp: string
+  prediction_timestamp: string
   signal_count: number
   strategy: string
   account_type: string

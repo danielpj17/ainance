@@ -101,11 +101,11 @@ begin
   -- For cash accounts, check trade limits
   if strategy_type = 'cash' and account_type_param = 'cash' then
     -- Count trades in last 5 days
-    select count(*), max(timestamp)
+    select count(*), max(trade_timestamp)
     into trade_count, last_trade_date
     from trades
     where user_id = user_uuid
-      and timestamp > now() - interval '5 days';
+      and trade_timestamp > now() - interval '5 days';
     
     -- Check if under trade limit
     if trade_count >= 3 then
