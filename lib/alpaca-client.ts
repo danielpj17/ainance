@@ -1,4 +1,4 @@
-import { AlpacaClient, AlpacaStream, AlpacaApi } from '@alpacahq/alpaca-trade-api'
+import Alpaca from '@alpacahq/alpaca-trade-api'
 
 export interface AlpacaConfig {
   apiKey: string
@@ -105,14 +105,14 @@ export interface TradingError {
 }
 
 class AlpacaWrapper {
-  private client: AlpacaClient
-  private stream: AlpacaStream | null = null
+  private client: any
+  private stream: any | null = null
   private config: AlpacaConfig
   private isConnected = false
 
   constructor(config: AlpacaConfig) {
     this.config = config
-    this.client = new AlpacaClient({
+    this.client = new Alpaca({
       credentials: {
         key: config.apiKey,
         secret: config.secretKey,
@@ -370,7 +370,7 @@ class AlpacaWrapper {
   // Subscribe to real-time data
   public async subscribeToData(symbols: string[], callback: (data: any) => void): Promise<void> {
     try {
-      this.stream = this.client.data_ws as AlpacaStream
+      this.stream = this.client.data_ws
       
       // Subscribe to trades and quotes
       this.stream.subscribeForTrades(symbols)
