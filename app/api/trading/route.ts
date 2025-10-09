@@ -307,7 +307,6 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
           }
         )
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
         console.error(`Error executing trade for ${signal.symbol}:`, error)
         
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
