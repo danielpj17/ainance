@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import StrategySettings from '@/components/StrategySettings'
 import TradingBot from '@/components/TradingBot'
 import ApiKeysForm from '@/components/ApiKeysForm'
+import TrainModelButton from '@/components/TrainModelButton'
 
 
 export default function DashboardPage() {
@@ -94,11 +95,7 @@ export default function DashboardPage() {
         </Tabs.Content>
 
         <Tabs.Content value="settings" className="mt-6 space-y-6">
-          <div className="flex justify-end">
-            <a href="/api/model/train" target="_blank" rel="noreferrer">
-              <Button>Re-Train Model</Button>
-            </a>
-          </div>
+          <div className="flex justify-end"><TrainModelButton /></div>
           <ApiKeysForm />
         </Tabs.Content>
       </Tabs.Root>

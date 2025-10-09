@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { tradingModel } from '@/lib/trading-model';
 import AlpacaWrapper, { getAlpacaKeys } from '@/lib/alpaca-client';
-import { createClient } from '@/utils/supabase/server';
+import { createServerClient } from '@/utils/supabase/server';
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Get user/session (mocked for now)
-    const supabase = createClient();
+    // Get user/session via server client (forwards Authorization)
+    const supabase = createServerClient(req, {});
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
