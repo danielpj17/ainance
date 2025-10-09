@@ -115,7 +115,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
         user_id: user.id,
         symbol: tradeResult.symbol,
         action: side,
-        qty: parseFloat(tradeResult.qty),
+        qty: parseFloat(tradeResult.qty || '0'),
         price: parseFloat(tradeResult.filled_avg_price || tradeResult.limit_price || '0'),
         timestamp: new Date(tradeResult.created_at).toISOString(),
         strategy,
