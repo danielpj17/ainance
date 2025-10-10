@@ -39,11 +39,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
     // Use the encrypted API key update function
     const { error } = await supabase.rpc('update_user_api_keys', {
       user_uuid: user.id,
-      alpaca_paper_key: alpacaPaperKey,
-      alpaca_paper_secret: alpacaPaperSecret,
-      alpaca_live_key: alpacaLiveKey || null,
-      alpaca_live_secret: alpacaLiveSecret || null,
-      news_api_key: newsApiKey
+      p_alpaca_paper_key: alpacaPaperKey,
+      p_alpaca_paper_secret: alpacaPaperSecret,
+      p_alpaca_live_key: alpacaLiveKey || null,
+      p_alpaca_live_secret: alpacaLiveSecret || null,
+      p_news_api_key: newsApiKey
     })
 
     if (error) {
