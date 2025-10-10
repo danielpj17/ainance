@@ -1,8 +1,3 @@
 {
-  "buildCommand": "next build",
-  "functions": {
-    "api/model/*.py": {
-      "maxDuration": 60
-    }
-  }
+  "buildCommand": "next build"
 }
