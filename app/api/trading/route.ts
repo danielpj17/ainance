@@ -411,7 +411,10 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
           signals: signals.map(s => ({
             symbol: s.symbol,
             action: s.action,
-            confidence: s.confidence
+            confidence: s.confidence,
+            price: s.price,
+            reasoning: s.reasoning,
+            timestamp: s.timestamp
           }))
         }
       })
@@ -546,10 +549,11 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       .eq('user_id', userId)
       .eq('order_status', 'filled')
 
-    // Only show current signals if bot is running
+    // Get current signals (either from running bot or test signals)
     const currentSignals: TradingSignal[] = []
+    
+    // First try to get signals from running bot (within last 2 minutes)
     if (botState.isRunning && botState.lastRun) {
-      // Get signals from the most recent execution (within last 2 minutes)
       const recentLogs = await supabase
         .from('bot_logs')
         .select('*')
@@ -566,9 +570,35 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
             symbol: s.symbol,
             action: s.action as 'buy' | 'sell' | 'hold',
             confidence: s.confidence,
-            price: 0, // Would need to fetch current price
-            timestamp: latestLog.created_at,
-            reasoning: `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
+            price: s.price || 0,
+            timestamp: s.timestamp || latestLog.created_at,
+            reasoning: s.reasoning || `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
+          })))
+        }
+      }
+    }
+    
+    // If no signals from running bot, check for test signals (within last 10 minutes)
+    if (currentSignals.length === 0) {
+      const testLogs = await supabase
+        .from('bot_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('action', 'test_signals')
+        .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString()) // Last 10 minutes
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (testLogs.data && testLogs.data.length > 0) {
+        const latestTestLog = testLogs.data[0]
+        if (latestTestLog.data?.signals) {
+          currentSignals.push(...latestTestLog.data.signals.map((s: any) => ({
+            symbol: s.symbol,
+            action: s.action as 'buy' | 'sell' | 'hold',
+            confidence: s.confidence,
+            price: s.price || 0,
+            timestamp: s.timestamp || latestTestLog.created_at,
+            reasoning: s.reasoning || `Test signal generated at ${new Date(latestTestLog.created_at).toLocaleTimeString()}`
           })))
         }
       }

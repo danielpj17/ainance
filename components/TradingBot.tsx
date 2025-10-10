@@ -162,6 +162,39 @@ export default function TradingBot({ mode }: TradingBotProps) {
     }
   }
 
+  const generateTestSignals = async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch('/api/test-signals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          symbols: config.symbols
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        await fetchBotStatus() // Refresh status to show new signals
+      } else {
+        setError(data.error)
+      }
+    } catch (error) {
+      console.error('Error generating test signals:', error)
+      setError('Failed to generate test signals')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return 'Never'
     return new Date(timestamp).toLocaleTimeString()
@@ -268,6 +301,22 @@ export default function TradingBot({ mode }: TradingBotProps) {
                 {isLoading ? 'Stopping...' : 'Stop Bot'}
               </Button>
             )}
+            
+            {/* Test Signals Button (for when market is closed) */}
+            <Button 
+              onClick={generateTestSignals} 
+              disabled={isLoading || botStatus?.isRunning}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <Activity className="h-4 w-4" />
+              {isLoading ? 'Generating...' : 'Test Signals'}
+            </Button>
+          </div>
+          
+          {/* Market Hours Info */}
+          <div className="text-xs text-gray-500 bg-blue-50 dark:bg-blue-950 p-2 rounded">
+            <strong>Note:</strong> Market is currently closed. Use "Test Signals" to see how the bot works with realistic data.
           </div>
         </CardContent>
       </Card>
