@@ -9,24 +9,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     
     // Get current user with detailed error logging
     console.log('Debug: Attempting to get user...')
+    
+    // Try both getUser and getSession
     const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
     console.log('Debug: User auth result:', { 
       hasUser: !!user, 
       userError: userError?.message,
-      userId: user?.id 
+      userId: user?.id,
+      hasSession: !!session,
+      sessionError: sessionError?.message
     })
     
-    if (userError || !user) {
+    if ((userError || !user) && (sessionError || !session)) {
       return NextResponse.json({ 
         success: false, 
         error: 'Unauthorized', 
         details: {
           userError: userError?.message,
+          sessionError: sessionError?.message,
           hasUser: !!user,
-          authMethod: 'server-client'
+          hasSession: !!session,
+          authMethod: 'server-client',
+          cookies: req.cookies?.get('sb-access-token')?.value ? 'present' : 'missing'
         }
       }, { status: 401 })
     }
+    
+    const currentUser = user || session?.user
 
     console.log('🔍 Debug Trading Bot - Step by Step Test')
     
@@ -43,7 +54,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // Step 2: Get API Keys
       console.log('Step 2: Getting API keys...')
       const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-        user_uuid: user.id
+        user_uuid: currentUser.id
       })
 
       if (keysError || !apiKeys?.[0]) {
