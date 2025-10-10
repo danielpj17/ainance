@@ -255,43 +255,49 @@ class AlpacaWrapper {
   // Get market data for symbols
   public async getMarketData(symbols: string[], timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' = '1Min'): Promise<MarketData[]> {
     try {
-      // Try different API methods based on the Alpaca SDK version
-      let marketData: any
+      console.log(`Fetching market data for symbols:`, symbols)
+      console.log(`Available methods:`, {
+        hasBarsV2: typeof this.client.getBarsV2,
+        hasGetBars: typeof this.client.getBars,
+        hasGetMultiBars: typeof this.client.getMultiBars
+      })
       
-      // Method 1: Try getBarsV2 (newer SDK)
-      if (typeof this.client.getBarsV2 === 'function') {
-        const iterator = this.client.getBarsV2(symbols, {
-          timeframe,
-          limit: 100
-        })
-        marketData = {}
-        for await (const bar of iterator) {
-          if (!marketData[bar.Symbol]) {
-            marketData[bar.Symbol] = []
+      const marketData: any = {}
+      
+      // For Alpaca SDK v3, we need to fetch bars for each symbol individually
+      for (const symbol of symbols) {
+        try {
+          console.log(`Fetching bars for ${symbol}...`)
+          
+          // Try getBarsV2 first (v3 SDK)
+          if (typeof this.client.getBarsV2 === 'function') {
+            const iterator = this.client.getBarsV2(symbol, {
+              timeframe,
+              limit: 100,
+              start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() // Last 7 days
+            })
+            
+            const bars: any[] = []
+            for await (const bar of iterator) {
+              bars.push(bar)
+            }
+            marketData[symbol] = bars
+            console.log(`Got ${bars.length} bars for ${symbol}`)
           }
-          marketData[bar.Symbol].push(bar)
-        }
-      }
-      // Method 2: Try getMultiBars (older SDK)
-      else if (typeof this.client.getMultiBars === 'function') {
-        marketData = await this.client.getMultiBars(symbols, {
-          timeframe,
-          limit: 100
-        })
-      }
-      // Method 3: Fallback to individual getBars calls
-      else {
-        marketData = {}
-        for (const symbol of symbols) {
-          try {
+          // Fallback to getBars
+          else if (typeof this.client.getBars === 'function') {
             const bars = await this.client.getBars(symbol, {
               timeframe,
               limit: 100
             })
-            marketData[symbol] = bars
-          } catch (err) {
-            console.warn(`Failed to get bars for ${symbol}:`, err)
+            marketData[symbol] = Array.isArray(bars) ? bars : [bars]
           }
+          else {
+            throw new Error('No compatible getBars method found in Alpaca client')
+          }
+        } catch (err) {
+          console.error(`Failed to get bars for ${symbol}:`, err)
+          // Continue with other symbols
         }
       }
       
