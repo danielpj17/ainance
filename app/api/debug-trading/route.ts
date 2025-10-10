@@ -38,6 +38,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
     
     const currentUser = user || session?.user
+    
+    if (!currentUser) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'No user found in session or token',
+        details: {
+          hasUser: !!user,
+          hasSession: !!session,
+          hasSessionUser: !!session?.user
+        }
+      }, { status: 401 })
+    }
 
     console.log('🔍 Debug Trading Bot - Step by Step Test')
     
