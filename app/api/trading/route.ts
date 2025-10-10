@@ -41,7 +41,7 @@ let botState: {
 // POST - Start/Stop trading bot
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 // GET - Get bot status
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()

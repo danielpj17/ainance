@@ -4,7 +4,7 @@ import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client'
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })

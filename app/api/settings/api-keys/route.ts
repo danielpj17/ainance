@@ -17,7 +17,7 @@ export interface ApiKeysResponse {
 // POST - Save encrypted API keys
 export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysResponse>> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
 // GET - Retrieve API keys (for validation/testing)
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()

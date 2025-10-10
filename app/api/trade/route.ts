@@ -23,7 +23,7 @@ export interface TradeResponse {
 // POST - Execute trade via Alpaca API
 export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse>> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
 // GET - Get user's trade history
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()

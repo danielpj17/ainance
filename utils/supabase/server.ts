@@ -22,7 +22,7 @@ export const createClient = () => {
 }
 
 // Create a client with user authentication
-export const createServerClient = (_req?: any, _res?: any) => {
+export const createServerClient = async (_req?: any, _res?: any) => {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -31,7 +31,7 @@ export const createServerClient = (_req?: any, _res?: any) => {
     throw new Error('SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set')
   }
 
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
 
   return createSupabaseSSRClient(
     url,
