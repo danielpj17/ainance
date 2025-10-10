@@ -437,12 +437,24 @@ async function executeTradeSignal(
     const cash = parseFloat(account.cash)
 
     // Calculate position size
-    const positionSize = await alpacaClient.calculatePositionSize(
+    let positionSize = await alpacaClient.calculatePositionSize(
       signal.symbol,
       signal.price,
       config.settings.max_trade_size / 100, // Convert percentage to decimal
       config.settings.account_type === 'margin'
     )
+
+    // Ensure position size is at least 1 and is an integer
+    positionSize = Math.max(1, Math.floor(positionSize))
+
+    console.log(`Position size for ${signal.symbol}: ${positionSize} shares @ $${signal.price} = $${(positionSize * signal.price).toFixed(2)}`)
+
+    // Check if we have enough buying power
+    const totalCost = positionSize * signal.price
+    if (totalCost > buyingPower) {
+      console.log(`Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
+      return
+    }
 
     // Validate trade parameters
     const validation = TradingErrorHandler.validateTradeParams({
@@ -455,11 +467,6 @@ async function executeTradeSignal(
 
     if (!validation.valid) {
       console.log(`Trade validation failed for ${signal.symbol}: ${validation.error}`)
-      return
-    }
-
-    if (positionSize <= 0) {
-      console.log(`Invalid position size for ${signal.symbol}`)
       return
     }
 
