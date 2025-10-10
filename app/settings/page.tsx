@@ -82,9 +82,14 @@ export default function SettingsPage() {
                   <TrainModelButton />
                 </div>
 
-                <div className="text-xs text-gray-500 pt-2">
-                  The model will be trained on synthetic data and uploaded to Supabase Storage. 
-                  Once trained, the trading bot will automatically use it to generate signals.
+                <div className="text-xs text-gray-500 pt-2 space-y-2">
+                  <p>
+                    <strong>Vercel Deployment:</strong> Updates model metadata. The app uses rule-based predictions.
+                  </p>
+                  <p>
+                    <strong>For Real ML Training:</strong> Run <code className="bg-gray-800 px-1 rounded">python-functions/model/train.py</code> locally 
+                    to train a real Random Forest model with scikit-learn and upload it to Supabase Storage.
+                  </p>
                 </div>
               </CardContent>
             </Card>
