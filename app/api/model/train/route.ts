@@ -5,7 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 export async function POST(req: NextRequest) {
   try {
     // Use service role for admin operations
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // For now, return a mock response
     // In production, this would call the Python training script

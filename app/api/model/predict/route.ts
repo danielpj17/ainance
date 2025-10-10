@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Use service role for storage access
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Check if model exists in storage
     const { data: files, error: listError } = await supabase.storage
