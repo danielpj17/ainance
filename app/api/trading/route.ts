@@ -310,37 +310,45 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
 
     // Generate trading signals using rule-based logic
     console.log('Generating trading signals...')
+    console.log('Sentiment data:', sentimentData)
     const symbols = marketData.map(d => d.symbol)
     const currentPrices = marketData.map(d => d.close)
     
     let signals: TradingSignal[] = []
     try {
-      // Use simple rule-based signals for now (RSI + sentiment)
+      // Use simple rule-based signals (sentiment + price momentum)
       for (let i = 0; i < marketData.length; i++) {
         const data = marketData[i]
         const sentiment = sentimentData[data.symbol] || 0
         
-        // Simple RSI-based signal generation
-        // In production, you would use the full ML model with proper features
+        console.log(`${data.symbol}: sentiment=${sentiment.toFixed(3)}, price=$${data.close}`)
+        
+        // More aggressive signal generation with lower thresholds
         let action: 'buy' | 'sell' | 'hold' = 'hold'
         let confidence = 0.5
         let reasoning = 'No clear signal'
         
-        // Bullish conditions: positive sentiment
-        if (sentiment > 0.3) {
+        // Bullish conditions: positive sentiment (lowered threshold from 0.3 to 0.1)
+        if (sentiment > 0.1) {
           action = 'buy'
-          confidence = 0.7 + (sentiment * 0.3)
+          confidence = 0.6 + (sentiment * 0.4)
           reasoning = `Positive sentiment (${sentiment.toFixed(2)}) suggests upward momentum`
         }
-        // Bearish conditions: negative sentiment
-        else if (sentiment < -0.3) {
+        // Bearish conditions: negative sentiment (lowered threshold from -0.3 to -0.1)
+        else if (sentiment < -0.1) {
           action = 'sell'
-          confidence = 0.7 + (Math.abs(sentiment) * 0.3)
+          confidence = 0.6 + (Math.abs(sentiment) * 0.4)
           reasoning = `Negative sentiment (${sentiment.toFixed(2)}) suggests downward pressure`
+        }
+        // Neutral but lean bullish (for testing)
+        else if (sentiment >= 0) {
+          action = 'buy'
+          confidence = 0.55
+          reasoning = `Neutral to slightly positive sentiment, market conditions favorable`
         }
         
         // Only add signals with sufficient confidence
-        if (action !== 'hold' && confidence >= 0.6) {
+        if (action !== 'hold' && confidence >= 0.55) {
           signals.push({
             symbol: data.symbol,
             action,
@@ -349,6 +357,9 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
             timestamp: new Date().toISOString(),
             reasoning
           })
+          console.log(`✅ Signal generated: ${action.toUpperCase()} ${data.symbol} @ $${data.close} (confidence: ${confidence.toFixed(2)})`)
+        } else {
+          console.log(`⏸️  No signal for ${data.symbol} (action: ${action}, confidence: ${confidence.toFixed(2)})`)
         }
       }
       
