@@ -151,7 +151,13 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
         botState.error = null
   } catch (error) {
         console.error('Trading loop error:', error)
-        botState.error = error instanceof Error ? error.message : 'Unknown error'
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('Error details:', {
+          message: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+          name: error instanceof Error ? error.name : undefined
+        })
+        botState.error = errorMessage || 'Unknown error'
       }
     }, config.interval * 1000)
 
@@ -231,9 +237,21 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
 async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
   try {
     console.log(`Executing trading loop for ${config.symbols.join(', ')}`)
+    console.log('API Keys available:', {
+      hasPaperKey: !!apiKeys.alpaca_paper_key,
+      hasPaperSecret: !!apiKeys.alpaca_paper_secret,
+      hasNewsKey: !!apiKeys.news_api_key
+    })
 
     // Initialize Alpaca client
+    console.log('Initializing Alpaca client...')
     const alpacaKeys = getAlpacaKeys(apiKeys, config.accountType, config.strategy)
+    console.log('Alpaca keys extracted:', {
+      hasApiKey: !!alpacaKeys.apiKey,
+      hasSecretKey: !!alpacaKeys.secretKey,
+      isPaper: alpacaKeys.paper
+    })
+    
     const alpacaClient = createAlpacaClient({
       apiKey: alpacaKeys.apiKey,
       secretKey: alpacaKeys.secretKey,
@@ -241,7 +259,9 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       paper: alpacaKeys.paper
     })
 
+    console.log('Connecting to Alpaca...')
     await alpacaClient.initialize()
+    console.log('Alpaca client initialized successfully')
 
     // Check if market is open (skip if closed for live trading)
     if (!alpacaKeys.paper) {
@@ -253,7 +273,9 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     }
 
     // Get market data for all symbols
+    console.log('Fetching market data...')
     const marketData = await alpacaClient.getMarketData(config.symbols, '1Min')
+    console.log('Market data received:', marketData.length, 'symbols')
     
     if (marketData.length === 0) {
       console.log('No market data available')
