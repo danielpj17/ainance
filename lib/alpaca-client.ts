@@ -255,11 +255,45 @@ class AlpacaWrapper {
   // Get market data for symbols
   public async getMarketData(symbols: string[], timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' = '1Min'): Promise<MarketData[]> {
     try {
-      const marketData = await this.client.getBars({
-        symbols,
-        timeframe,
-        limit: 100
-      })
+      // Try different API methods based on the Alpaca SDK version
+      let marketData: any
+      
+      // Method 1: Try getBarsV2 (newer SDK)
+      if (typeof this.client.getBarsV2 === 'function') {
+        const iterator = this.client.getBarsV2(symbols, {
+          timeframe,
+          limit: 100
+        })
+        marketData = {}
+        for await (const bar of iterator) {
+          if (!marketData[bar.Symbol]) {
+            marketData[bar.Symbol] = []
+          }
+          marketData[bar.Symbol].push(bar)
+        }
+      }
+      // Method 2: Try getMultiBars (older SDK)
+      else if (typeof this.client.getMultiBars === 'function') {
+        marketData = await this.client.getMultiBars(symbols, {
+          timeframe,
+          limit: 100
+        })
+      }
+      // Method 3: Fallback to individual getBars calls
+      else {
+        marketData = {}
+        for (const symbol of symbols) {
+          try {
+            const bars = await this.client.getBars(symbol, {
+              timeframe,
+              limit: 100
+            })
+            marketData[symbol] = bars
+          } catch (err) {
+            console.warn(`Failed to get bars for ${symbol}:`, err)
+          }
+        }
+      }
       
       const results: MarketData[] = []
       for (const symbol of symbols) {
@@ -268,13 +302,13 @@ class AlpacaWrapper {
           const latestBar = bars[bars.length - 1]
           results.push({
             symbol,
-            open: latestBar.Open,
-            high: latestBar.High,
-            low: latestBar.Low,
-            close: latestBar.Close,
-            volume: latestBar.Volume,
-            timestamp: new Date(latestBar.Timestamp).toISOString(),
-            vwap: latestBar.VWAP
+            open: latestBar.Open || latestBar.o || latestBar.open,
+            high: latestBar.High || latestBar.h || latestBar.high,
+            low: latestBar.Low || latestBar.l || latestBar.low,
+            close: latestBar.Close || latestBar.c || latestBar.close,
+            volume: latestBar.Volume || latestBar.v || latestBar.volume,
+            timestamp: new Date(latestBar.Timestamp || latestBar.t || latestBar.timestamp).toISOString(),
+            vwap: latestBar.VWAP || latestBar.vw || latestBar.vwap
           })
         }
       }
