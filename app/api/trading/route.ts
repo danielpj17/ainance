@@ -308,37 +308,21 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       // Continue without sentiment data
     }
 
-    // Offload signal generation to Python RF model endpoint
+    // Generate trading signals using the trading model
     console.log('Generating trading signals via ML model...')
     const symbols = marketData.map(d => d.symbol)
     const currentPrices = marketData.map(d => d.close)
     
     let signals: TradingSignal[] = []
     try {
-      const predictRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/model/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbols, mode: config.accountType, settings: config.settings })
-      })
-      
-      if (!predictRes.ok) {
-        throw new Error(`Predict endpoint returned ${predictRes.status}: ${predictRes.statusText}`)
-      }
-      
-      const predictJson = await predictRes.json()
-      
-      if (!predictJson.success) {
-        throw new Error(`Predict endpoint failed: ${predictJson.error || 'Unknown error'}`)
-      }
-      
-      signals = (predictJson?.signals || []).map((s: any) => ({
-        symbol: s.symbol,
-        action: s.action,
-        confidence: s.confidence,
-        price: s.price,
-        timestamp: s.timestamp,
-        reasoning: s.reasoning || 'RF prediction'
-      }))
+      // Use the trading model directly instead of making HTTP request
+      // This avoids URL parsing issues in serverless environment
+      signals = await tradingModel.generateSignals(
+        symbols,
+        currentPrices,
+        sentimentData,
+        config.settings
+      )
       
       console.log(`Generated ${signals.length} trading signals`)
     } catch (error) {
