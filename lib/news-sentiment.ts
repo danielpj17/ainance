@@ -1,4 +1,6 @@
-import { Sentiment } from 'vader-sentiment'
+import * as vaderSentiment from 'vader-sentiment'
+
+const Sentiment = (vaderSentiment as any).SentimentIntensityAnalyzer
 
 export interface NewsArticle {
   title: string
@@ -24,7 +26,7 @@ export interface NewsAPIConfig {
 
 class NewsSentimentAnalyzer {
   private newsAPI: NewsAPIConfig
-  private sentimentAnalyzer: Sentiment
+  private sentimentAnalyzer: any
 
   constructor(newsAPIKey: string) {
     this.newsAPI = {

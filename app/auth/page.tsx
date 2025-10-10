@@ -99,6 +99,7 @@ export default function AuthPage() {
         throw new Error('Paper trading keys and NewsAPI key are required')
       }
 
+      const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch('/api/settings/api-keys', {
         method: 'POST',
