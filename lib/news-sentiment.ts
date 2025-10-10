@@ -1,4 +1,4 @@
-import * as vader from 'vader-sentiment'
+const vader = require('vader-sentiment')
 
 export interface NewsArticle {
   title: string
@@ -31,7 +31,7 @@ class NewsSentimentAnalyzer {
       apiKey: newsAPIKey,
       baseUrl: 'https://newsapi.org/v2'
     }
-    this.sentimentAnalyzer = new vader.SentimentIntensityAnalyzer()
+    this.sentimentAnalyzer = vader
   }
 
   // Fetch news articles for a specific symbol
