@@ -1,3 +1,23 @@
 {
-  "rewrites": []
+  "buildCommand": "next build",
+  "rewrites": [
+    {
+      "source": "/api/model/train",
+      "destination": "/api/model/train.py"
+    },
+    {
+      "source": "/api/model/predict",
+      "destination": "/api/model/predict.py"
+    }
+  ],
+  "functions": {
+    "api/model/train.py": {
+      "runtime": "python3.9",
+      "maxDuration": 60
+    },
+    "api/model/predict.py": {
+      "runtime": "python3.9",
+      "maxDuration": 30
+    }
+  }
 }
