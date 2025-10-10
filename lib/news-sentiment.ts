@@ -31,6 +31,7 @@ class NewsSentimentAnalyzer {
       apiKey: newsAPIKey,
       baseUrl: 'https://newsapi.org/v2'
     }
+    // vader-sentiment module structure
     this.sentimentAnalyzer = vader
   }
 
@@ -87,14 +88,15 @@ class NewsSentimentAnalyzer {
   // Analyze sentiment of a single text
   public analyzeTextSentiment(text: string): { score: number, confidence: number } {
     try {
-      const result = this.sentimentAnalyzer.polarity_scores(text)
+      // vader-sentiment exports SentimentIntensityAnalyzer.polarity_scores directly
+      const result = vader.SentimentIntensityAnalyzer.polarity_scores(text)
       
       // VADER returns compound score (-1 to 1) and individual scores
       // We'll use the compound score as our main sentiment score
-      const score = result.compound
+      const score = result.compound || 0
       
       // Calculate confidence based on the absolute difference between pos and neg scores
-      const confidence = Math.abs(result.pos - result.neg)
+      const confidence = Math.abs((result.pos || 0) - (result.neg || 0))
       
       return { score, confidence }
     } catch (error) {
