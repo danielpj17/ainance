@@ -7,10 +7,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     
-    // Get current user
+    // Get current user with detailed error logging
+    console.log('Debug: Attempting to get user...')
     const { data: { user }, error: userError } = await supabase.auth.getUser()
+    console.log('Debug: User auth result:', { 
+      hasUser: !!user, 
+      userError: userError?.message,
+      userId: user?.id 
+    })
+    
     if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Unauthorized', 
+        details: {
+          userError: userError?.message,
+          hasUser: !!user,
+          authMethod: 'server-client'
+        }
+      }, { status: 401 })
     }
 
     console.log('🔍 Debug Trading Bot - Step by Step Test')
