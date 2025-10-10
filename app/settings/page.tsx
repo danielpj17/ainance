@@ -7,6 +7,9 @@ import TrainModelButton from '@/components/TrainModelButton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Settings, Key, TrendingUp, Brain } from 'lucide-react'
 
+// Ensure this page is rendered dynamically, not statically
+export const dynamic = 'force-dynamic'
+
 export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-[#0f1117] text-white pl-20">
