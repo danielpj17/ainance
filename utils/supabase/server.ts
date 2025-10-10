@@ -22,7 +22,7 @@ export const createClient = () => {
 }
 
 // Create a client with user authentication
-export const createServerClient = async (_req?: any, _res?: any) => {
+export const createServerClient = async (req?: any, _res?: any) => {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -32,6 +32,12 @@ export const createServerClient = async (_req?: any, _res?: any) => {
   }
 
   const cookieStore = await cookies()
+
+  // Check if we have an Authorization header (for API routes)
+  let authHeader = null
+  if (req?.headers) {
+    authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+  }
 
   return createSupabaseSSRClient(
     url,
@@ -56,6 +62,11 @@ export const createServerClient = async (_req?: any, _res?: any) => {
           }
         },
       },
+      global: {
+        headers: authHeader ? {
+          Authorization: authHeader
+        } : {}
+      }
     }
   )
 }
