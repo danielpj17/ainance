@@ -151,11 +151,23 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
         botState.error = null
   } catch (error) {
         console.error('Trading loop error:', error)
-        const errorMessage = error instanceof Error ? error.message : String(error)
+        
+        let errorMessage: string
+        if (error instanceof Error) {
+          errorMessage = error.message
+        } else if (typeof error === 'object' && error !== null) {
+          // Try to extract meaningful info from error object
+          errorMessage = JSON.stringify(error, null, 2)
+        } else {
+          errorMessage = String(error)
+        }
+        
         console.error('Error details:', {
           message: errorMessage,
           stack: error instanceof Error ? error.stack : undefined,
-          name: error instanceof Error ? error.name : undefined
+          name: error instanceof Error ? error.name : undefined,
+          type: typeof error,
+          fullError: error
         })
         botState.error = errorMessage || 'Unknown error'
       }
@@ -297,24 +309,43 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     }
 
     // Offload signal generation to Python RF model endpoint
+    console.log('Generating trading signals via ML model...')
     const symbols = marketData.map(d => d.symbol)
     const currentPrices = marketData.map(d => d.close)
-    const predictRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/model/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols, mode: config.accountType, settings: config.settings })
-    })
-    const predictJson = await predictRes.json().catch(() => ({ success: false }))
-    const signals: TradingSignal[] = (predictJson?.signals || []).map((s: any) => ({
-      symbol: s.symbol,
-      action: s.action,
-      confidence: s.confidence,
-      price: s.price,
-      timestamp: s.timestamp,
-      reasoning: s.reasoning || 'RF prediction'
-    }))
-
-    console.log(`Generated ${signals.length} trading signals`)
+    
+    let signals: TradingSignal[] = []
+    try {
+      const predictRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/model/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols, mode: config.accountType, settings: config.settings })
+      })
+      
+      if (!predictRes.ok) {
+        throw new Error(`Predict endpoint returned ${predictRes.status}: ${predictRes.statusText}`)
+      }
+      
+      const predictJson = await predictRes.json()
+      
+      if (!predictJson.success) {
+        throw new Error(`Predict endpoint failed: ${predictJson.error || 'Unknown error'}`)
+      }
+      
+      signals = (predictJson?.signals || []).map((s: any) => ({
+        symbol: s.symbol,
+        action: s.action,
+        confidence: s.confidence,
+        price: s.price,
+        timestamp: s.timestamp,
+        reasoning: s.reasoning || 'RF prediction'
+      }))
+      
+      console.log(`Generated ${signals.length} trading signals`)
+    } catch (error) {
+      console.error('Error generating signals:', error)
+      const errorMsg = error instanceof Error ? error.message : JSON.stringify(error)
+      throw new Error(`Failed to generate trading signals: ${errorMsg}`)
+    }
 
     // Execute trades for signals with error handling
     for (const signal of signals) {
