@@ -284,19 +284,29 @@ export default function TradingBot({ mode }: TradingBotProps) {
           <CardContent>
             <div className="space-y-3">
               {botStatus.currentSignals.map((signal, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Badge variant={signal.action === 'buy' ? 'default' : signal.action === 'sell' ? 'destructive' : 'secondary'}>
-                      {signal.action.toUpperCase()}
-                    </Badge>
-                    <div>
-                      <div className="font-medium">{signal.symbol}</div>
-                      <div className="text-sm text-gray-500">{signal.reasoning}</div>
+                <div key={index} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <Badge variant={signal.action === 'buy' ? 'default' : signal.action === 'sell' ? 'destructive' : 'secondary'}>
+                        {signal.action.toUpperCase()}
+                      </Badge>
+                      <div className="font-semibold text-lg">{signal.symbol}</div>
+                      {signal.price > 0 && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          @ ${signal.price.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-lg">{(signal.confidence * 100).toFixed(1)}%</div>
+                      <div className="text-sm text-gray-500">Confidence</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-medium">{(signal.confidence * 100).toFixed(1)}%</div>
-                    <div className="text-sm text-gray-500">Confidence</div>
+                  <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 p-2 rounded border">
+                    <strong>Reasoning:</strong> {signal.reasoning}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Generated: {new Date(signal.timestamp).toLocaleString()}
                   </div>
                 </div>
               ))}

@@ -355,7 +355,7 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
             confidence,
             price: data.close,
             timestamp: new Date().toISOString(),
-            reasoning
+            reasoning: `${reasoning} | Price: $${data.close} | Sentiment: ${sentiment.toFixed(3)}`
           })
           console.log(`✅ Signal generated: ${action.toUpperCase()} ${data.symbol} @ $${data.close} (confidence: ${confidence.toFixed(2)})`)
         } else {
@@ -546,27 +546,31 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       .eq('user_id', userId)
       .eq('order_status', 'filled')
 
-    // Get recent signals (from bot logs)
-    const { data: recentLogs, error: logsError } = await supabase
-      .from('bot_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('action', 'execute')
-      .order('created_at', { ascending: false })
-      .limit(5)
-
+    // Only show current signals if bot is running
     const currentSignals: TradingSignal[] = []
-    if (recentLogs && recentLogs.length > 0) {
-      const latestLog = recentLogs[0]
-      if (latestLog.data?.signals) {
-        currentSignals.push(...latestLog.data.signals.map((s: any) => ({
-          symbol: s.symbol,
-          action: s.action as 'buy' | 'sell' | 'hold',
-          confidence: s.confidence,
-          price: 0, // Would need to fetch current price
-          timestamp: latestLog.created_at,
-          reasoning: `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
-        })))
+    if (botState.isRunning && botState.lastRun) {
+      // Get signals from the most recent execution (within last 2 minutes)
+      const recentLogs = await supabase
+        .from('bot_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('action', 'execute')
+        .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString()) // Last 2 minutes
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (recentLogs.data && recentLogs.data.length > 0) {
+        const latestLog = recentLogs.data[0]
+        if (latestLog.data?.signals) {
+          currentSignals.push(...latestLog.data.signals.map((s: any) => ({
+            symbol: s.symbol,
+            action: s.action as 'buy' | 'sell' | 'hold',
+            confidence: s.confidence,
+            price: 0, // Would need to fetch current price
+            timestamp: latestLog.created_at,
+            reasoning: `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
+          })))
+        }
       }
     }
 
