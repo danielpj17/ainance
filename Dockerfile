@@ -13,65 +13,26 @@ RUN apt-get update && apt-get install -y \
 # Install Python dependencies directly
 RUN pip install fastapi==0.104.1 uvicorn==0.24.0 pydantic==2.5.0 numpy==1.24.3 pandas==2.0.3
 
-# Create the ML service application
-COPY <<EOF main.py
-from fastapi import FastAPI
-from pydantic import BaseModel
-import numpy as np
-import pandas as pd
-from datetime import datetime
-import os
-
-app = FastAPI(title="Trading ML Service", version="1.0.0")
-
-class MockModel:
-    def __init__(self):
-        self.classes_ = np.array([-1, 0, 1])
-    
-    def predict(self, X):
-        predictions = []
-        for _, row in X.iterrows():
-            rsi = row.get('rsi', 50)
-            if rsi > 70:
-                predictions.append(1)  # buy
-            elif rsi < 30:
-                predictions.append(-1)  # sell
-            else:
-                predictions.append(0)  # hold
-        return np.array(predictions)
-    
-    def predict_proba(self, X):
-        probs = []
-        for _, row in X.iterrows():
-            rsi = row.get('rsi', 50)
-            if rsi > 70:
-                probs.append([0.1, 0.1, 0.8])  # [sell, hold, buy]
-            elif rsi < 30:
-                probs.append([0.8, 0.1, 0.1])  # [sell, hold, buy]
-            else:
-                probs.append([0.2, 0.6, 0.2])  # [sell, hold, buy]
-        return np.array(probs)
-
-MODEL = MockModel()
-MODEL_INFO = {"version": "mock-1.0", "model_type": "MockModel"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "model": "mock_model_v1", "service": "ml-trading-service"}
-
-@app.get("/")
-async def root():
-    return {"message": "ML Trading Service", "version": "1.0.0", "endpoints": ["/health", "/predict"]}
-
-@app.get("/predict")
-async def predict():
-    return {"message": "Use POST /predict with features"}
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
-EOF
+# Create the ML service application inline
+RUN echo 'from fastapi import FastAPI' > main.py && \
+    echo 'import numpy as np' >> main.py && \
+    echo 'import pandas as pd' >> main.py && \
+    echo 'import os' >> main.py && \
+    echo '' >> main.py && \
+    echo 'app = FastAPI(title="Trading ML Service", version="1.0.0")' >> main.py && \
+    echo '' >> main.py && \
+    echo '@app.get("/health")' >> main.py && \
+    echo 'async def health_check():' >> main.py && \
+    echo '    return {"status": "healthy", "model": "mock_model_v1", "service": "ml-trading-service"}' >> main.py && \
+    echo '' >> main.py && \
+    echo '@app.get("/")' >> main.py && \
+    echo 'async def root():' >> main.py && \
+    echo '    return {"message": "ML Trading Service", "version": "1.0.0", "endpoints": ["/health"]}' >> main.py && \
+    echo '' >> main.py && \
+    echo 'if __name__ == "__main__":' >> main.py && \
+    echo '    import uvicorn' >> main.py && \
+    echo '    port = int(os.getenv("PORT", 8080))' >> main.py && \
+    echo '    uvicorn.run(app, host="0.0.0.0", port=port)' >> main.py
 
 # Expose port
 EXPOSE 8080
