@@ -16,8 +16,8 @@ COPY ml-service/requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (using simple version without large model)
-COPY ml-service/main_simple.py ./main.py
+# Copy application code (using main.py with mock model fallback)
+COPY ml-service/main.py .
 
 # Expose port
 ENV PORT=8080
