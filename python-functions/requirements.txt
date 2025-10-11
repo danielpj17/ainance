@@ -4,4 +4,8 @@ numpy
 supabase
 joblib
 python-dotenv
+alpaca-trade-api
+fastapi
+uvicorn
+pydantic
 
