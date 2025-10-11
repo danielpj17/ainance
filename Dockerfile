@@ -62,11 +62,13 @@ RUN echo 'from fastapi import FastAPI' > main.py && \
     echo '' >> main.py && \
     echo 'if __name__ == "__main__":' >> main.py && \
     echo '    import uvicorn' >> main.py && \
-    echo '    uvicorn.run(app, host="0.0.0.0", port=8080)' >> main.py
+    echo '    import os' >> main.py && \
+    echo '    port = int(os.getenv("PORT", 8080))' >> main.py && \
+    echo '    uvicorn.run(app, host="0.0.0.0", port=port)' >> main.py
 
 # Expose port
 ENV PORT=8080
 EXPOSE 8080
 
 # Run the application
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1
+CMD exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers 1
