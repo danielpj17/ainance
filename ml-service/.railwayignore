@@ -1,0 +1,7 @@
+# Ignore everything except ML service files
+*
+!main.py
+!requirements.txt
+!Dockerfile
+!scalping_model_v2.pkl
+!railway.json
