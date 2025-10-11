@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Home, BarChart3, Activity, TrendingUp, Settings, Clock, Package } from 'lucide-react'
+import { Home, BarChart3, Activity, TrendingUp, Settings, Clock, Package, Brain } from 'lucide-react'
 
 const navItems = [
   { icon: Home, href: '/dashboard', label: 'Dashboard' },
@@ -11,6 +11,7 @@ const navItems = [
   { icon: TrendingUp, href: '/dashboard/live', label: 'Live Trading' },
   { icon: Package, href: '/dashboard/backtest', label: 'Backtest' },
   { icon: Clock, href: '/dashboard/history', label: 'History' },
+  { icon: Brain, href: '/test-ml', label: 'ML Testing' },
   { icon: Settings, href: '/settings', label: 'Settings' },
 ]
 
