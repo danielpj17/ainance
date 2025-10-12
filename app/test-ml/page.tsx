@@ -188,7 +188,7 @@ export default function TestMLPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <CardTitle className="text-xl">{pred.symbol}</CardTitle>
-                        <p className="text-2xl font-bold mt-1">${pred.price.toFixed(2)}</p>
+                        <p className="text-2xl font-bold mt-1">${pred.price?.toFixed(2) || 'N/A'}</p>
                       </div>
                       <Badge className={actionColor}>
                         {pred.action.toUpperCase()}
@@ -220,11 +220,11 @@ export default function TestMLPage() {
                     <div className="text-sm space-y-1">
                       <strong>Key Indicators:</strong>
                       <div className="grid grid-cols-2 gap-1 text-xs">
-                        <div>RSI: {pred.indicators.rsi}</div>
-                        <div>MACD: {pred.indicators.macd.toFixed(4)}</div>
-                        <div>BB Pos: {pred.indicators.bb_position.toFixed(2)}</div>
-                        <div>Vol Ratio: {pred.indicators.volume_ratio.toFixed(2)}</div>
-                        <div>Stoch: {pred.indicators.stochastic}</div>
+                        <div>RSI: {pred.indicators?.rsi || 'N/A'}</div>
+                        <div>MACD: {pred.indicators?.macd?.toFixed(4) || 'N/A'}</div>
+                        <div>BB Pos: {pred.indicators?.bb_position?.toFixed(2) || 'N/A'}</div>
+                        <div>Vol Ratio: {pred.indicators?.volume_ratio?.toFixed(2) || 'N/A'}</div>
+                        <div>Stoch: {pred.indicators?.stochastic || 'N/A'}</div>
                       </div>
                     </div>
                   </CardContent>
