@@ -149,7 +149,9 @@ async function fetchAlpacaBars(symbol: string, limit = 100): Promise<number[]> {
   });
 
   if (!response.ok) {
-    throw new Error(`Alpaca API error: ${response.status}`);
+    const errorText = await response.text();
+    console.error(`Alpaca bars API error for ${symbol}:`, response.status, errorText);
+    throw new Error(`Alpaca API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -175,7 +177,9 @@ async function fetchLatestQuote(symbol: string): Promise<number> {
   });
 
   if (!response.ok) {
-    throw new Error(`Alpaca API error: ${response.status}`);
+    const errorText = await response.text();
+    console.error(`Alpaca quote API error for ${symbol}:`, response.status, errorText);
+    throw new Error(`Alpaca API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -287,7 +291,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (error: any) {
     console.error('Indicators API error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to calculate indicators' },
+      { 
+        success: false, 
+        error: error.message || 'Failed to calculate indicators',
+        details: error.stack 
+      },
       { status: 500 }
     );
   }
