@@ -245,7 +245,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     if (!ALPACA_KEY || !ALPACA_SECRET) {
       return NextResponse.json(
-        { success: false, error: 'Alpaca API keys not configured' },
+        { 
+          success: false, 
+          error: 'Alpaca API keys not configured. Please add ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET to your environment variables.' 
+        },
         { status: 500 }
       );
     }

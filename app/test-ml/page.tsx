@@ -78,7 +78,11 @@ export default function TestMLPage() {
 
       const indicatorsData = await indicatorsResponse.json();
 
-      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+      if (!indicatorsData.success) {
+        throw new Error(indicatorsData.error || 'Failed to fetch stock data');
+      }
+
+      if (!indicatorsData.indicators || indicatorsData.indicators.length === 0) {
         throw new Error('No stock data available. Please check the symbols and try again.');
       }
 
