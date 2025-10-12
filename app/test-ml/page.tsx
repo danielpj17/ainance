@@ -35,7 +35,7 @@ export default function TestMLPage() {
 
   const checkMLService = async () => {
     try {
-      const response = await fetch('http://localhost:8080/health');
+      const response = await fetch('/api/ml/predict');
       if (response.ok) {
         setMlServiceStatus('online');
         return true;
@@ -108,17 +108,14 @@ export default function TestMLPage() {
         <CardContent>
           <div className="space-y-2">
             <p className="text-sm">
-              <strong>Endpoint:</strong> http://localhost:8080
+              <strong>Endpoint:</strong> Render ML Service
             </p>
             <p className="text-sm">
-              <strong>Model:</strong> scalping_model_v2.pkl (100 stocks, 43,679 samples)
+              <strong>Model:</strong> Mock Model (Trading Signals)
             </p>
             {mlServiceStatus === 'offline' && (
               <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">
-                ⚠️ ML service is not running. Start it with:
-                <code className="block mt-2 p-2 bg-black/20 rounded">
-                  python ml-service-local.py
-                </code>
+                ⚠️ ML service is not accessible. Check your environment variables.
               </div>
             )}
             <Button size="sm" onClick={checkMLService} className="mt-2">
