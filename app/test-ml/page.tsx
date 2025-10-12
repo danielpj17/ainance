@@ -35,7 +35,7 @@ export default function TestMLPage() {
 
   const checkMLService = async () => {
     try {
-      const response = await fetch('/api/ml/predict');
+      const response = await fetch('/api/ml/test');
       if (response.ok) {
         setMlServiceStatus('online');
         return true;
@@ -80,7 +80,7 @@ export default function TestMLPage() {
         price: 100 + Math.random() * 500
       }));
 
-      const response = await fetch('/api/ml/predict', {
+      const response = await fetch('/api/ml/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ features })
