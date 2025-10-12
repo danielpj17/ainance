@@ -7,8 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-// ML service URL (Render)
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8080';
+// ML service URL (Render) - remove trailing slash if present
+const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '');
 
 interface MarketFeatures {
   symbol: string;

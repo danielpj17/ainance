@@ -10,8 +10,8 @@ import { createServerClient } from '@/utils/supabase/server';
 
 export const runtime = 'nodejs';
 
-// ML service URL (Google Cloud Run or local)
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8080';
+// ML service URL (Google Cloud Run or local) - remove trailing slash if present
+const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '');
 
 // Cache TTL in seconds
 const CACHE_TTL = parseInt(process.env.ML_CACHE_TTL || '30');
