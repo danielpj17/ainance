@@ -56,30 +56,36 @@ export default function TestMLPage() {
       // Check ML service first
       const serviceOnline = await checkMLService();
       if (!serviceOnline) {
-        throw new Error('ML service is offline. Start it with: python ml-service-local.py');
+        throw new Error('ML service is offline');
       }
 
       const symbolList = symbols.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
 
-      // Create mock features for the symbols
-      const features = symbolList.map(symbol => ({
-        symbol,
-        rsi: Math.random() * 100, // Mock RSI
-        macd: (Math.random() - 0.5) * 2, // Mock MACD
-        macd_histogram: (Math.random() - 0.5) * 1,
-        bb_width: 0.02,
-        bb_position: Math.random(),
-        ema_trend: Math.random() > 0.5 ? 1 : 0,
-        volume_ratio: Math.random() * 3,
-        stochastic: Math.random() * 100,
-        price_change_1d: (Math.random() - 0.5) * 10,
-        price_change_5d: (Math.random() - 0.5) * 20,
-        price_change_10d: (Math.random() - 0.5) * 30,
-        volatility_20: Math.random() * 0.1,
-        news_sentiment: (Math.random() - 0.5) * 2,
-        price: 100 + Math.random() * 500
-      }));
+      if (symbolList.length === 0) {
+        throw new Error('Please enter at least one stock symbol');
+      }
 
+      // Fetch real stock data and technical indicators
+      const indicatorsResponse = await fetch('/api/stocks/indicators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols: symbolList })
+      });
+
+      if (!indicatorsResponse.ok) {
+        throw new Error(`Failed to fetch stock data: ${indicatorsResponse.status}`);
+      }
+
+      const indicatorsData = await indicatorsResponse.json();
+
+      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+        throw new Error('No stock data available. Please check the symbols and try again.');
+      }
+
+      // Use the real indicators as features
+      const features = indicatorsData.indicators;
+
+      // Call ML service with real data
       const response = await fetch('/api/ml/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
