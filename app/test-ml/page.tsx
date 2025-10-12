@@ -61,10 +61,29 @@ export default function TestMLPage() {
 
       const symbolList = symbols.split(',').map(s => s.trim().toUpperCase()).filter(s => s);
 
-      const response = await fetch('http://localhost:8080/predict', {
+      // Create mock features for the symbols
+      const features = symbolList.map(symbol => ({
+        symbol,
+        rsi: Math.random() * 100, // Mock RSI
+        macd: (Math.random() - 0.5) * 2, // Mock MACD
+        macd_histogram: (Math.random() - 0.5) * 1,
+        bb_width: 0.02,
+        bb_position: Math.random(),
+        ema_trend: Math.random() > 0.5 ? 1 : 0,
+        volume_ratio: Math.random() * 3,
+        stochastic: Math.random() * 100,
+        price_change_1d: (Math.random() - 0.5) * 10,
+        price_change_5d: (Math.random() - 0.5) * 20,
+        price_change_10d: (Math.random() - 0.5) * 30,
+        volatility_20: Math.random() * 0.1,
+        news_sentiment: (Math.random() - 0.5) * 2,
+        price: 100 + Math.random() * 500
+      }));
+
+      const response = await fetch('/api/ml/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbols: symbolList })
+        body: JSON.stringify({ features })
       });
 
       if (!response.ok) {
