@@ -1,11 +1,22 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List
 import numpy as np
 import pandas as pd
 from datetime import datetime
 import os
 
 app = FastAPI(title="Trading ML Service", version="1.0.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your Vercel domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class MockModel:
     def __init__(self):
@@ -56,7 +67,7 @@ class MarketFeatures(BaseModel):
     price: float = 100.0
 
 class PredictionRequest(BaseModel):
-    features: list[MarketFeatures]
+    features: List[MarketFeatures]
     include_probabilities: bool = False
 
 class TradingSignal(BaseModel):
