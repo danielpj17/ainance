@@ -285,9 +285,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (result.status === 'fulfilled') {
         indicators.push(result.value);
       } else {
-        errors.push(`${symbols[index]}: ${result.reason.message}`);
+        const errorMsg = result.reason.message || String(result.reason);
+        errors.push(`${symbols[index]}: ${errorMsg}`);
+        console.error(`Failed to get indicators for ${symbols[index]}:`, result.reason);
       }
     });
+
+    // If we got no indicators at all, return error
+    if (indicators.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to fetch data for all symbols',
+        errors: errors
+      }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
