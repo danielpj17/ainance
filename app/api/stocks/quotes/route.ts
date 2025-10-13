@@ -143,7 +143,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             isMarketOpen: isMarketOpen
           });
         }
-      } catch (symbolError) {
+      } catch (symbolError: any) {
         console.error(`Failed to get data for ${symbol}:`, symbolError);
         // Add placeholder data so the symbol still shows
         quotes.push({
@@ -157,7 +157,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           changePercent: 0,
           timestamp: new Date().toISOString(),
           isMarketOpen: isMarketOpen,
-          error: symbolError.message
+          error: symbolError?.message || 'Unknown error'
         });
       }
     }
