@@ -73,13 +73,16 @@ export default function TestMLPage() {
       });
 
       if (!indicatorsResponse.ok) {
-        throw new Error(`Failed to fetch stock data: ${indicatorsResponse.status}`);
+        const errorData = await indicatorsResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch stock data: ${indicatorsResponse.status}`);
       }
 
       const indicatorsData = await indicatorsResponse.json();
 
       if (!indicatorsData.success) {
-        throw new Error(indicatorsData.error || 'Failed to fetch stock data');
+        const errorMsg = indicatorsData.error || 'Failed to fetch stock data';
+        const errorDetails = indicatorsData.errors ? `\n\nDetails: ${indicatorsData.errors.join(', ')}` : '';
+        throw new Error(errorMsg + errorDetails);
       }
 
       if (!indicatorsData.indicators || indicatorsData.indicators.length === 0) {
