@@ -86,37 +86,67 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       try {
         console.log(`Fetching quote for ${symbol}...`);
         
-        // Try to get latest quote first (real-time)
+        // Since market is closed, get latest bar data directly
         let quoteData;
         try {
-          const latestQuote = await alpaca.getLatestQuote(symbol);
-          quoteData = {
-            symbol,
-            price: (latestQuote.bid + latestQuote.ask) / 2, // Mid price
-            bid: latestQuote.bid,
-            ask: latestQuote.ask,
-            bidSize: latestQuote.bidSize,
-            askSize: latestQuote.askSize,
-            timestamp: new Date().toISOString()
-          };
-          console.log(`Got real-time quote for ${symbol}:`, quoteData.price);
-        } catch (quoteError) {
-          console.log(`Real-time quote failed for ${symbol}, trying bars...`);
+          console.log(`Fetching daily bar for ${symbol}...`);
           
-          // Fallback to latest bar data
+          // Get latest daily bar data (last trading day)
           const marketData = await alpaca.getMarketData([symbol], '1Day');
+          console.log(`Market data response for ${symbol}:`, marketData);
+          
           if (marketData && marketData.length > 0) {
             const latestBar = marketData[0];
             quoteData = {
               symbol,
-              price: latestBar.close,
-              open: latestBar.open,
-              high: latestBar.high,
-              low: latestBar.low,
-              volume: latestBar.volume,
-              timestamp: latestBar.timestamp
+              price: latestBar.close || 0,
+              open: latestBar.open || 0,
+              high: latestBar.high || 0,
+              low: latestBar.low || 0,
+              volume: latestBar.volume || 0,
+              timestamp: latestBar.timestamp || new Date().toISOString()
             };
-            console.log(`Got bar data for ${symbol}:`, quoteData.price);
+            console.log(`Got bar data for ${symbol}:`, quoteData);
+          } else {
+            console.log(`No bar data found for ${symbol}`);
+            quoteData = {
+              symbol,
+              price: 0,
+              open: 0,
+              high: 0,
+              low: 0,
+              volume: 0,
+              timestamp: new Date().toISOString()
+            };
+          }
+        } catch (barError) {
+          console.error(`Failed to get bar data for ${symbol}:`, barError);
+          
+          // Try real-time quote as fallback (might work even when market closed)
+          try {
+            console.log(`Trying real-time quote for ${symbol} as fallback...`);
+            const latestQuote = await alpaca.getLatestQuote(symbol);
+            quoteData = {
+              symbol,
+              price: (latestQuote.bid + latestQuote.ask) / 2,
+              bid: latestQuote.bid,
+              ask: latestQuote.ask,
+              bidSize: latestQuote.bidSize,
+              askSize: latestQuote.askSize,
+              timestamp: new Date().toISOString()
+            };
+            console.log(`Got fallback quote for ${symbol}:`, quoteData.price);
+          } catch (quoteError) {
+            console.error(`Both bar and quote failed for ${symbol}:`, quoteError);
+            quoteData = {
+              symbol,
+              price: 0,
+              open: 0,
+              high: 0,
+              low: 0,
+              volume: 0,
+              timestamp: new Date().toISOString()
+            };
           }
         }
         
