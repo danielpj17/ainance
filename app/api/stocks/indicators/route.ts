@@ -8,8 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 // Force fresh environment variable reading
-const ALPACA_KEY = process.env.ALPACA_PAPER_KEY;
-const ALPACA_SECRET = process.env.ALPACA_PAPER_SECRET;
+const ALPACA_KEY = process.env.ALPACA_API_KEY;
+const ALPACA_SECRET = process.env.ALPACA_SECRET_KEY;
 const ALPACA_BASE_URL = 'https://data.alpaca.markets';
 
 // Debug: Log API key status (only in development/first load)
