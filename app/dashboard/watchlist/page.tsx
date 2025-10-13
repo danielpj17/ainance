@@ -123,15 +123,33 @@ export default function WatchlistPage() {
       const response = await fetch(`/api/stocks/quotes?symbols=${symbols.join(',')}`)
       const data = await response.json()
 
-      if (data.success && data.quotes) {
+      if (data.success && data.quotes && Array.isArray(data.quotes)) {
         const quotesMap: Record<string, StockQuote> = {}
         data.quotes.forEach((quote: StockQuote) => {
-          quotesMap[quote.symbol] = quote
+          if (quote && quote.symbol) {
+            quotesMap[quote.symbol] = {
+              symbol: quote.symbol,
+              price: quote.price || 0,
+              open: quote.open || 0,
+              high: quote.high || 0,
+              low: quote.low || 0,
+              volume: quote.volume || 0,
+              change: quote.change || 0,
+              changePercent: quote.changePercent || 0,
+              timestamp: quote.timestamp || new Date().toISOString()
+            }
+          }
         })
         setQuotes(quotesMap)
+      } else {
+        console.log('No quotes data received:', data)
+        // Set empty quotes map to prevent errors
+        setQuotes({})
       }
     } catch (err) {
       console.error('Error loading quotes:', err)
+      // Set empty quotes map to prevent errors
+      setQuotes({})
     }
   }
 
@@ -218,15 +236,24 @@ export default function WatchlistPage() {
     }
   }
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number | undefined | null) => {
+    if (price === undefined || price === null || isNaN(price)) {
+      return '0.00'
+    }
     return price.toFixed(2)
   }
 
-  const formatPercent = (percent: number) => {
+  const formatPercent = (percent: number | undefined | null) => {
+    if (percent === undefined || percent === null || isNaN(percent)) {
+      return '+0.00%'
+    }
     return `${percent >= 0 ? '+' : ''}${percent.toFixed(2)}%`
   }
 
-  const formatVolume = (volume: number) => {
+  const formatVolume = (volume: number | undefined | null) => {
+    if (volume === undefined || volume === null || isNaN(volume)) {
+      return '0'
+    }
     if (volume >= 1000000) {
       return `${(volume / 1000000).toFixed(2)}M`
     } else if (volume >= 1000) {
