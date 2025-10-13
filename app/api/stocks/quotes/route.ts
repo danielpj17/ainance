@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = await createServerClient(req, {});
+    const supabase = await createServerClient();
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser();
