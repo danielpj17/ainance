@@ -6,12 +6,12 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface Trade {
   id: number
@@ -25,40 +25,42 @@ interface Trade {
   created_at: string
 }
 
-interface Prediction {
-  id: number
-  symbol: string
-  signal: string
-  confidence: number
-  prediction_timestamp: string
-  signal_count: number
-  strategy: string
-  account_type: string
-  created_at: string
+interface AlpacaAccount {
+  id: string
+  account_number: string
+  status: string
+  currency: string
+  buying_power: string
+  cash: string
+  portfolio_value: string
+  equity: string
+  last_equity: string
+  long_market_value: string
+  short_market_value: string
+  initial_margin: string
+  maintenance_margin: string
+  daytrade_count: number
+  daytrading_buying_power: string
+  pattern_day_trader: boolean
 }
 
-interface PortfolioSummary {
-  total_trades: number
-  total_pnl: number
-  win_rate: number
-  avg_trade_size: number
-  last_trade_date: string
-  active_strategy: string
+interface PortfolioHistory {
+  timestamp: number[]
+  equity: number[]
+  profit_loss: number[]
+  profit_loss_pct: number[]
+  base_value: number
+  timeframe: string
 }
 
 export default function PaperTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])
-  const [predictions, setPredictions] = useState<Prediction[]>([])
-  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
+  const [account, setAccount] = useState<AlpacaAccount | null>(null)
+  const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [newTrade, setNewTrade] = useState({
-    symbol: '',
-    side: 'buy' as 'buy' | 'sell',
-    qty: 1,
-    type: 'market' as 'market' | 'limit',
-    limit_price: ''
-  })
+  const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
+  const [chartData, setChartData] = useState<any[]>([])
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -66,71 +68,37 @@ export default function PaperTradingPage() {
     supabaseRef.current = createClient()
     loadData()
     
-    // Set up realtime subscriptions
+    // Set up realtime subscriptions for trades
     let tradesChannel: any = null
-    let predictionsChannel: any = null
     if (supabaseRef.current) {
       tradesChannel = supabaseRef.current
-        .channel('trades')
+        .channel('paper-trades')
         .on('postgres_changes', 
-          { event: 'INSERT', schema: 'public', table: 'trades' },
-          () => loadData()
-        )
-        .subscribe()
-
-      predictionsChannel = supabaseRef.current
-        .channel('predictions')
-        .on('postgres_changes', 
-          { event: 'INSERT', schema: 'public', table: 'predictions' },
+          { event: 'INSERT', schema: 'public', table: 'trades', filter: 'account_type=eq.paper' },
           () => loadData()
         )
         .subscribe()
     }
+
+    // Refresh account data every 30 seconds
+    const accountInterval = setInterval(() => {
+      loadAccountData()
+    }, 30000)
 
     return () => {
       tradesChannel?.unsubscribe()
-      predictionsChannel?.unsubscribe()
+      clearInterval(accountInterval)
     }
   }, [])
+
+  useEffect(() => {
+    loadPortfolioHistory()
+  }, [chartPeriod])
 
   const loadData = async () => {
     try {
       setLoading(true)
-
-      // Load trades
-      const sb = supabaseRef.current
-      if (!sb) return
-
-      const { data: tradesData, error: tradesError } = await sb
-        .from('trades')
-        .select('*')
-        .eq('account_type', 'paper')
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (tradesError) throw tradesError
-
-      // Load predictions
-      const { data: predictionsData, error: predictionsError } = await sb
-        .from('predictions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20)
-
-      if (predictionsError) throw predictionsError
-
-      // Load portfolio summary
-      const { data: { user } } = await sb.auth.getUser()
-      if (user) {
-        const { data: summaryData, error: summaryError } = await sb
-          .rpc('get_portfolio_summary', { user_uuid: user.id })
-
-        if (summaryError) throw summaryError
-
-        setTrades(tradesData || [])
-        setPredictions(predictionsData || [])
-        setPortfolioSummary(summaryData?.[0] || null)
-      }
+      await Promise.all([loadAccountData(), loadTradesData()])
     } catch (error) {
       console.error('Error loading data:', error)
       setMessage({ type: 'error', text: 'Failed to load data' })
@@ -139,55 +107,106 @@ export default function PaperTradingPage() {
     }
   }
 
-  const executeTrade = async () => {
-    if (!newTrade.symbol || !newTrade.qty) {
-      setMessage({ type: 'error', text: 'Please fill in symbol and quantity' })
-      return
-    }
-
+  const loadAccountData = async () => {
     try {
-      const response = await fetch('/api/trade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newTrade,
-          limit_price: newTrade.type === 'limit' ? parseFloat(newTrade.limit_price) : undefined,
-          strategy: 'cash',
-          account_type: 'paper'
-        }),
-      })
-
+      const response = await fetch('/api/account')
       const result = await response.json()
-
-      if (result.success) {
-        setMessage({ type: 'success', text: `Trade executed: ${newTrade.side} ${newTrade.qty} ${newTrade.symbol}` })
-        setNewTrade({ symbol: '', side: 'buy', qty: 1, type: 'market', limit_price: '' })
-        loadData() // Refresh data
+      
+      if (result.success && result.data) {
+        setAccount(result.data)
       } else {
-        setMessage({ type: 'error', text: result.error || 'Trade execution failed' })
+        console.error('Failed to load account data:', result.error)
       }
     } catch (error) {
-      console.error('Error executing trade:', error)
-      setMessage({ type: 'error', text: 'Trade execution failed' })
+      console.error('Error loading account data:', error)
     }
   }
 
-  const formatCurrency = (amount: number) => {
+  const loadTradesData = async () => {
+    try {
+      const sb = supabaseRef.current
+      if (!sb) return
+
+      const { data: tradesData, error: tradesError } = await sb
+        .from('trades')
+        .select('*')
+        .eq('account_type', 'paper')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (tradesError) throw tradesError
+      setTrades(tradesData || [])
+    } catch (error) {
+      console.error('Error loading trades data:', error)
+    }
+  }
+
+  const loadPortfolioHistory = async () => {
+    try {
+      const timeframeMap = {
+        '1D': '5Min',
+        '1W': '1H',
+        '1M': '1D',
+        '1A': '1W'
+      }
+      
+      const response = await fetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}`)
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        setPortfolioHistory(result.data)
+        
+        // Transform data for chart
+        const timestamps = result.data.timestamp || []
+        const equity = result.data.equity || []
+        
+        const transformed = timestamps.map((ts: number, idx: number) => ({
+          time: new Date(ts * 1000).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: chartPeriod === '1D' ? 'numeric' : undefined,
+            minute: chartPeriod === '1D' ? '2-digit' : undefined
+          }),
+          value: equity[idx] || 0
+        }))
+        
+        setChartData(transformed)
+      }
+    } catch (error) {
+      console.error('Error loading portfolio history:', error)
+    }
+  }
+
+  const formatCurrency = (amount: number | string) => {
+    const value = typeof amount === 'string' ? parseFloat(amount) : amount
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
-    }).format(amount)
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value)
   }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString()
   }
 
+  const calculateProfitLoss = () => {
+    if (!account) return { amount: 0, percentage: 0 }
+    
+    const equity = parseFloat(account.equity)
+    const lastEquity = parseFloat(account.last_equity)
+    const amount = equity - lastEquity
+    const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
+    
+    return { amount, percentage }
+  }
+
+  const profitLoss = calculateProfitLoss()
+
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="min-h-screen bg-[#0f1117] text-white p-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin" />
           <span className="ml-2">Loading paper trading data...</span>
@@ -197,256 +216,235 @@ export default function PaperTradingPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Paper Trading Dashboard</h1>
-        <div className="text-sm text-muted-foreground">
-          Practice trading with virtual money
+    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Paper Trading Dashboard</h1>
+          <p className="text-gray-400">Practice trading with virtual money - Connected to Alpaca Paper Account</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-sm text-gray-400">Portfolio Value</p>
+            <p className="text-2xl font-bold">
+              {account ? formatCurrency(account.equity) : '$0.00'}
+            </p>
+          </div>
+          <Badge className={profitLoss.amount >= 0 ? "bg-blue-600 hover:bg-blue-700" : "bg-red-600 hover:bg-red-700"}>
+            {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
+            {profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%
+          </Badge>
         </div>
       </div>
 
       {message && (
-        <Alert className={message.type === 'error' ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}>
-          <AlertDescription className={message.type === 'error' ? 'text-red-700' : 'text-blue-700'}>
+        <Alert className={`mb-6 ${message.type === 'error' ? 'border-red-500 bg-red-950' : 'border-blue-500 bg-blue-950'}`}>
+          <AlertDescription className={message.type === 'error' ? 'text-red-200' : 'text-blue-200'}>
             {message.text}
           </AlertDescription>
         </Alert>
       )}
 
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
+            <DollarSign className="h-5 w-5 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.equity) : '$0.00'}
+            </div>
+            <p className={`text-xs flex items-center gap-1 mt-1 ${profitLoss.amount >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
+              {profitLoss.amount >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+              {formatCurrency(profitLoss.amount)} today
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Cash Balance</CardTitle>
+            <Wallet className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.cash) : '$0.00'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Available cash</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Buying Power</CardTitle>
+            <TrendingUp className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.buying_power) : '$0.00'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Day trades: {account?.daytrade_count || 0}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Position Value</CardTitle>
+            <Activity className="h-5 w-5 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.long_market_value) : '$0.00'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Long positions</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Trading Bot */}
-      <TradingBot mode="paper" />
+      <div className="mb-8">
+        <TradingBot mode="paper" />
+      </div>
 
-      {/* Portfolio Summary */}
-      {portfolioSummary && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Trades</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{portfolioSummary.total_trades}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total P&L</CardTitle>
-              {portfolioSummary.total_pnl >= 0 ? 
-                <TrendingUp className="h-4 w-4 text-blue-600" /> : 
-                <TrendingDown className="h-4 w-4 text-red-600" />
-              }
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${portfolioSummary.total_pnl >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {formatCurrency(portfolioSummary.total_pnl)}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Portfolio Chart */}
+        <Card className="lg:col-span-2 bg-[#1a1d2e] border-gray-800">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white text-xl">Portfolio Performance</CardTitle>
+                <CardDescription className="text-gray-400">Track your paper trading account value</CardDescription>
               </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {(portfolioSummary.win_rate * 100).toFixed(1)}%
+              <div className="flex gap-2">
+                <Button 
+                  variant={chartPeriod === '1D' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1D')}
+                  className={chartPeriod === '1D' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Day
+                </Button>
+                <Button 
+                  variant={chartPeriod === '1W' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1W')}
+                  className={chartPeriod === '1W' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Week
+                </Button>
+                <Button 
+                  variant={chartPeriod === '1M' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1M')}
+                  className={chartPeriod === '1M' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Month
+                </Button>
+                <Button 
+                  variant={chartPeriod === '1A' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1A')}
+                  className={chartPeriod === '1A' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Year
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Trade Size</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(portfolioSummary.avg_trade_size)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Manual Trade Execution */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Execute Manual Trade</CardTitle>
-          <CardDescription>
-            Place a manual trade order (for testing purposes)
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
-              <Label htmlFor="symbol">Symbol</Label>
-              <Input
-                id="symbol"
-                placeholder="AAPL"
-                value={newTrade.symbol}
-                onChange={(e) => setNewTrade(prev => ({ ...prev, symbol: e.target.value.toUpperCase() }))}
-              />
             </div>
-            
-            <div>
-              <Label htmlFor="side">Side</Label>
-              <select
-                id="side"
-                className="w-full p-2 border rounded-md"
-                value={newTrade.side}
-                onChange={(e) => setNewTrade(prev => ({ ...prev, side: e.target.value as 'buy' | 'sell' }))}
-              >
-                <option value="buy">Buy</option>
-                <option value="sell">Sell</option>
-              </select>
-            </div>
-            
-            <div>
-              <Label htmlFor="qty">Quantity</Label>
-              <Input
-                id="qty"
-                type="number"
-                min="1"
-                value={newTrade.qty}
-                onChange={(e) => setNewTrade(prev => ({ ...prev, qty: parseInt(e.target.value) || 1 }))}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="type">Type</Label>
-              <select
-                id="type"
-                className="w-full p-2 border rounded-md"
-                value={newTrade.type}
-                onChange={(e) => setNewTrade(prev => ({ ...prev, type: e.target.value as 'market' | 'limit' }))}
-              >
-                <option value="market">Market</option>
-                <option value="limit">Limit</option>
-              </select>
-            </div>
-            
-            <div className="flex items-end">
-              <Button onClick={executeTrade} className="w-full">
-                Execute Trade
-              </Button>
-            </div>
-          </div>
-          
-          {newTrade.type === 'limit' && (
-            <div className="mt-4">
-              <Label htmlFor="limit_price">Limit Price</Label>
-              <Input
-                id="limit_price"
-                type="number"
-                step="0.01"
-                placeholder="150.00"
-                value={newTrade.limit_price}
-                onChange={(e) => setNewTrade(prev => ({ ...prev, limit_price: e.target.value }))}
-              />
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Recent Trades */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Trades</CardTitle>
-          <CardDescription>
-            Your latest paper trading activity
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Time</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {trades.map((trade) => (
-                <TableRow key={trade.id}>
-                  <TableCell className="font-medium">{trade.symbol}</TableCell>
-                  <TableCell>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      trade.action === 'buy' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {trade.action.toUpperCase()}
-                    </span>
-                  </TableCell>
-                  <TableCell>{trade.qty}</TableCell>
-                  <TableCell>{formatCurrency(trade.price)}</TableCell>
-                  <TableCell>{formatCurrency(trade.qty * trade.price)}</TableCell>
-                  <TableCell>{formatDate(trade.created_at)}</TableCell>
-                </TableRow>
-              ))}
-              {trades.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                    No trades yet. Start by executing a trade above.
-                  </TableCell>
-                </TableRow>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="time" 
+                      stroke="#9ca3af" 
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis 
+                      stroke="#9ca3af" 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
+                      labelStyle={{ color: '#fff' }}
+                      formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="value" 
+                      stroke="#a855f7" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#portfolioGradient)" 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="text-center">
+                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>No portfolio data available for selected period</p>
+                  </div>
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Recent Predictions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>AI Predictions</CardTitle>
-          <CardDescription>
-            Latest AI trading signals and predictions
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Signal</TableHead>
-                <TableHead>Confidence</TableHead>
-                <TableHead>Strategy</TableHead>
-                <TableHead>Time</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {predictions.map((prediction) => (
-                <TableRow key={prediction.id}>
-                  <TableCell className="font-medium">{prediction.symbol}</TableCell>
-                  <TableCell>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      prediction.signal === 'buy' ? 'bg-blue-100 text-blue-800' : 
-                      prediction.signal === 'sell' ? 'bg-red-100 text-red-800' : 
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {prediction.signal.toUpperCase()}
-                    </span>
-                  </TableCell>
-                  <TableCell>{(prediction.confidence * 100).toFixed(1)}%</TableCell>
-                  <TableCell>{prediction.strategy}</TableCell>
-                  <TableCell>{formatDate(prediction.created_at)}</TableCell>
-                </TableRow>
-              ))}
-              {predictions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    No predictions yet. Generate some trading signals to see them here.
-                  </TableCell>
-                </TableRow>
+        {/* Recent Trades Widget */}
+        <Card className="bg-[#1a1d2e] border-gray-800">
+          <CardHeader>
+            <CardTitle className="text-white">Recent Trades</CardTitle>
+            <CardDescription className="text-gray-400">Latest trading activity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {trades.length > 0 ? (
+                trades.slice(0, 10).map((trade) => (
+                  <div key={trade.id} className="p-3 bg-[#252838] rounded-lg">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={trade.action === 'buy' ? 'default' : 'destructive'} 
+                          className={trade.action === 'buy' ? 'bg-blue-600' : 'bg-red-600'}
+                        >
+                          {trade.action.toUpperCase()}
+                        </Badge>
+                        <span className="font-bold text-white">{trade.symbol}</span>
+                      </div>
+                      <span className="text-sm text-gray-400">{trade.qty} shares</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-400">{formatCurrency(trade.price)}</span>
+                      <span className="text-gray-500">{formatDate(trade.created_at)}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                  <p>No trades yet</p>
+                  <p className="text-xs mt-1">Start the bot to execute trades</p>
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

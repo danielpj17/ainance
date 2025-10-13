@@ -378,6 +378,22 @@ class AlpacaWrapper {
     }
   }
 
+  // Get portfolio history
+  public async getPortfolioHistory(options: {
+    period?: string
+    timeframe?: string
+    date_end?: string
+    extended_hours?: boolean
+  } = {}): Promise<any> {
+    try {
+      const history = await this.client.getPortfolioHistory(options)
+      return history
+    } catch (error) {
+      console.error('Error fetching portfolio history:', error)
+      throw this.handleAlpacaError(error)
+    }
+  }
+
   // Get buying power (respects cash vs margin account)
   public async getBuyingPower(): Promise<{ cash: number, buying_power: number, non_marginable: number }> {
     try {
