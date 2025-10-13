@@ -1,8 +1,9 @@
 'use client'
 
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Home, Activity, TrendingUp, Settings, Brain, ListTree } from 'lucide-react'
+import { Home, Activity, TrendingUp, Settings, Brain, ListTree, LogOut } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
 
 const navItems = [
   { icon: Home, href: '/dashboard', label: 'Dashboard' },
@@ -15,6 +16,13 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/auth')
+  }
 
   return (
     <aside className="fixed left-0 top-0 h-full w-20 bg-[#1a1d2e] border-r border-gray-800 flex flex-col items-center py-6 z-50">
@@ -56,10 +64,20 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Settings at bottom */}
-      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-600 to-gray-800 flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-        <Settings className="w-5 h-5 text-white" />
-      </div>
+      {/* Logout at bottom */}
+      <button
+        onClick={handleLogout}
+        className="w-14 h-14 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center cursor-pointer hover:scale-110 transition-transform group"
+        title="Logout"
+      >
+        <LogOut className="w-5 h-5 text-white" />
+        
+        {/* Tooltip */}
+        <div className="absolute left-full ml-4 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
+          Logout
+          <div className="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-gray-900"></div>
+        </div>
+      </button>
     </aside>
   )
 }
