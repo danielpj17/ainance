@@ -203,7 +203,19 @@ async function calculateIndicators(symbol: string): Promise<StockData> {
   try {
     // Fetch historical data
     const prices = await fetchAlpacaBars(symbol, 100);
-    const currentPrice = await fetchLatestQuote(symbol);
+    
+    // Use latest bar price instead of real-time quote (works when market is closed)
+    let currentPrice = prices[prices.length - 1]; // Most recent close price
+    
+    // Try to get real-time price, but fall back to historical if market is closed
+    try {
+      const livePrice = await fetchLatestQuote(symbol);
+      if (livePrice && livePrice > 0) {
+        currentPrice = livePrice;
+      }
+    } catch (quoteError) {
+      console.log(`Using historical price for ${symbol} (market may be closed)`);
+    }
 
     // Calculate indicators
     const rsi = calculateRSI(prices);
