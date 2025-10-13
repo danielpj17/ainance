@@ -87,8 +87,8 @@ export default function WatchlistPage() {
       setIsLoading(true)
       setError(null)
 
-      // Try simple API first
-      const response = await fetch('/api/simple-watchlist')
+      // Use no-database API
+      const response = await fetch('/api/no-db-watchlist')
       const data = await response.json()
 
       if (!data.success) {
@@ -171,11 +171,10 @@ export default function WatchlistPage() {
       setError(null)
       setSuccessMessage(null)
 
-      const response = await fetch('/api/simple-watchlist', {
+      const response = await fetch('/api/no-db-watchlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          watchlistId: selectedWatchlist.id,
           symbol: symbol.toUpperCase()
         })
       })
