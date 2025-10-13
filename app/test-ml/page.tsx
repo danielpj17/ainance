@@ -81,7 +81,7 @@ export default function TestMLPage() {
 
       if (!indicatorsData.success) {
         const errorMsg = indicatorsData.error || 'Failed to fetch stock data';
-        const errorDetails = indicatorsData.errors ? `\n\nDetails: ${indicatorsData.errors.join(', ')}` : '';
+        const errorDetails = indicatorsData.errors ? `\n\nDetails:\n${indicatorsData.errors.join('\n')}` : '';
         throw new Error(errorMsg + errorDetails);
       }
 

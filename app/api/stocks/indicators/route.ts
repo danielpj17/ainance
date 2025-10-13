@@ -12,11 +12,14 @@ const ALPACA_KEY = process.env.ALPACA_PAPER_KEY;
 const ALPACA_SECRET = process.env.ALPACA_PAPER_SECRET;
 const ALPACA_BASE_URL = 'https://data.alpaca.markets';
 
-console.log('API Keys loaded:', { 
-  hasKey: !!ALPACA_KEY, 
-  hasSecret: !!ALPACA_SECRET,
-  keyPrefix: ALPACA_KEY?.substring(0, 4)
-});
+// Debug: Log API key status (only in development/first load)
+if (process.env.NODE_ENV !== 'production') {
+  console.log('API Keys loaded:', { 
+    hasKey: !!ALPACA_KEY, 
+    hasSecret: !!ALPACA_SECRET,
+    keyPrefix: ALPACA_KEY?.substring(0, 4)
+  });
+}
 
 interface StockData {
   symbol: string;
