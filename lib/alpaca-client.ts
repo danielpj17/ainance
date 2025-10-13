@@ -310,10 +310,10 @@ class AlpacaWrapper {
           
           results.push({
             symbol,
-            open: latestBar.Open || latestBar.o || latestBar.open || 0,
-            high: latestBar.High || latestBar.h || latestBar.high || 0,
-            low: latestBar.Low || latestBar.l || latestBar.low || 0,
-            close: latestBar.Close || latestBar.c || latestBar.close || 0,
+            open: latestBar.OpenPrice || latestBar.Open || latestBar.o || latestBar.open || 0,
+            high: latestBar.HighPrice || latestBar.High || latestBar.h || latestBar.high || 0,
+            low: latestBar.LowPrice || latestBar.Low || latestBar.l || latestBar.low || 0,
+            close: latestBar.ClosePrice || latestBar.Close || latestBar.c || latestBar.close || 0,
             volume: latestBar.Volume || latestBar.v || latestBar.volume || 0,
             timestamp: new Date(latestBar.Timestamp || latestBar.t || latestBar.timestamp).toISOString(),
             vwap: latestBar.VWAP || latestBar.vw || latestBar.vwap
