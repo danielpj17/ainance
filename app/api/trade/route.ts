@@ -43,8 +43,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
     }
 
     // Get Alpaca credentials from environment variables first, fallback to database
-    let alpacaApiKey = process.env.ALPACA_PAPER_KEY;
-    let alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
+    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
     let isPaper = true;
     
     // If not in environment, try to get from database
@@ -73,6 +73,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       alpacaApiKey = alpacaKeys.apiKey;
       alpacaSecretKey = alpacaKeys.secretKey;
       isPaper = alpacaKeys.paper;
+    }
+
+    // Final check to ensure keys are available
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
+      }, { status: 400 })
     }
 
     // Initialize Alpaca client

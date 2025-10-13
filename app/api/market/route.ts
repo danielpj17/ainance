@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '300')
 
     // Get Alpaca credentials from environment variables first, fallback to database
-    let alpacaApiKey = process.env.ALPACA_PAPER_KEY;
-    let alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
+    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
     
     // If not in environment, try to get from database
     if (!alpacaApiKey || !alpacaSecretKey) {
@@ -33,6 +33,14 @@ export async function GET(req: NextRequest) {
       
       alpacaApiKey = keys.alpaca_paper_key;
       alpacaSecretKey = keys.alpaca_paper_secret;
+    }
+    
+    // Final check to ensure keys are available
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      return NextResponse.json(
+        { success: false, error: 'Alpaca API keys not configured' },
+        { status: 400 }
+      );
     }
     
     const alpaca = createAlpacaClient({

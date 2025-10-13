@@ -116,9 +116,9 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
     }
 
     // Get Alpaca credentials from environment variables first, fallback to database
-    let alpacaApiKey = process.env.ALPACA_PAPER_KEY;
-    let alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
-    let newsApiKey = process.env.NEWS_API_KEY;
+    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
+    let newsApiKey: string | undefined = process.env.NEWS_API_KEY;
     
     // If not in environment, try to get from database
     if (!alpacaApiKey || !alpacaSecretKey) {
@@ -139,11 +139,19 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
       newsApiKey = keys.news_api_key;
     }
 
+    // Final check to ensure Alpaca keys are available
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
+      }, { status: 400 })
+    }
+
     // Create a keys object for backward compatibility
     const keys = {
       alpaca_paper_key: alpacaApiKey,
       alpaca_paper_secret: alpacaSecretKey,
-      news_api_key: newsApiKey,
+      news_api_key: newsApiKey || null,
       alpaca_live_key: null,
       alpaca_live_secret: null
     }
