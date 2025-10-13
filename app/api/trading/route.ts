@@ -120,23 +120,20 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
     let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
     let newsApiKey: string | undefined = process.env.NEWS_API_KEY;
     
-    // If not in environment, try to get from database
+    // If not in environment, try to get from database (only if we have a real user ID)
     if (!alpacaApiKey || !alpacaSecretKey) {
-      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-        user_uuid: userId
-      })
+      if (userId && userId !== '00000000-0000-0000-0000-000000000000') {
+        const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+          user_uuid: userId
+        })
 
-      if (keysError || !apiKeys?.[0]) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
-        }, { status: 400 })
+        if (!keysError && apiKeys?.[0]) {
+          const keys = apiKeys[0]
+          alpacaApiKey = keys.alpaca_paper_key;
+          alpacaSecretKey = keys.alpaca_paper_secret;
+          newsApiKey = keys.news_api_key;
+        }
       }
-
-      const keys = apiKeys[0]
-      alpacaApiKey = keys.alpaca_paper_key;
-      alpacaSecretKey = keys.alpaca_paper_secret;
-      newsApiKey = keys.news_api_key;
     }
 
     // Final check to ensure Alpaca keys are available

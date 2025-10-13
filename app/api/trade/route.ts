@@ -47,32 +47,24 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
     let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
     let isPaper = true;
     
-    // If not in environment, try to get from database
+    // If not in environment, try to get from database (only if user exists)
     if (!alpacaApiKey || !alpacaSecretKey) {
-      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-        user_uuid: user.id
-      })
+      if (user?.id) {
+        const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+          user_uuid: user.id
+        })
 
-      if (keysError || !apiKeys?.[0]) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
-        }, { status: 400 })
+        if (!keysError && apiKeys?.[0]) {
+          const keys = apiKeys[0]
+          const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
+          
+          if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+            alpacaApiKey = alpacaKeys.apiKey;
+            alpacaSecretKey = alpacaKeys.secretKey;
+            isPaper = alpacaKeys.paper;
+          }
+        }
       }
-
-      const keys = apiKeys[0]
-      const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
-      
-      if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
-        return NextResponse.json({ 
-          success: false, 
-          error: `No ${alpacaKeys.paper ? 'paper' : 'live'} trading API keys configured` 
-        }, { status: 400 })
-      }
-
-      alpacaApiKey = alpacaKeys.apiKey;
-      alpacaSecretKey = alpacaKeys.secretKey;
-      isPaper = alpacaKeys.paper;
     }
 
     // Final check to ensure keys are available

@@ -45,20 +45,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
     let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
     
-    // If not in environment, try to get from database
+    // If not in environment, try to get from database (only if user exists)
     if (!alpacaApiKey || !alpacaSecretKey) {
-      const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: user.id });
-      const keys = apiKeys?.[0] || {};
-      
-      if (!keys.alpaca_paper_key || !keys.alpaca_paper_secret) {
-        return NextResponse.json(
-          { success: false, error: 'Alpaca API keys not configured. Please add ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET to your Vercel environment variables.' },
-          { status: 400 }
-        );
+      if (userId && userId !== '00000000-0000-0000-0000-000000000000') {
+        const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: userId });
+        const keys = apiKeys?.[0] || {};
+        
+        if (keys.alpaca_paper_key && keys.alpaca_paper_secret) {
+          alpacaApiKey = keys.alpaca_paper_key;
+          alpacaSecretKey = keys.alpaca_paper_secret;
+        }
       }
-      
-      alpacaApiKey = keys.alpaca_paper_key;
-      alpacaSecretKey = keys.alpaca_paper_secret;
     }
     
     // Final check to ensure keys are available
