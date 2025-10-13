@@ -128,9 +128,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    // Debug logging
+    console.log('Stock search API - Auth check:', {
+      hasUser: !!user,
+      userId: user?.id,
+      userError: userError?.message,
+      hasSupabase: !!supabase
+    });
+    
     if (userError || !user) {
+      console.error('Stock search unauthorized:', userError);
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
+        { success: false, error: 'Unauthorized', debug: { userError: userError?.message } },
         { status: 401 }
       );
     }
