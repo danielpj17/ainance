@@ -115,24 +115,43 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
       }, { status: 400 })
     }
 
-    // Get user's API keys
-    const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-      user_uuid: userId
-    })
+    // Get Alpaca credentials from environment variables first, fallback to database
+    let alpacaApiKey = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
+    let newsApiKey = process.env.NEWS_API_KEY;
+    
+    // If not in environment, try to get from database
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+        user_uuid: userId
+      })
 
-    if (keysError || !apiKeys?.[0]) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'API keys not found. Please configure your trading keys.' 
-      }, { status: 400 })
+      if (keysError || !apiKeys?.[0]) {
+        return NextResponse.json({ 
+          success: false, 
+          error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
+        }, { status: 400 })
+      }
+
+      const keys = apiKeys[0]
+      alpacaApiKey = keys.alpaca_paper_key;
+      alpacaSecretKey = keys.alpaca_paper_secret;
+      newsApiKey = keys.news_api_key;
     }
 
-    const keys = apiKeys[0]
+    // Create a keys object for backward compatibility
+    const keys = {
+      alpaca_paper_key: alpacaApiKey,
+      alpaca_paper_secret: alpacaSecretKey,
+      news_api_key: newsApiKey,
+      alpaca_live_key: null,
+      alpaca_live_secret: null
+    }
     
     // Initialize news analyzer if NewsAPI key exists
-    if (keys.news_api_key) {
+    if (newsApiKey) {
       try {
-        initializeNewsAnalyzer(keys.news_api_key)
+        initializeNewsAnalyzer(newsApiKey)
       } catch (error) {
         console.warn('Failed to initialize news analyzer:', error)
       }

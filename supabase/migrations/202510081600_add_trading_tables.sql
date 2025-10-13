@@ -119,7 +119,7 @@ begin
         select 1 from trades 
         where user_id = user_uuid 
           and action = 'buy' 
-          and timestamp > now() - interval '2 days'
+          and trade_timestamp > now() - interval '2 days'
       ) then
         return false;
       end if;

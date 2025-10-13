@@ -42,36 +42,45 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       }, { status: 400 })
     }
 
-    // Get user's API keys
-    const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-      user_uuid: user.id
-    })
-
-    if (keysError || !apiKeys?.[0]) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'API keys not found. Please configure your trading keys.' 
-      }, { status: 400 })
-    }
-
-    const keys = apiKeys[0]
+    // Get Alpaca credentials from environment variables first, fallback to database
+    let alpacaApiKey = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
+    let isPaper = true;
     
-    // Use the new Alpaca client wrapper
-    const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
-    
-    if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
-      return NextResponse.json({ 
-        success: false, 
-        error: `No ${alpacaKeys.paper ? 'paper' : 'live'} trading API keys configured` 
-      }, { status: 400 })
+    // If not in environment, try to get from database
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+        user_uuid: user.id
+      })
+
+      if (keysError || !apiKeys?.[0]) {
+        return NextResponse.json({ 
+          success: false, 
+          error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
+        }, { status: 400 })
+      }
+
+      const keys = apiKeys[0]
+      const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
+      
+      if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
+        return NextResponse.json({ 
+          success: false, 
+          error: `No ${alpacaKeys.paper ? 'paper' : 'live'} trading API keys configured` 
+        }, { status: 400 })
+      }
+
+      alpacaApiKey = alpacaKeys.apiKey;
+      alpacaSecretKey = alpacaKeys.secretKey;
+      isPaper = alpacaKeys.paper;
     }
 
     // Initialize Alpaca client
     const alpacaClient = createAlpacaClient({
-      apiKey: alpacaKeys.apiKey,
-      secretKey: alpacaKeys.secretKey,
-      baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-      paper: alpacaKeys.paper
+      apiKey: alpacaApiKey,
+      secretKey: alpacaSecretKey,
+      baseUrl: isPaper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+      paper: isPaper
     })
 
     await alpacaClient.initialize()

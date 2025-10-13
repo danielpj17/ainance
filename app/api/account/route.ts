@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
-import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client'
+import { createAlpacaClient } from '@/lib/alpaca-client'
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,10 +10,32 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: user.id })
-    const keys = apiKeys?.[0] || {}
-    const alpacaKeys = getAlpacaKeys(keys, 'cash', 'cash')
-    const alpaca = createAlpacaClient({ apiKey: alpacaKeys.apiKey, secretKey: alpacaKeys.secretKey, baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets', paper: alpacaKeys.paper })
+    // Get Alpaca credentials from environment variables first, fallback to database
+    let alpacaApiKey = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
+    
+    // If not in environment, try to get from database
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: user.id });
+      const keys = apiKeys?.[0] || {};
+      
+      if (!keys.alpaca_paper_key || !keys.alpaca_paper_secret) {
+        return NextResponse.json(
+          { success: false, error: 'Alpaca API keys not configured' },
+          { status: 400 }
+        );
+      }
+      
+      alpacaApiKey = keys.alpaca_paper_key;
+      alpacaSecretKey = keys.alpaca_paper_secret;
+    }
+    
+    const alpaca = createAlpacaClient({
+      apiKey: alpacaApiKey,
+      secretKey: alpacaSecretKey,
+      baseUrl: 'https://paper-api.alpaca.markets',
+      paper: true
+    });
     await alpaca.initialize()
     const account = await alpaca.getAccount()
     return NextResponse.json({ success: true, data: account })

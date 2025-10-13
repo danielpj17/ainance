@@ -259,7 +259,7 @@ begin
         select 1 from trades 
         where user_id = user_uuid 
           and action = 'buy' 
-          and timestamp > now() - interval '2 days'
+          and trade_timestamp > now() - interval '2 days'
       ) then
         return false;
       end if;
@@ -573,7 +573,7 @@ alter publication supabase_realtime add table predictions;
 alter publication supabase_realtime add table backtests;
 
 -- Add indexes for better performance
-create index if not exists idx_trades_user_timestamp on trades(user_id, timestamp desc);
+create index if not exists idx_trades_user_trade_timestamp on trades(user_id, trade_timestamp desc);
 create index if not exists idx_predictions_user_created on predictions(user_id, created_at desc);
 create index if not exists idx_backtests_user_created on backtests(user_id, created_at desc);
 create index if not exists idx_trades_symbol on trades(symbol);
