@@ -60,46 +60,10 @@ export default function WatchlistPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isMarketOpen, setIsMarketOpen] = useState<boolean | null>(null)
 
-  // Load watchlists on mount
+  // Load watchlists on mount only
   useEffect(() => {
     loadWatchlists()
-    
-    // Fallback: if still loading after 10 seconds, create a mock watchlist
-    const fallbackTimeout = setTimeout(() => {
-      if (isLoading && watchlists.length === 0) {
-        console.log('Creating fallback watchlist...')
-        const fallbackWatchlist: Watchlist = {
-          id: 'fallback',
-          name: 'My Watchlist',
-          description: 'Fallback watchlist',
-          isDefault: true,
-          symbols: [
-            { id: '1', symbol: 'AAPL', sortOrder: 0, addedAt: new Date().toISOString() },
-            { id: '2', symbol: 'MSFT', sortOrder: 1, addedAt: new Date().toISOString() },
-            { id: '3', symbol: 'GOOGL', sortOrder: 2, addedAt: new Date().toISOString() }
-          ],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-        setWatchlists([fallbackWatchlist])
-        setSelectedWatchlist(fallbackWatchlist)
-        setIsLoading(false)
-      }
-    }, 10000) // 10 seconds
-    
-    // Auto-refresh quotes every 30 seconds when market is open
-    const refreshInterval = setInterval(() => {
-      if (selectedWatchlist && selectedWatchlist.symbols.length > 0) {
-        const symbols = selectedWatchlist.symbols.map(s => s.symbol)
-        loadQuotes(symbols)
-      }
-    }, 30000) // 30 seconds
-    
-    return () => {
-      clearTimeout(fallbackTimeout)
-      clearInterval(refreshInterval)
-    }
-  }, [selectedWatchlist, isLoading, watchlists.length])
+  }, []) // Empty dependency array - only run once on mount
 
   // Load quotes when watchlist changes
   useEffect(() => {
@@ -107,6 +71,23 @@ export default function WatchlistPage() {
       loadQuotes(selectedWatchlist.symbols.map(s => s.symbol))
     }
   }, [selectedWatchlist])
+
+  // Auto-refresh quotes every 30 seconds when market is open
+  useEffect(() => {
+    if (!selectedWatchlist || selectedWatchlist.symbols.length === 0) {
+      return
+    }
+
+    const symbols = selectedWatchlist.symbols.map(s => s.symbol)
+    
+    // Auto-refresh quotes every 30 seconds
+    const refreshInterval = setInterval(() => {
+      console.log('Auto-refreshing quotes...')
+      loadQuotes(symbols)
+    }, 30000) // 30 seconds
+
+    return () => clearInterval(refreshInterval)
+  }, [selectedWatchlist]) // Only depend on selectedWatchlist
 
   // Search for stocks when query changes
   useEffect(() => {
@@ -123,38 +104,28 @@ export default function WatchlistPage() {
 
   const loadWatchlists = async () => {
     try {
-      console.log('Loading watchlists...')
       setIsLoading(true)
       setError(null)
 
       // Use no-database API
-      console.log('Fetching from /api/no-db-watchlist')
       const response = await fetch('/api/no-db-watchlist')
-      console.log('Response status:', response.status)
-      
       const data = await response.json()
-      console.log('Response data:', data)
 
       if (!data.success) {
         throw new Error(data.error || 'Failed to load watchlists')
       }
 
-      console.log('Setting watchlists:', data.watchlists)
       setWatchlists(data.watchlists || [])
       
       // Select default watchlist
       if (data.watchlists && data.watchlists.length > 0) {
         const defaultWatchlist = data.watchlists.find((w: Watchlist) => w.isDefault) || data.watchlists[0]
-        console.log('Selected watchlist:', defaultWatchlist)
         setSelectedWatchlist(defaultWatchlist)
-      } else {
-        console.log('No watchlists found in response')
       }
     } catch (err: any) {
       console.error('Error loading watchlists:', err)
       setError(err.message || 'Failed to load watchlists')
     } finally {
-      console.log('Setting loading to false')
       setIsLoading(false)
     }
   }
