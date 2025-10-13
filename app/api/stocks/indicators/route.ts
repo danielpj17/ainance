@@ -149,7 +149,17 @@ function calculateStochastic(prices: number[], period = 14): number {
  * Fetch historical bars from Alpaca
  */
 async function fetchAlpacaBars(symbol: string, limit = 100): Promise<number[]> {
-  const url = `${ALPACA_BASE_URL}/v2/stocks/${symbol}/bars?timeframe=1Day&limit=${limit}&feed=iex`;
+  // Get date range (last 6 months to ensure we have enough data)
+  const end = new Date();
+  const start = new Date();
+  start.setMonth(start.getMonth() - 6);
+  
+  const startStr = start.toISOString().split('T')[0];
+  const endStr = end.toISOString().split('T')[0];
+  
+  const url = `${ALPACA_BASE_URL}/v2/stocks/${symbol}/bars?timeframe=1Day&start=${startStr}&end=${endStr}&limit=${limit}&feed=iex`;
+  
+  console.log(`Fetching bars for ${symbol}:`, url);
   
   const response = await fetch(url, {
     headers: {
@@ -167,7 +177,8 @@ async function fetchAlpacaBars(symbol: string, limit = 100): Promise<number[]> {
   const data = await response.json();
   
   if (!data.bars || data.bars.length === 0) {
-    throw new Error(`No data for ${symbol}`);
+    console.error(`No historical data available for ${symbol}. API response:`, data);
+    throw new Error(`No historical data available for ${symbol}. The stock may be delisted or data feed is unavailable.`);
   }
 
   return data.bars.map((bar: any) => bar.c); // Close prices
