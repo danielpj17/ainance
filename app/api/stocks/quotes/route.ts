@@ -107,6 +107,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               timestamp: latestBar.timestamp || new Date().toISOString()
             };
             console.log(`Got bar data for ${symbol}:`, quoteData);
+            console.log(`Raw latestBar for ${symbol}:`, latestBar);
           } else {
             console.log(`No bar data found for ${symbol}`);
             quoteData = {
