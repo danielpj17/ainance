@@ -112,13 +112,18 @@ export default function PaperTradingPage() {
       const response = await fetch('/api/account')
       const result = await response.json()
       
+      console.log('Account API response:', result)
+      
       if (result.success && result.data) {
+        console.log('Account data:', result.data)
         setAccount(result.data)
       } else {
         console.error('Failed to load account data:', result.error)
+        setMessage({ type: 'error', text: `Account error: ${result.error || 'Unable to fetch account data'}` })
       }
     } catch (error) {
       console.error('Error loading account data:', error)
+      setMessage({ type: 'error', text: 'Failed to connect to account API' })
     }
   }
 
@@ -194,8 +199,8 @@ export default function PaperTradingPage() {
   const calculateProfitLoss = () => {
     if (!account) return { amount: 0, percentage: 0 }
     
-    const equity = parseFloat(account.equity)
-    const lastEquity = parseFloat(account.last_equity)
+    const equity = parseFloat(account.equity || '0')
+    const lastEquity = parseFloat(account.last_equity || account.equity || '0')
     const amount = equity - lastEquity
     const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
     
@@ -203,6 +208,11 @@ export default function PaperTradingPage() {
   }
 
   const profitLoss = calculateProfitLoss()
+
+  const getAccountValue = (field: keyof AlpacaAccount, defaultValue: string = '0') => {
+    if (!account) return defaultValue
+    return account[field] || defaultValue
+  }
 
   if (loading) {
     return (
@@ -241,6 +251,14 @@ export default function PaperTradingPage() {
         <Alert className={`mb-6 ${message.type === 'error' ? 'border-red-500 bg-red-950' : 'border-blue-500 bg-blue-950'}`}>
           <AlertDescription className={message.type === 'error' ? 'text-red-200' : 'text-blue-200'}>
             {message.text}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!account && !loading && (
+        <Alert className="mb-6 border-yellow-500 bg-yellow-950">
+          <AlertDescription className="text-yellow-200">
+            <strong>Note:</strong> Unable to load account data. Please ensure your Alpaca API keys are configured in Settings.
           </AlertDescription>
         </Alert>
       )}

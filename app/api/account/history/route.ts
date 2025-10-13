@@ -1,10 +1,11 @@
+export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
 import { createAlpacaClient } from '@/lib/alpaca-client'
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createServerClient()
+    const supabase = await createServerClient(req, {})
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
