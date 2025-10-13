@@ -87,7 +87,8 @@ export default function WatchlistPage() {
       setIsLoading(true)
       setError(null)
 
-      const response = await fetch('/api/watchlists')
+      // Try simple API first
+      const response = await fetch('/api/simple-watchlist')
       const data = await response.json()
 
       if (!data.success) {
@@ -96,10 +97,8 @@ export default function WatchlistPage() {
 
       setWatchlists(data.watchlists || [])
       
-      // Select default watchlist or create one if none exist
-      if (data.watchlists.length === 0) {
-        await createDefaultWatchlist()
-      } else {
+      // Select default watchlist
+      if (data.watchlists.length > 0) {
         const defaultWatchlist = data.watchlists.find((w: Watchlist) => w.isDefault) || data.watchlists[0]
         setSelectedWatchlist(defaultWatchlist)
       }
@@ -111,30 +110,10 @@ export default function WatchlistPage() {
     }
   }
 
+  // This function is no longer needed since simple API handles creation
   const createDefaultWatchlist = async () => {
-    try {
-      const response = await fetch('/api/watchlists', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'My Watchlist',
-          description: 'Default watchlist',
-          isDefault: true,
-          symbols: ['AAPL', 'MSFT', 'GOOGL'] // Add some default stocks
-        })
-      })
-
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to create watchlist')
-      }
-
-      await loadWatchlists()
-    } catch (err: any) {
-      console.error('Error creating default watchlist:', err)
-      setError(err.message || 'Failed to create default watchlist')
-    }
+    // Simple API now handles this automatically
+    await loadWatchlists()
   }
 
   const loadQuotes = async (symbols: string[]) => {
@@ -176,19 +155,21 @@ export default function WatchlistPage() {
   }
 
   const addToWatchlist = async (symbol: string) => {
-    if (!selectedWatchlist) return
+    if (!selectedWatchlist) {
+      setError('No watchlist selected')
+      return
+    }
 
     try {
       setError(null)
       setSuccessMessage(null)
 
-      const response = await fetch('/api/watchlists/symbols', {
+      const response = await fetch('/api/simple-watchlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           watchlistId: selectedWatchlist.id,
-          symbol: symbol.toUpperCase(),
-          sortOrder: selectedWatchlist.symbols.length
+          symbol: symbol.toUpperCase()
         })
       })
 
