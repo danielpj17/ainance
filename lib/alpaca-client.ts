@@ -306,13 +306,15 @@ class AlpacaWrapper {
         const bars = marketData[symbol]
         if (bars && bars.length > 0) {
           const latestBar = bars[bars.length - 1]
+          console.log(`Raw bar data for ${symbol}:`, latestBar);
+          
           results.push({
             symbol,
-            open: latestBar.Open || latestBar.o || latestBar.open,
-            high: latestBar.High || latestBar.h || latestBar.high,
-            low: latestBar.Low || latestBar.l || latestBar.low,
-            close: latestBar.Close || latestBar.c || latestBar.close,
-            volume: latestBar.Volume || latestBar.v || latestBar.volume,
+            open: latestBar.Open || latestBar.o || latestBar.open || 0,
+            high: latestBar.High || latestBar.h || latestBar.high || 0,
+            low: latestBar.Low || latestBar.l || latestBar.low || 0,
+            close: latestBar.Close || latestBar.c || latestBar.close || 0,
+            volume: latestBar.Volume || latestBar.v || latestBar.volume || 0,
             timestamp: new Date(latestBar.Timestamp || latestBar.t || latestBar.timestamp).toISOString(),
             vwap: latestBar.VWAP || latestBar.vw || latestBar.vwap
           })

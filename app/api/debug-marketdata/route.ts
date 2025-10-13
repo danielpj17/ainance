@@ -29,6 +29,28 @@ export async function GET(req: NextRequest) {
     // Get market data for AAPL
     const marketData = await alpaca.getMarketData(['AAPL'], '1Day');
     
+    // Also try to get raw data directly from Alpaca client
+    let rawData = null;
+    try {
+      // Access the raw client to see what it returns
+      const rawClient = (alpaca as any).client;
+      if (rawClient && rawClient.getBarsV2) {
+        const iterator = rawClient.getBarsV2('AAPL', {
+          timeframe: '1Day',
+          limit: 1,
+          start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        });
+        
+        const bars: any[] = [];
+        for await (const bar of iterator) {
+          bars.push(bar);
+        }
+        rawData = bars;
+      }
+    } catch (rawError) {
+      console.log('Could not get raw data:', rawError);
+    }
+    
     return NextResponse.json({
       success: true,
       message: 'Market data debug',
@@ -36,6 +58,8 @@ export async function GET(req: NextRequest) {
       marketDataLength: marketData?.length || 0,
       firstItem: marketData?.[0] || null,
       firstItemKeys: marketData?.[0] ? Object.keys(marketData[0]) : [],
+      rawData: rawData,
+      rawDataKeys: rawData?.[0] ? Object.keys(rawData[0]) : [],
       timestamp: new Date().toISOString()
     });
     
