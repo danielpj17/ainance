@@ -5,8 +5,8 @@
 import { NextResponse } from 'next/server';
 
 export async function GET() {
-  const ALPACA_KEY = process.env.ALPACA_API_KEY;
-  const ALPACA_SECRET = process.env.ALPACA_SECRET_KEY;
+  const ALPACA_KEY = process.env.ALPACA_PAPER_KEY;
+  const ALPACA_SECRET = process.env.ALPACA_PAPER_SECRET;
   
   // Test the API connection
   try {
