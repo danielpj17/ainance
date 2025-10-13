@@ -56,11 +56,22 @@ export default function WatchlistPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [isMarketOpen, setIsMarketOpen] = useState<boolean | null>(null)
 
   // Load watchlists on mount
   useEffect(() => {
     loadWatchlists()
-  }, [])
+    
+    // Auto-refresh quotes every 30 seconds when market is open
+    const refreshInterval = setInterval(() => {
+      if (selectedWatchlist && selectedWatchlist.symbols.length > 0) {
+        const symbols = selectedWatchlist.symbols.map(s => s.symbol)
+        loadQuotes(symbols)
+      }
+    }, 30000) // 30 seconds
+    
+    return () => clearInterval(refreshInterval)
+  }, [selectedWatchlist])
 
   // Load quotes when watchlist changes
   useEffect(() => {
@@ -137,6 +148,11 @@ export default function WatchlistPage() {
               change: quote.change || 0,
               changePercent: quote.changePercent || 0,
               timestamp: quote.timestamp || new Date().toISOString()
+            }
+            
+            // Set market status from first quote
+            if (isMarketOpen === null && quote.isMarketOpen !== undefined) {
+              setIsMarketOpen(quote.isMarketOpen)
             }
           }
         })
@@ -357,12 +373,25 @@ export default function WatchlistPage() {
       {/* Watchlist Table */}
       <Card className="bg-[#1a1d2e] border-gray-800">
         <CardHeader>
-          <CardTitle className="text-white">
-            {selectedWatchlist?.name || 'Watchlist'}
-          </CardTitle>
-          <CardDescription className="text-gray-400">
-            {selectedWatchlist?.symbols.length || 0} stocks in your watchlist
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-white">
+                {selectedWatchlist?.name || 'Watchlist'}
+              </CardTitle>
+              <CardDescription className="text-gray-400">
+                {selectedWatchlist?.symbols.length || 0} stocks in your watchlist
+              </CardDescription>
+            </div>
+            {isMarketOpen !== null && (
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                isMarketOpen 
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
+              }`}>
+                {isMarketOpen ? 'Market Open' : 'Market Closed'}
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {selectedWatchlist && selectedWatchlist.symbols.length > 0 ? (

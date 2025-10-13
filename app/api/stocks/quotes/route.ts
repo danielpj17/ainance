@@ -75,21 +75,92 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     
     await alpaca.initialize();
     
-    // Get market data for all symbols
-    const marketData = await alpaca.getMarketData(symbols, '1Min');
+    // Check if market is open
+    const isMarketOpen = await alpaca.isMarketOpen();
+    console.log('Market is open:', isMarketOpen);
     
-    // Format response
-    const quotes = marketData.map(data => ({
-      symbol: data.symbol,
-      price: data.close,
-      open: data.open,
-      high: data.high,
-      low: data.low,
-      volume: data.volume,
-      change: data.close - data.open,
-      changePercent: ((data.close - data.open) / data.open) * 100,
-      timestamp: data.timestamp
-    }));
+    // Get latest quotes for all symbols
+    const quotes = [];
+    
+    for (const symbol of symbols) {
+      try {
+        console.log(`Fetching quote for ${symbol}...`);
+        
+        // Try to get latest quote first (real-time)
+        let quoteData;
+        try {
+          const latestQuote = await alpaca.getLatestQuote(symbol);
+          quoteData = {
+            symbol,
+            price: (latestQuote.bid + latestQuote.ask) / 2, // Mid price
+            bid: latestQuote.bid,
+            ask: latestQuote.ask,
+            bidSize: latestQuote.bidSize,
+            askSize: latestQuote.askSize,
+            timestamp: new Date().toISOString()
+          };
+          console.log(`Got real-time quote for ${symbol}:`, quoteData.price);
+        } catch (quoteError) {
+          console.log(`Real-time quote failed for ${symbol}, trying bars...`);
+          
+          // Fallback to latest bar data
+          const marketData = await alpaca.getMarketData([symbol], '1Day');
+          if (marketData && marketData.length > 0) {
+            const latestBar = marketData[0];
+            quoteData = {
+              symbol,
+              price: latestBar.close,
+              open: latestBar.open,
+              high: latestBar.high,
+              low: latestBar.low,
+              volume: latestBar.volume,
+              timestamp: latestBar.timestamp
+            };
+            console.log(`Got bar data for ${symbol}:`, quoteData.price);
+          }
+        }
+        
+        if (quoteData) {
+          // Calculate change from open if we have open price
+          let change = 0;
+          let changePercent = 0;
+          
+          if (quoteData.open && quoteData.price) {
+            change = quoteData.price - quoteData.open;
+            changePercent = (change / quoteData.open) * 100;
+          }
+          
+          quotes.push({
+            symbol: quoteData.symbol,
+            price: quoteData.price || 0,
+            open: quoteData.open || quoteData.price || 0,
+            high: quoteData.high || quoteData.price || 0,
+            low: quoteData.low || quoteData.price || 0,
+            volume: quoteData.volume || 0,
+            change: change,
+            changePercent: changePercent,
+            timestamp: quoteData.timestamp || new Date().toISOString(),
+            isMarketOpen: isMarketOpen
+          });
+        }
+      } catch (symbolError) {
+        console.error(`Failed to get data for ${symbol}:`, symbolError);
+        // Add placeholder data so the symbol still shows
+        quotes.push({
+          symbol,
+          price: 0,
+          open: 0,
+          high: 0,
+          low: 0,
+          volume: 0,
+          change: 0,
+          changePercent: 0,
+          timestamp: new Date().toISOString(),
+          isMarketOpen: isMarketOpen,
+          error: symbolError.message
+        });
+      }
+    }
     
     return NextResponse.json({
       success: true,
