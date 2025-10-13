@@ -20,6 +20,8 @@ interface StockQuote {
   change: number
   changePercent: number
   timestamp: string
+  isMarketOpen?: boolean
+  error?: string
 }
 
 interface WatchlistSymbol {
