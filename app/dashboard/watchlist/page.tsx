@@ -155,9 +155,16 @@ export default function WatchlistPage() {
   }
 
   const addToWatchlist = async (symbol: string) => {
+    // If no watchlist selected, try to reload watchlists first
     if (!selectedWatchlist) {
-      setError('No watchlist selected')
-      return
+      console.log('No watchlist selected, attempting to reload...')
+      await loadWatchlists()
+      
+      // Check again after reload
+      if (!selectedWatchlist) {
+        setError('Unable to create or load watchlist. Please refresh the page.')
+        return
+      }
     }
 
     try {
