@@ -97,7 +97,7 @@ STARTUP_TIME = datetime.utcnow()
 
 
 def load_model():
-    """Load the ML model on startup or create mock model"""
+    """Load the ML model on startup - NO MOCK MODEL FALLBACK"""
     global MODEL, MODEL_INFO
     
     try:
@@ -105,68 +105,29 @@ def load_model():
         
         logger.info(f"Loading model from {model_path}...")
         
-        if os.path.exists(model_path):
-            # Load actual model
-            model_data = joblib.load(model_path)
-            MODEL = model_data['model']
-            
-            MODEL_INFO = {
-                'version': '2.0',
-                'trained_at': model_data.get('trained_at', 'unknown'),
-                'feature_columns': model_data.get('feature_columns', []),
-                'model_type': 'RandomForestClassifier'
-            }
-            
-            logger.info(f"✅ Model loaded successfully: {MODEL_INFO}")
-            return True
-        else:
-            # Create mock model for deployment
-            logger.warning(f"Model file not found at {model_path}, using mock model")
-            
-            class MockModel:
-                def __init__(self):
-                    self.classes_ = np.array([-1, 0, 1])  # sell, hold, buy
-                
-                def predict(self, X):
-                    # Simple mock predictions based on RSI
-                    predictions = []
-                    for _, row in X.iterrows():
-                        if row.get('rsi', 50) > 70:
-                            predictions.append(1)  # buy
-                        elif row.get('rsi', 50) < 30:
-                            predictions.append(-1)  # sell
-                        else:
-                            predictions.append(0)  # hold
-                    return np.array(predictions)
-                
-                def predict_proba(self, X):
-                    # Mock probabilities
-                    probs = []
-                    for _, row in X.iterrows():
-                        rsi = row.get('rsi', 50)
-                        if rsi > 70:
-                            probs.append([0.1, 0.1, 0.8])  # [sell, hold, buy]
-                        elif rsi < 30:
-                            probs.append([0.8, 0.1, 0.1])  # [sell, hold, buy]
-                        else:
-                            probs.append([0.2, 0.6, 0.2])  # [sell, hold, buy]
-                    return np.array(probs)
-            
-            MODEL = MockModel()
-            MODEL_INFO = {
-                'version': 'mock-1.0',
-                'trained_at': 'deployment-time',
-                'feature_columns': ['rsi', 'macd', 'macd_histogram', 'bb_width', 'bb_position', 
-                                   'ema_trend', 'volume_ratio', 'stochastic', 'price_change_1d',
-                                   'price_change_5d', 'price_change_10d', 'volatility_20', 'news_sentiment'],
-                'model_type': 'MockModel'
-            }
-            
-            logger.info(f"✅ Mock model created: {MODEL_INFO}")
-            return True
+        if not os.path.exists(model_path):
+            logger.error(f"❌ Model file not found at {model_path}")
+            logger.error("❌ This service requires a real trained model - no mock model fallback")
+            return False
+        
+        # Load actual model
+        model_data = joblib.load(model_path)
+        MODEL = model_data['model']
+        
+        MODEL_INFO = {
+            'version': '2.0',
+            'trained_at': model_data.get('trained_at', 'unknown'),
+            'feature_columns': model_data.get('feature_columns', []),
+            'model_type': 'RandomForestClassifier'
+        }
+        
+        logger.info(f"✅ Real model loaded successfully: {MODEL_INFO}")
+        logger.info(f"✅ Model has {len(MODEL_INFO['feature_columns'])} features")
+        return True
         
     except Exception as e:
         logger.error(f"❌ Error loading model: {e}")
+        logger.error("❌ This service requires a real trained model - no mock model fallback")
         return False
 
 
@@ -175,9 +136,10 @@ async def startup_event():
     """Load model on startup"""
     logger.info("🚀 Starting ML Inference Service...")
     if load_model():
-        logger.info("✅ Service ready!")
+        logger.info("✅ Service ready with REAL model!")
     else:
-        logger.warning("⚠️  Service started but model not loaded")
+        logger.error("❌ Service failed to start - REAL model required!")
+        logger.error("❌ This service will not work without a trained model file")
 
 
 @app.get("/", response_model=Dict)
@@ -201,7 +163,7 @@ async def health_check():
     uptime = (datetime.utcnow() - STARTUP_TIME).total_seconds()
     
     return HealthResponse(
-        status="healthy" if MODEL is not None else "degraded",
+        status="healthy" if MODEL is not None else "unhealthy",
         model_loaded=MODEL is not None,
         model_version=MODEL_INFO.get('version'),
         uptime_seconds=uptime
