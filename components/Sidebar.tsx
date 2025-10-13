@@ -2,15 +2,13 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Home, BarChart3, Activity, TrendingUp, Settings, Clock, Package, Brain } from 'lucide-react'
+import { Home, Activity, TrendingUp, Settings, Brain, ListTree } from 'lucide-react'
 
 const navItems = [
   { icon: Home, href: '/dashboard', label: 'Dashboard' },
-  { icon: BarChart3, href: '/dashboard/trade', label: 'Trade Terminal' },
   { icon: Activity, href: '/dashboard/paper', label: 'Paper Trading' },
   { icon: TrendingUp, href: '/dashboard/live', label: 'Live Trading' },
-  { icon: Package, href: '/dashboard/backtest', label: 'Backtest' },
-  { icon: Clock, href: '/dashboard/history', label: 'History' },
+  { icon: ListTree, href: '/dashboard/watchlist', label: 'Watchlist' },
   { icon: Brain, href: '/test-ml', label: 'ML Testing' },
   { icon: Settings, href: '/settings', label: 'Settings' },
 ]

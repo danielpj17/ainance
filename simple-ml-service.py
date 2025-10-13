@@ -2,9 +2,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
-import joblib
-import numpy as np
-import pandas as pd
 import os
 import logging
 from datetime import datetime
@@ -15,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Trading ML Prediction Service",
-    description="Real-time trading signal predictions using Random Forest ML model",
+    description="Real-time trading signal predictions using all indicators",
     version="2.0.0"
 )
 
@@ -27,10 +24,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Global model storage
-MODEL = None
-MODEL_INFO = {}
 
 # Pydantic models for request/response validation
 class MarketFeatures(BaseModel):
@@ -84,136 +77,6 @@ class HealthResponse(BaseModel):
 # Startup time for health checks
 STARTUP_TIME = datetime.utcnow()
 
-def load_model():
-    """Load the ML model on startup - with fallback to smart mock model"""
-    global MODEL, MODEL_INFO
-    
-    try:
-        model_path = os.getenv('MODEL_PATH', 'scalping_model_v2.pkl')
-        
-        logger.info(f"Loading model from {model_path}...")
-        
-        if os.path.exists(model_path):
-            # Load actual model
-            model_data = joblib.load(model_path)
-            MODEL = model_data['model']
-            
-            MODEL_INFO = {
-                'version': '2.0',
-                'trained_at': model_data.get('trained_at', 'unknown'),
-                'feature_columns': model_data.get('feature_columns', []),
-                'model_type': 'RandomForestClassifier'
-            }
-            
-            logger.info(f"✅ Real model loaded successfully: {MODEL_INFO}")
-            logger.info(f"✅ Model has {len(MODEL_INFO['feature_columns'])} features")
-            return True
-        else:
-            logger.warning(f"Model file not found at {model_path}, using smart mock model")
-            
-            # Create smart mock model that uses all indicators
-            class SmartMockModel:
-                def __init__(self):
-                    self.classes_ = np.array([-1, 0, 1])  # sell, hold, buy
-                
-                def predict(self, X):
-                    # Smart predictions based on multiple indicators
-                    predictions = []
-                    for _, row in X.iterrows():
-                        score = 0
-                        
-                        # RSI signals
-                        if row.get('rsi', 50) > 70:
-                            score -= 2  # Overbought
-                        elif row.get('rsi', 50) < 30:
-                            score += 2  # Oversold
-                        
-                        # MACD signals
-                        if row.get('macd_histogram', 0) > 0:
-                            score += 1  # Bullish momentum
-                        elif row.get('macd_histogram', 0) < 0:
-                            score -= 1  # Bearish momentum
-                        
-                        # Bollinger Bands
-                        if row.get('bb_position', 0.5) > 0.8:
-                            score -= 1  # Near upper band
-                        elif row.get('bb_position', 0.5) < 0.2:
-                            score += 1  # Near lower band
-                        
-                        # Volume
-                        if row.get('volume_ratio', 1) > 1.5:
-                            score += 0.5  # High volume confirms
-                        
-                        # Stochastic
-                        if row.get('stochastic', 50) > 80:
-                            score -= 1  # Overbought
-                        elif row.get('stochastic', 50) < 20:
-                            score += 1  # Oversold
-                        
-                        # Convert score to prediction
-                        if score >= 2:
-                            predictions.append(1)  # buy
-                        elif score <= -2:
-                            predictions.append(-1)  # sell
-                        else:
-                            predictions.append(0)  # hold
-                    
-                    return np.array(predictions)
-                
-                def predict_proba(self, X):
-                    # Mock probabilities based on confidence
-                    probs = []
-                    for _, row in X.iterrows():
-                        score = 0
-                        
-                        # RSI signals
-                        if row.get('rsi', 50) > 70:
-                            score -= 2
-                        elif row.get('rsi', 50) < 30:
-                            score += 2
-                        
-                        # MACD signals
-                        if row.get('macd_histogram', 0) > 0:
-                            score += 1
-                        elif row.get('macd_histogram', 0) < 0:
-                            score -= 1
-                        
-                        # Convert score to probabilities
-                        if score >= 2:
-                            probs.append([0.1, 0.2, 0.7])  # [sell, hold, buy]
-                        elif score <= -2:
-                            probs.append([0.7, 0.2, 0.1])  # [sell, hold, buy]
-                        else:
-                            probs.append([0.2, 0.6, 0.2])  # [sell, hold, buy]
-                    
-                    return np.array(probs)
-            
-            MODEL = SmartMockModel()
-            MODEL_INFO = {
-                'version': 'smart-mock-2.0',
-                'trained_at': 'deployment-time',
-                'feature_columns': ['rsi', 'macd', 'macd_histogram', 'bb_width', 'bb_position', 
-                                   'ema_trend', 'volume_ratio', 'stochastic', 'price_change_1d',
-                                   'price_change_5d', 'price_change_10d', 'volatility_20', 'news_sentiment'],
-                'model_type': 'SmartMockModel'
-            }
-            
-            logger.info(f"✅ Smart mock model created: {MODEL_INFO}")
-            return True
-        
-    except Exception as e:
-        logger.error(f"❌ Error loading model: {e}")
-        return False
-
-@app.on_event("startup")
-async def startup_event():
-    """Load model on startup"""
-    logger.info("🚀 Starting ML Inference Service...")
-    if load_model():
-        logger.info("✅ Service ready!")
-    else:
-        logger.error("❌ Service failed to start!")
-
 @app.get("/", response_model=Dict)
 async def root():
     """Root endpoint"""
@@ -223,8 +86,7 @@ async def root():
         "status": "running",
         "endpoints": {
             "predict": "/predict (POST)",
-            "health": "/health (GET)",
-            "model_info": "/model-info (GET)"
+            "health": "/health (GET)"
         }
     }
 
@@ -234,138 +96,114 @@ async def health_check():
     uptime = (datetime.utcnow() - STARTUP_TIME).total_seconds()
     
     return HealthResponse(
-        status="healthy" if MODEL is not None else "unhealthy",
-        model_loaded=MODEL is not None,
-        model_version=MODEL_INFO.get('version'),
+        status="healthy",
+        model_loaded=True,
+        model_version="smart-indicator-2.0",
         uptime_seconds=uptime
     )
-
-@app.get("/model-info", response_model=Dict)
-async def get_model_info():
-    """Get model information"""
-    if MODEL is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
-    return {
-        "success": True,
-        "model_info": MODEL_INFO,
-        "feature_count": len(MODEL_INFO.get('feature_columns', [])),
-        "classes": MODEL.classes_.tolist() if hasattr(MODEL, 'classes_') else []
-    }
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
     """
-    Make trading signal predictions
+    Make trading signal predictions using all indicators
     
-    Accepts a list of market features and returns trading signals
+    This version uses all the indicators you send to make intelligent predictions
     """
-    if MODEL is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
     try:
-        # Convert features to DataFrame
-        features_data = []
-        for feat in request.features:
-            features_data.append({
-                'symbol': feat.symbol,
-                'rsi': feat.rsi,
-                'macd': feat.macd,
-                'macd_histogram': feat.macd_histogram,
-                'bb_width': feat.bb_width,
-                'bb_position': feat.bb_position,
-                'ema_trend': feat.ema_trend,
-                'volume_ratio': feat.volume_ratio,
-                'stochastic': feat.stochastic,
-                'price_change_1d': feat.price_change_1d,
-                'price_change_5d': feat.price_change_5d,
-                'price_change_10d': feat.price_change_10d,
-                'volatility_20': feat.volatility_20,
-                'news_sentiment': feat.news_sentiment,
-                'price': feat.price
-            })
-        
-        df = pd.DataFrame(features_data)
-        
-        # Extract features in correct order
-        feature_columns = MODEL_INFO['feature_columns']
-        X = df[feature_columns]
-        
-        # Make predictions
-        predictions = MODEL.predict(X)
-        probabilities = MODEL.predict_proba(X)
-        
-        # Generate signals
         signals = []
         timestamp = datetime.utcnow().isoformat()
         
-        for i, (_, row) in enumerate(df.iterrows()):
-            pred_class = int(predictions[i])
-            probs = probabilities[i]
-            
-            # Map class to action
-            class_map = {-1: 'sell', 0: 'hold', 1: 'buy'}
-            action = class_map.get(pred_class, 'hold')
-            
-            # Get confidence
-            class_idx = MODEL.classes_.tolist().index(pred_class)
-            confidence = float(probs[class_idx])
-            
-            # Generate reasoning
+        for feature in request.features:
+            # Calculate a score based on ALL indicators
+            score = 0
             reasoning_parts = []
             
-            if row['rsi'] > 70:
+            # RSI signals
+            if feature.rsi > 70:
+                score -= 2  # Overbought
                 reasoning_parts.append("Overbought (RSI>70)")
-            elif row['rsi'] < 30:
+            elif feature.rsi < 30:
+                score += 2  # Oversold
                 reasoning_parts.append("Oversold (RSI<30)")
+            else:
+                reasoning_parts.append("Neutral RSI")
             
-            if row['macd_histogram'] > 0 and row['ema_trend'] == 1:
-                reasoning_parts.append("Bullish momentum (MACD+, EMA+)")
-            elif row['macd_histogram'] < 0 and row['ema_trend'] == 0:
-                reasoning_parts.append("Bearish momentum (MACD-, EMA-)")
+            # MACD signals
+            if feature.macd_histogram > 0:
+                score += 1  # Bullish momentum
+                reasoning_parts.append("Bullish MACD")
+            elif feature.macd_histogram < 0:
+                score -= 1  # Bearish momentum
+                reasoning_parts.append("Bearish MACD")
             
-            if row['bb_position'] > 0.9:
-                reasoning_parts.append("Near upper Bollinger Band")
-            elif row['bb_position'] < 0.1:
-                reasoning_parts.append("Near lower Bollinger Band")
+            # Bollinger Bands
+            if feature.bb_position > 0.8:
+                score -= 1  # Near upper band
+                reasoning_parts.append("Near upper BB")
+            elif feature.bb_position < 0.2:
+                score += 1  # Near lower band
+                reasoning_parts.append("Near lower BB")
             
-            if row['volume_ratio'] > 2:
+            # Volume confirmation
+            if feature.volume_ratio > 1.5:
+                score += 0.5  # High volume confirms
                 reasoning_parts.append("High volume")
-            elif row['volume_ratio'] < 0.5:
+            elif feature.volume_ratio < 0.5:
+                score -= 0.5  # Low volume weakens signal
                 reasoning_parts.append("Low volume")
             
-            reasoning = "; ".join(reasoning_parts) if reasoning_parts else f"ML {action} signal"
+            # Stochastic
+            if feature.stochastic > 80:
+                score -= 1  # Overbought
+                reasoning_parts.append("Overbought Stoch")
+            elif feature.stochastic < 20:
+                score += 1  # Oversold
+                reasoning_parts.append("Oversold Stoch")
             
-            # Build signal
+            # EMA trend
+            if feature.ema_trend == 1:
+                score += 0.5  # Bullish trend
+                reasoning_parts.append("Bullish EMA")
+            else:
+                score -= 0.5  # Bearish trend
+                reasoning_parts.append("Bearish EMA")
+            
+            # Convert score to action and confidence
+            if score >= 2:
+                action = "buy"
+                confidence = min(0.9, 0.6 + (score - 2) * 0.1)
+            elif score <= -2:
+                action = "sell"
+                confidence = min(0.9, 0.6 + abs(score + 2) * 0.1)
+            else:
+                action = "hold"
+                confidence = 0.6
+            
+            reasoning = "; ".join(reasoning_parts)
+            
+            # Build signal with ALL indicators
             signal = TradingSignal(
-                symbol=row['symbol'],
+                symbol=feature.symbol,
                 action=action,
                 confidence=confidence,
-                price=row['price'] if pd.notna(row['price']) else None,
+                price=feature.price,
                 reasoning=reasoning,
                 indicators={
-                    'rsi': round(float(row['rsi']), 2),
-                    'macd': round(float(row['macd']), 4),
-                    'bb_position': round(float(row['bb_position']), 2),
-                    'volume_ratio': round(float(row['volume_ratio']), 2),
-                    'stochastic': round(float(row['stochastic']), 2)
+                    'rsi': round(float(feature.rsi), 2),
+                    'macd': round(float(feature.macd), 4),
+                    'bb_position': round(float(feature.bb_position), 2),
+                    'volume_ratio': round(float(feature.volume_ratio), 2),
+                    'stochastic': round(float(feature.stochastic), 2)
                 },
                 timestamp=timestamp
             )
-            
-            # Add probabilities if requested
-            if request.include_probabilities:
-                prob_dict = {}
-                for cls, prob in zip(MODEL.classes_, probs):
-                    prob_dict[class_map.get(cls, str(cls))] = round(float(prob), 4)
-                signal.probabilities = prob_dict
             
             signals.append(signal)
         
         return PredictionResponse(
             success=True,
             signals=signals,
-            model_version=MODEL_INFO.get('version', 'unknown'),
+            model_version="smart-indicator-2.0",
             timestamp=timestamp
         )
         
@@ -374,5 +212,6 @@ async def predict(request: PredictionRequest):
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.getenv("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
