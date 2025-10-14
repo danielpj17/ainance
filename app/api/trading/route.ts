@@ -455,56 +455,78 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    // STEP 6: Get ML Predictions (call ML service directly)
+    // STEP 6: Get ML Predictions (call ML service directly with retry logic)
     console.log('🧠 Calling ML prediction service directly...')
     const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '')
     
     let mlData: any
     
-    try {
-      // Strip enhanced features before sending to ML model
-      const coreFeatures = enhancedFeatures.map((f: any) => ({
-        symbol: f.symbol,
-        rsi: f.rsi,
-        macd: f.macd,
-        macd_histogram: f.macd_histogram,
-        bb_width: f.bb_width,
-        bb_position: f.bb_position,
-        ema_trend: f.ema_trend,
-        volume_ratio: f.volume_ratio,
-        stochastic: f.stochastic,
-        price_change_1d: f.price_change_1d,
-        price_change_5d: f.price_change_5d,
-        price_change_10d: f.price_change_10d,
-        volatility_20: f.volatility_20,
-        news_sentiment: f.news_sentiment,
-        price: f.price
-      }))
-      
-      const mlResponse = await fetch(`${ML_SERVICE_URL}/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          features: coreFeatures,
-          include_probabilities: true
-        }),
-        signal: AbortSignal.timeout(10000)
-      })
-      
-      if (!mlResponse.ok) {
-        throw new Error(`ML service returned ${mlResponse.status}`)
+    // Strip enhanced features before sending to ML model
+    const coreFeatures = enhancedFeatures.map((f: any) => ({
+      symbol: f.symbol,
+      rsi: f.rsi,
+      macd: f.macd,
+      macd_histogram: f.macd_histogram,
+      bb_width: f.bb_width,
+      bb_position: f.bb_position,
+      ema_trend: f.ema_trend,
+      volume_ratio: f.volume_ratio,
+      stochastic: f.stochastic,
+      price_change_1d: f.price_change_1d,
+      price_change_5d: f.price_change_5d,
+      price_change_10d: f.price_change_10d,
+      volatility_20: f.volatility_20,
+      news_sentiment: f.news_sentiment,
+      price: f.price
+    }))
+    
+    // Retry logic for ML service (handles cold starts)
+    const maxRetries = 2
+    let lastError: any
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 1) {
+          console.log(`🔄 Retry attempt ${attempt}/${maxRetries} for ML service...`)
+        }
+        
+        const mlResponse = await fetch(`${ML_SERVICE_URL}/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            features: coreFeatures,
+            include_probabilities: true
+          }),
+          signal: AbortSignal.timeout(30000) // Increased to 30 seconds for cold starts
+        })
+        
+        if (!mlResponse.ok) {
+          throw new Error(`ML service returned ${mlResponse.status}`)
+        }
+        
+        mlData = await mlResponse.json()
+        
+        if (!mlData.success || !mlData.signals) {
+          throw new Error('ML service did not return valid signals')
+        }
+        
+        console.log(`✅ ML predictions received for ${mlData.signals.length} symbols (attempt ${attempt})`)
+        break // Success, exit retry loop
+        
+      } catch (error: any) {
+        lastError = error
+        console.error(`❌ ML service attempt ${attempt} failed:`, error.message)
+        
+        if (attempt < maxRetries) {
+          console.log(`⏳ Waiting 3 seconds before retry...`)
+          await new Promise(resolve => setTimeout(resolve, 3000))
+        }
       }
-      
-      mlData = await mlResponse.json()
-      
-      if (!mlData.success || !mlData.signals) {
-        throw new Error('ML service did not return valid signals')
-      }
-      
-      console.log(`✅ ML predictions received for ${mlData.signals.length} symbols`)
-    } catch (error: any) {
-      console.error('❌ Failed to get ML predictions:', error)
-      throw new Error(`ML service unavailable: ${error.message}`)
+    }
+    
+    if (!mlData) {
+      console.error('❌ All ML service attempts failed')
+      throw new Error(`ML service unavailable after ${maxRetries} attempts: ${lastError?.message}`)
     }
 
     // STEP 7: Get Current Positions

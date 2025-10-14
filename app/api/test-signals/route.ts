@@ -142,7 +142,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           features: coreFeatures,
           include_probabilities: true
         }),
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(30000) // Increased to 30 seconds for cold starts
       });
       
       if (!mlResponse.ok) {
