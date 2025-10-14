@@ -131,61 +131,86 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Fetch current/open trades
+    // Fetch current/open trades from multiple sources
     if (view === 'current' || view === 'all' || !view) {
+      // Get from trade_logs table
       const { data: currentData, error: currentError } = await supabase.rpc('get_current_trades', {
         user_uuid: userId
       })
 
       if (!currentError && currentData) {
         currentTrades = currentData
+      }
 
-        // Get current market prices for open positions
-        try {
-          const { data: apiKeys } = await supabase.rpc('get_user_api_keys', {
-            user_uuid: userId
-          })
+      // Also get current positions directly from Alpaca
+      try {
+        const { data: apiKeys } = await supabase.rpc('get_user_api_keys', {
+          user_uuid: userId
+        })
 
-          if (apiKeys?.[0]) {
-            const keys = apiKeys[0]
-            const alpacaKeys = getAlpacaKeys(keys, 'paper', 'cash')
+        if (apiKeys?.[0]) {
+          const keys = apiKeys[0]
+          const alpacaKeys = getAlpacaKeys(keys, 'paper', 'cash')
+          
+          if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+            const alpacaClient = createAlpacaClient({
+              apiKey: alpacaKeys.apiKey,
+              secretKey: alpacaKeys.secretKey,
+              baseUrl: 'https://paper-api.alpaca.markets',
+              paper: true
+            })
+
+            await alpacaClient.initialize()
+
+            // Get all open positions from Alpaca
+            const positions = await alpacaClient.getPositions()
             
-            if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-              const alpacaClient = createAlpacaClient({
-                apiKey: alpacaKeys.apiKey,
-                secretKey: alpacaKeys.secretKey,
-                baseUrl: 'https://paper-api.alpaca.markets',
-                paper: true
-              })
-
-              await alpacaClient.initialize()
-
-              // Fetch current prices for each open position
-              for (const trade of currentTrades) {
-                try {
-                  const quote = await alpacaClient.getLatestQuote(trade.symbol)
-                  if (quote && typeof quote.ask === 'number') {
-                    trade.current_price = quote.ask
-                    trade.current_value = trade.current_price * trade.qty
-                    trade.unrealized_pl = trade.current_value - (trade.buy_price * trade.qty)
-                    trade.unrealized_pl_percent = (trade.unrealized_pl / (trade.buy_price * trade.qty)) * 100
-                  }
-                } catch (error) {
-                  console.error(`Error fetching price for ${trade.symbol}:`, error)
-                  // Keep the values from the database query
-                }
+            // Merge Alpaca positions with trade_logs data
+            const positionMap = new Map(currentTrades.map(t => [t.symbol, t]))
+            
+            for (const position of positions) {
+              const existingTrade = positionMap.get(position.symbol)
+              
+              if (existingTrade) {
+                // Update with live data from Alpaca
+                existingTrade.current_price = parseFloat(position.current_price)
+                existingTrade.current_value = parseFloat(position.market_value)
+                existingTrade.unrealized_pl = parseFloat(position.unrealized_pl)
+                existingTrade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100
+              } else {
+                // Add position from Alpaca that's not in trade_logs
+                currentTrades.push({
+                  id: BigInt(0), // Placeholder
+                  symbol: position.symbol,
+                  qty: Math.abs(parseFloat(position.qty)),
+                  buy_price: parseFloat(position.avg_entry_price),
+                  buy_timestamp: position.created_at || new Date().toISOString(),
+                  current_price: parseFloat(position.current_price),
+                  current_value: parseFloat(position.market_value),
+                  unrealized_pl: parseFloat(position.unrealized_pl),
+                  unrealized_pl_percent: parseFloat(position.unrealized_plpc) * 100,
+                  holding_duration: '0:0:0', // Will be calculated on frontend
+                  buy_decision_metrics: {
+                    confidence: 0,
+                    reasoning: 'Trade from Alpaca (not logged in system)'
+                  },
+                  strategy: 'unknown',
+                  account_type: 'paper',
+                  trade_pair_id: crypto.randomUUID()
+                })
               }
             }
           }
-        } catch (error) {
-          console.error('Error fetching current prices:', error)
-          // Continue without current prices
         }
+      } catch (error) {
+        console.error('Error fetching Alpaca positions:', error)
+        // Continue with data from database only
       }
     }
 
-    // Fetch completed trades
+    // Fetch completed trades from multiple sources
     if (view === 'completed' || view === 'all' || !view) {
+      // Get from trade_logs table
       const { data: completedData, error: completedError } = await supabase.rpc('get_completed_trades', {
         user_uuid: userId,
         limit_count: limit,
@@ -195,6 +220,90 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       if (!completedError && completedData) {
         completedTrades = completedData
       }
+
+      // Also check legacy trades table for closed positions
+      try {
+        const { data: legacyTrades, error: legacyError } = await supabase
+          .from('trades')
+          .select('*')
+          .eq('user_id', userId)
+          .order('trade_timestamp', { ascending: false })
+          .limit(50)
+
+        if (!legacyError && legacyTrades) {
+          // Group trades by symbol to find buy/sell pairs
+          const tradesBySymbol = new Map<string, any[]>()
+          
+          for (const trade of legacyTrades) {
+            if (!tradesBySymbol.has(trade.symbol)) {
+              tradesBySymbol.set(trade.symbol, [])
+            }
+            tradesBySymbol.get(trade.symbol)!.push(trade)
+          }
+
+          // Find completed buy/sell pairs
+          for (const [symbol, trades] of tradesBySymbol) {
+            const buys = trades.filter(t => t.action === 'buy').sort((a, b) => 
+              new Date(a.trade_timestamp).getTime() - new Date(b.trade_timestamp).getTime()
+            )
+            const sells = trades.filter(t => t.action === 'sell').sort((a, b) => 
+              new Date(a.trade_timestamp).getTime() - new Date(b.trade_timestamp).getTime()
+            )
+
+            const pairsCount = Math.min(buys.length, sells.length)
+            
+            for (let i = 0; i < pairsCount; i++) {
+              const buy = buys[i]
+              const sell = sells[i]
+              
+              const pl = (sell.price - buy.price) * buy.qty
+              const plPercent = ((sell.price - buy.price) / buy.price) * 100
+              const duration = new Date(sell.trade_timestamp).getTime() - new Date(buy.trade_timestamp).getTime()
+              const durationStr = `${Math.floor(duration / 3600000)}:${Math.floor((duration % 3600000) / 60000)}:${Math.floor((duration % 60000) / 1000)}`
+
+              // Check if this pair is already in completedTrades
+              const exists = completedTrades.some(ct => 
+                ct.symbol === symbol && 
+                Math.abs(new Date(ct.buy_timestamp).getTime() - new Date(buy.trade_timestamp).getTime()) < 1000
+              )
+
+              if (!exists) {
+                completedTrades.push({
+                  id: buy.id,
+                  symbol,
+                  qty: buy.qty,
+                  buy_price: buy.price,
+                  buy_timestamp: buy.trade_timestamp,
+                  sell_price: sell.price,
+                  sell_timestamp: sell.trade_timestamp,
+                  profit_loss: pl,
+                  profit_loss_percent: plPercent,
+                  holding_duration: durationStr,
+                  buy_decision_metrics: {
+                    confidence: buy.confidence || 0,
+                    reasoning: buy.reasoning || 'Legacy trade from trades table'
+                  },
+                  sell_decision_metrics: {
+                    confidence: sell.confidence || 0,
+                    reasoning: sell.reasoning || 'Legacy trade from trades table'
+                  },
+                  strategy: buy.strategy,
+                  account_type: buy.account_type,
+                  trade_pair_id: crypto.randomUUID()
+                })
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching legacy trades:', error)
+        // Continue with trade_logs data only
+      }
+
+      // Sort completed trades by sell timestamp (most recent first)
+      completedTrades.sort((a, b) => 
+        new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
+      )
     }
 
     return NextResponse.json({
