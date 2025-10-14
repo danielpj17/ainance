@@ -17,24 +17,47 @@ export default function DashboardPage() {
   const [tradeMetrics, setTradeMetrics] = useState<any>(null)
   const [winRate, setWinRate] = useState<number>(0)
   const [trendData, setTrendData] = useState<any[]>([])
+  const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'year'>('week')
   
-  // Generate last 7 days of trend data dynamically
-  const generateTrendData = () => {
+  // Generate trend data dynamically based on period
+  const generateTrendData = (period: 'week' | 'month' | 'year') => {
     const data = []
     const today = new Date()
     const baseValue = account ? parseFloat(account.portfolio_value) : 100000
     
-    for (let i = 6; i >= 0; i--) {
+    let days: number
+    let dateFormat: Intl.DateTimeFormatOptions
+    
+    switch (period) {
+      case 'week':
+        days = 7
+        dateFormat = { month: 'short', day: 'numeric' }
+        break
+      case 'month':
+        days = 30
+        dateFormat = { month: 'short', day: 'numeric' }
+        break
+      case 'year':
+        days = 365
+        dateFormat = { month: 'short' }
+        break
+    }
+    
+    // For year view, sample every 7 days to keep chart readable
+    const step = period === 'year' ? 7 : 1
+    
+    for (let i = days - 1; i >= 0; i -= step) {
       const date = new Date(today)
       date.setDate(date.getDate() - i)
       
-      // Generate realistic variation (±2% per day)
-      const dayVariation = (Math.random() - 0.5) * 0.04 // -2% to +2%
-      const portfolioValue = baseValue * (1 + dayVariation * (6 - i) / 6)
-      const benchmarkValue = baseValue * (1 + dayVariation * 0.8 * (6 - i) / 6) // Benchmark slightly lower
+      // Generate realistic variation
+      const dayVariation = (Math.random() - 0.5) * 0.04 // -2% to +2% per day
+      const cumulativeGrowth = period === 'year' ? 0.05 : period === 'month' ? 0.02 : 0.01 // Expected growth
+      const portfolioValue = baseValue * (1 + cumulativeGrowth * ((days - i) / days) + dayVariation)
+      const benchmarkValue = baseValue * (1 + cumulativeGrowth * 0.8 * ((days - i) / days) + dayVariation * 0.8)
       
       data.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        date: date.toLocaleDateString('en-US', dateFormat),
         portfolio: Math.round(portfolioValue),
         benchmark: Math.round(benchmarkValue)
       })
@@ -45,9 +68,9 @@ export default function DashboardPage() {
   
   useEffect(() => {
     if (account) {
-      setTrendData(generateTrendData())
+      setTrendData(generateTrendData(chartPeriod))
     }
-  }, [account])
+  }, [account, chartPeriod])
 
   const riskData = [
     { type: 'Git Exposure', count: 158, level: 'low' },
@@ -193,14 +216,18 @@ export default function DashboardPage() {
         {/* Trend Chart */}
         <Card className="lg:col-span-2 glass-card">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div>
                 <CardTitle className="text-white text-xl">Portfolio Trend</CardTitle>
-                <CardDescription className="text-gray-400">Performance over the last 2 weeks</CardDescription>
+                <CardDescription className="text-gray-400">
+                  {chartPeriod === 'week' && 'Performance over the last 7 days'}
+                  {chartPeriod === 'month' && 'Performance over the last 30 days'}
+                  {chartPeriod === 'year' && 'Performance over the last year'}
+                </CardDescription>
               </div>
               <div className="flex gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
                   <span className="text-gray-400">Your Portfolio</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -208,6 +235,40 @@ export default function DashboardPage() {
                   <span className="text-gray-400">Benchmark</span>
                 </div>
               </div>
+            </div>
+            
+            {/* Period Selector */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setChartPeriod('week')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === 'week'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setChartPeriod('month')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === 'month'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => setChartPeriod('year')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === 'year'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                Year
+              </button>
             </div>
           </CardHeader>
           <CardContent>
