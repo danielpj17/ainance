@@ -5,6 +5,8 @@ import { tradingModel, TradingSignal, TradingSettings } from '@/lib/trading-mode
 import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
 import { initializeNewsAnalyzer, getNewsAnalyzer } from '@/lib/news-sentiment'
 import { TradingErrorHandler, withRetry } from '@/lib/error-handler'
+import { initializeFRED, isFREDInitialized } from '@/lib/fred-data'
+import { StockScanner, getDefaultScalpingStocks } from '@/lib/stock-scanner'
 
 export interface BotStatus {
   isRunning: boolean
@@ -157,8 +159,20 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
     if (newsApiKey) {
       try {
         initializeNewsAnalyzer(newsApiKey)
+        console.log('✅ News analyzer initialized')
       } catch (error) {
-        console.warn('Failed to initialize news analyzer:', error)
+        console.warn('⚠️  Failed to initialize news analyzer:', error)
+      }
+    }
+
+    // Initialize FRED service if API key exists
+    const fredApiKey = process.env.FRED_API_KEY;
+    if (fredApiKey && !isFREDInitialized()) {
+      try {
+        initializeFRED(fredApiKey)
+        console.log('✅ FRED service initialized')
+      } catch (error) {
+        console.warn('⚠️  Failed to initialize FRED service:', error)
       }
     }
 
@@ -272,22 +286,12 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
 // Execute the main trading loop
 async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
   try {
-    console.log(`Executing trading loop for ${config.symbols.join(', ')}`)
-    console.log('API Keys available:', {
-      hasPaperKey: !!apiKeys.alpaca_paper_key,
-      hasPaperSecret: !!apiKeys.alpaca_paper_secret,
-      hasNewsKey: !!apiKeys.news_api_key
-    })
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('🤖 STARTING ADVANCED SCALPING BOT CYCLE')
+    console.log('═══════════════════════════════════════════════════════════')
 
     // Initialize Alpaca client
-    console.log('Initializing Alpaca client...')
     const alpacaKeys = getAlpacaKeys(apiKeys, config.accountType, config.strategy)
-    console.log('Alpaca keys extracted:', {
-      hasApiKey: !!alpacaKeys.apiKey,
-      hasSecretKey: !!alpacaKeys.secretKey,
-      isPaper: alpacaKeys.paper
-    })
-    
     const alpacaClient = createAlpacaClient({
       apiKey: alpacaKeys.apiKey,
       secretKey: alpacaKeys.secretKey,
@@ -295,148 +299,165 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       paper: alpacaKeys.paper
     })
 
-    console.log('Connecting to Alpaca...')
     await alpacaClient.initialize()
-    console.log('Alpaca client initialized successfully')
+    console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
     // Check if market is open (skip if closed for live trading)
     if (!alpacaKeys.paper) {
       const marketOpen = await alpacaClient.isMarketOpen()
       if (!marketOpen) {
-        console.log('Market is closed, skipping trading loop')
+        console.log('⏸️  Market is closed, skipping trading loop')
         return
       }
     }
 
-    // Get market data for all symbols
-    console.log('Fetching market data...')
-    const marketData = await alpacaClient.getMarketData(config.symbols, '1Min')
-    console.log('Market data received:', marketData.length, 'symbols')
-    
-    if (marketData.length === 0) {
-      console.log('No market data available')
-      return
-    }
+    // STEP 1: Get FRED Economic Indicators
+    let fredIndicators: any = null
+    let marketRisk = 0.3 // Default moderate risk
+    let minConfidence = 0.55 // Base confidence threshold
 
-    // Get news sentiment for symbols (if news API is available)
-    let sentimentData: { [symbol: string]: number } = {}
     try {
-      const newsAnalyzer = getNewsAnalyzer()
-      const sentimentResults = await newsAnalyzer.getSentimentForSymbols(config.symbols, 1)
-      
-      for (const [symbol, sentiment] of Object.entries(sentimentResults)) {
-        sentimentData[symbol] = sentiment.score
+      if (isFREDInitialized()) {
+        const { getFREDService } = await import('@/lib/fred-data')
+        const fredService = getFREDService()
+        fredIndicators = await fredService.getIndicators()
+        marketRisk = fredService.calculateMarketRisk(fredIndicators)
+        
+        // Adjust confidence threshold based on market risk
+        minConfidence = 0.55 + (marketRisk * 0.15) // Higher risk = higher threshold (0.55-0.70)
+        
+        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Min Confidence: ${(minConfidence * 100).toFixed(0)}%`)
+      } else {
+        console.log('⚠️  FRED not initialized, using default risk parameters')
       }
     } catch (error) {
-      console.warn('Failed to get news sentiment:', error)
-      // Continue without sentiment data
+      console.warn('⚠️  Could not fetch FRED data:', error)
     }
 
-    // Generate trading signals using ML model
-    console.log('Generating ML-based trading signals...')
-    
-    let signals: TradingSignal[] = []
+    // STEP 2: Dynamic Stock Scanning
+    let scalpingStocks: string[] = []
     try {
-      // Step 1: Get technical indicators for all symbols
-      console.log('Fetching technical indicators from /api/stocks/indicators...')
-      const indicatorsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/stocks/indicators`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbols: config.symbols })
-      })
-
-      if (!indicatorsResponse.ok) {
-        throw new Error(`Failed to fetch indicators: ${indicatorsResponse.status}`)
-      }
-
-      const indicatorsData = await indicatorsResponse.json()
+      console.log('🔍 Scanning universe for best scalping candidates...')
+      const scanner = new StockScanner(alpacaClient)
+      scalpingStocks = await scanner.getTopScalpingStocks(20)
       
-      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
-        console.warn('No technical indicators available, falling back to simple signals')
-        throw new Error('No technical indicators available')
+      if (scalpingStocks.length === 0) {
+        console.log('⚠️  No candidates found, using default stocks')
+        scalpingStocks = getDefaultScalpingStocks()
       }
+    } catch (error) {
+      console.warn('⚠️  Stock scanning failed, using default stocks:', error)
+      scalpingStocks = getDefaultScalpingStocks()
+    }
 
-      console.log(`Technical indicators received for ${indicatorsData.indicators.length} symbols`)
+    // STEP 3: Get Technical Indicators
+    console.log('📈 Fetching technical indicators...')
+    const indicatorsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/stocks/indicators`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbols: scalpingStocks })
+    })
 
-      // Step 2: Call ML prediction service
-      console.log('Calling ML prediction service...')
-      const mlResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/ml/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          features: indicatorsData.indicators,
-          include_probabilities: true
-        })
+    if (!indicatorsResponse.ok) {
+      throw new Error(`Failed to fetch indicators: ${indicatorsResponse.status}`)
+    }
+
+    const indicatorsData = await indicatorsResponse.json()
+    
+    if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+      throw new Error('No technical indicators available')
+    }
+
+    console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols`)
+
+    // STEP 4: Get News Sentiment
+    let sentimentData: { [symbol: string]: any } = {}
+    try {
+      const newsAnalyzer = getNewsAnalyzer()
+      console.log('📰 Fetching news sentiment...')
+      sentimentData = await newsAnalyzer.getSentimentForSymbols(scalpingStocks, 1)
+      console.log(`✅ News sentiment received for ${Object.keys(sentimentData).length} symbols`)
+    } catch (error) {
+      console.warn('⚠️  News sentiment unavailable:', error)
+    }
+
+    // STEP 5: Enhance Features with News + FRED
+    console.log('🔬 Enhancing features with macro data...')
+    const enhancedFeatures = indicatorsData.indicators.map((indicator: any) => ({
+      ...indicator,
+      news_sentiment: sentimentData[indicator.symbol]?.score || 0,
+      news_confidence: sentimentData[indicator.symbol]?.confidence || 0,
+      market_risk: marketRisk,
+      vix: fredIndicators?.vix || 18,
+      yield_curve: fredIndicators?.yield_curve || 0,
+      fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
+    }))
+
+    // STEP 6: Get ML Predictions
+    console.log('🧠 Calling ML prediction service...')
+    const mlResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/ml/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        features: enhancedFeatures,
+        include_probabilities: true
       })
+    })
 
-      if (!mlResponse.ok) {
-        throw new Error(`ML service returned ${mlResponse.status}`)
-      }
+    if (!mlResponse.ok) {
+      throw new Error(`ML service returned ${mlResponse.status}`)
+    }
 
-      const mlData = await mlResponse.json()
-      
-      if (!mlData.success || !mlData.signals) {
-        throw new Error('ML service did not return valid signals')
-      }
+    const mlData = await mlResponse.json()
+    
+    if (!mlData.success || !mlData.signals) {
+      throw new Error('ML service did not return valid signals')
+    }
 
-      console.log(`ML predictions received for ${mlData.signals.length} symbols`)
+    console.log(`✅ ML predictions received for ${mlData.signals.length} symbols`)
 
-      // Step 3: Convert ML signals to trading signals
-      signals = mlData.signals
-        .filter((s: any) => s.action !== 'hold' && s.confidence >= 0.55) // Only actionable signals
-        .map((s: any) => ({
+    // STEP 7: Filter and Enhance Signals with News Sentiment
+    let signals = mlData.signals
+      .map((s: any) => {
+        const sentiment = sentimentData[s.symbol]
+        const sentimentBoost = sentiment ? sentiment.score * 0.15 : 0 // Up to 15% boost
+        const adjustedConfidence = Math.min(s.confidence + sentimentBoost, 1.0)
+        
+        return {
           symbol: s.symbol,
           action: s.action,
           confidence: s.confidence,
+          adjusted_confidence: adjustedConfidence,
           price: s.price || 0,
           timestamp: s.timestamp || new Date().toISOString(),
-          reasoning: s.reasoning || `ML ${s.action} signal`
-        }))
-
-      console.log(`Generated ${signals.length} actionable ML trading signals (filtered from ${mlData.signals.length} total)`)
-      
-      signals.forEach(signal => {
-        console.log(`✅ ML Signal: ${signal.action.toUpperCase()} ${signal.symbol} @ $${signal.price} (confidence: ${signal.confidence.toFixed(2)})`)
-        console.log(`   Reasoning: ${signal.reasoning}`)
+          reasoning: s.reasoning || `ML ${s.action} signal`,
+          news_sentiment: sentiment?.score || 0,
+          news_headlines: sentiment?.headlines || []
+        }
       })
+      .filter((s: any) => s.action !== 'hold' && s.adjusted_confidence >= minConfidence)
+      .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
 
-    } catch (error) {
-      console.error('Error generating ML signals:', error)
-      console.warn('Falling back to sentiment-based signals...')
-      
-      // Fallback to simple sentiment-based signals if ML fails
-      for (let i = 0; i < marketData.length; i++) {
-        const data = marketData[i]
-        const sentiment = sentimentData[data.symbol] || 0
-        
-        let action: 'buy' | 'sell' | 'hold' = 'hold'
-        let confidence = 0.5
-        let reasoning = 'Fallback: sentiment-based signal'
-        
-        if (sentiment > 0.2) {
-          action = 'buy'
-          confidence = 0.6 + (sentiment * 0.4)
-          reasoning = `Fallback: Positive sentiment (${sentiment.toFixed(2)})`
-        } else if (sentiment < -0.2) {
-          action = 'sell'
-          confidence = 0.6 + (Math.abs(sentiment) * 0.4)
-          reasoning = `Fallback: Negative sentiment (${sentiment.toFixed(2)})`
-        }
-        
-        if (action !== 'hold' && confidence >= 0.55) {
-          signals.push({
-            symbol: data.symbol,
-            action,
-            confidence,
-            price: data.close,
-            timestamp: new Date().toISOString(),
-            reasoning
-          })
-        }
+    console.log(`🎯 Generated ${signals.length} high-confidence signals (filtered from ${mlData.signals.length})`)
+
+    // STEP 8: Intelligent Capital Allocation
+    const account = await alpacaClient.getAccount()
+    const availableCash = parseFloat(account.buying_power)
+    
+    signals = allocateCapital(signals, availableCash, marketRisk)
+
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`💰 CAPITAL ALLOCATION COMPLETE: ${signals.length} positions`)
+    console.log('═══════════════════════════════════════════════════════════')
+
+    signals.forEach((signal: any, i: number) => {
+      console.log(`${i + 1}. ${signal.action.toUpperCase()} ${signal.symbol} @ $${signal.price.toFixed(2)}`)
+      console.log(`   Confidence: ${(signal.adjusted_confidence * 100).toFixed(1)}% | Shares: ${signal.shares} | Capital: $${signal.allocated_capital.toFixed(2)}`)
+      console.log(`   Reasoning: ${signal.reasoning}`)
+      if (signal.news_sentiment !== 0) {
+        console.log(`   News: ${signal.news_sentiment > 0 ? '📈' : '📉'} ${(signal.news_sentiment * 100).toFixed(1)}%`)
       }
-      
-      console.log(`Generated ${signals.length} fallback signals`)
-    }
+    })
 
     // Execute trades for signals with error handling
     for (const signal of signals) {
@@ -493,37 +514,81 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
   }
 }
 
+/**
+ * Intelligent capital allocation based on confidence and market risk
+ */
+function allocateCapital(signals: any[], availableCash: number, marketRisk: number): any[] {
+  console.log(`💰 Allocating capital: $${availableCash.toFixed(2)} available`)
+  
+  // In high risk markets, reduce position sizes
+  const riskAdjustment = 1 - (marketRisk * 0.5)
+  const maxPositionPct = 0.15 * riskAdjustment // Max 15% per position, adjusted for risk
+  const maxTotalExposure = 0.7 * riskAdjustment // Max 70% deployed, adjusted for risk
+  
+  console.log(`   Risk Adjustment: ${(riskAdjustment * 100).toFixed(0)}%`)
+  console.log(`   Max Per Position: ${(maxPositionPct * 100).toFixed(1)}%`)
+  console.log(`   Max Total Exposure: ${(maxTotalExposure * 100).toFixed(1)}%`)
+  
+  const maxPositionSize = availableCash * maxPositionPct
+  const maxTotalCash = availableCash * maxTotalExposure
+
+  let totalAllocated = 0
+  const allocatedSignals = []
+
+  for (const signal of signals) {
+    // Calculate position size based on adjusted confidence
+    // Higher confidence = larger position
+    const confidenceWeight = signal.adjusted_confidence || signal.confidence
+    const baseAllocation = maxPositionSize * (confidenceWeight / 1.0)
+    const positionValue = Math.min(baseAllocation, maxPositionSize)
+
+    if (totalAllocated + positionValue > maxTotalCash) {
+      console.log(`   ⚠️  Capital limit reached at ${totalAllocated.toFixed(2)}, skipping ${signal.symbol}`)
+      break
+    }
+
+    const shares = Math.floor(positionValue / signal.price)
+    const actualValue = shares * signal.price
+    
+    if (shares > 0 && actualValue > 0) {
+      allocatedSignals.push({
+        ...signal,
+        allocated_capital: actualValue,
+        shares,
+        allocation_pct: (actualValue / availableCash) * 100
+      })
+      totalAllocated += actualValue
+    }
+  }
+
+  console.log(`   ✅ Allocated $${totalAllocated.toFixed(2)} (${((totalAllocated / availableCash) * 100).toFixed(1)}%) across ${allocatedSignals.length} positions`)
+  
+  return allocatedSignals
+}
+
 // Execute a trade signal
 async function executeTradeSignal(
   supabase: any,
   userId: string,
-  signal: TradingSignal,
+  signal: any, // Extended signal with shares and allocated_capital
   alpacaClient: any,
   config: BotConfig
 ) {
   try {
-    // Get account info for validation
+    // Use pre-allocated position size from capital allocation
+    const positionSize = signal.shares || 1
+    const totalCost = signal.allocated_capital || (positionSize * signal.price)
+
+    console.log(`📝 Executing: ${signal.action.toUpperCase()} ${positionSize} shares of ${signal.symbol} @ $${signal.price.toFixed(2)} = $${totalCost.toFixed(2)}`)
+
+    // Get account info for final validation
     const account = await alpacaClient.getAccount()
     const buyingPower = parseFloat(account.buying_power)
     const cash = parseFloat(account.cash)
 
-    // Calculate position size
-    let positionSize = await alpacaClient.calculatePositionSize(
-      signal.symbol,
-      signal.price,
-      config.settings.max_trade_size / 100, // Convert percentage to decimal
-      config.settings.account_type === 'margin'
-    )
-
-    // Ensure position size is at least 1 and is an integer
-    positionSize = Math.max(1, Math.floor(positionSize))
-
-    console.log(`Position size for ${signal.symbol}: ${positionSize} shares @ $${signal.price} = $${(positionSize * signal.price).toFixed(2)}`)
-
-    // Check if we have enough buying power
-    const totalCost = positionSize * signal.price
+    // Final buying power check
     if (totalCost > buyingPower) {
-      console.log(`Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
+      console.log(`❌ Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
       return
     }
 

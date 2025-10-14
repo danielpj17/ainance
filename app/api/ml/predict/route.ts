@@ -32,6 +32,12 @@ interface MarketFeatures {
   volatility_20: number;
   news_sentiment: number;
   price?: number;
+  // Optional enhanced features (not sent to ML model)
+  news_confidence?: number;
+  market_risk?: number;
+  vix?: number;
+  yield_curve?: number;
+  fed_funds_rate?: number;
 }
 
 interface PredictionRequest {
@@ -121,17 +127,45 @@ async function saveToCache(supabase: any, predictions: any[]): Promise<void> {
 }
 
 /**
+ * Strip enhanced features before sending to ML model
+ * The ML model only expects the core 14 features
+ */
+function stripEnhancedFeatures(features: MarketFeatures[]): any[] {
+  return features.map(f => ({
+    symbol: f.symbol,
+    rsi: f.rsi,
+    macd: f.macd,
+    macd_histogram: f.macd_histogram,
+    bb_width: f.bb_width,
+    bb_position: f.bb_position,
+    ema_trend: f.ema_trend,
+    volume_ratio: f.volume_ratio,
+    stochastic: f.stochastic,
+    price_change_1d: f.price_change_1d,
+    price_change_5d: f.price_change_5d,
+    price_change_10d: f.price_change_10d,
+    volatility_20: f.volatility_20,
+    news_sentiment: f.news_sentiment,
+    price: f.price
+  }));
+}
+
+/**
  * Call ML inference service
  */
 async function callMLService(features: MarketFeatures[], includeProbabilities = false): Promise<any> {
   try {
+    // Strip enhanced features (news_confidence, market_risk, vix, etc.)
+    // The ML model only expects the core 14 features
+    const coreFeatures = stripEnhancedFeatures(features);
+    
     const response = await fetch(`${ML_SERVICE_URL}/predict`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        features,
+        features: coreFeatures,
         include_probabilities: includeProbabilities
       }),
       signal: AbortSignal.timeout(10000) // 10 second timeout
