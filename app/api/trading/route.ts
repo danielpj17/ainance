@@ -26,19 +26,14 @@ export interface BotConfig {
   strategy: string
 }
 
-// Global bot state (in production, use Redis or database)
+// In-memory bot state (for interval management)
+// Actual state is persisted in database
 let botState: {
-  isRunning: boolean
   intervalId: NodeJS.Timeout | null
-  config: BotConfig | null
-  lastRun: Date | null
-  error: string | null
+  userId: string | null
 } = {
-  isRunning: false,
   intervalId: null,
-  config: null,
-  lastRun: null,
-  error: null
+  userId: null
 }
 
 // POST - Start/Stop trading bot
@@ -118,7 +113,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 async function startBot(supabase: any, userId: string, config: BotConfig): Promise<NextResponse> {
   try {
     // Stop existing bot if running
-    if (botState.isRunning) {
+    if (botState.intervalId) {
       await stopBot(supabase, userId)
     }
 
@@ -189,25 +184,55 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
       }
     }
 
-    // Store bot configuration
-    botState.config = config
-    botState.isRunning = true
-    botState.error = null
+    // Store bot state in database
+    await supabase.rpc('update_bot_state', {
+      user_uuid: userId,
+      is_running_param: true,
+      config_param: config,
+      error_param: null
+    })
 
-    // Start the trading loop
+    // Store bot user ID
+    botState.userId = userId
+
+    // Execute trading loop immediately (don't wait for interval)
+    console.log('🚀 Running initial trading loop immediately...')
+    try {
+      await executeTradingLoop(supabase, userId, config, keys)
+      await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: true,
+        config_param: config,
+        error_param: null
+      })
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('Initial trading loop error:', errorMessage)
+      await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: true,
+        config_param: config,
+        error_param: errorMessage
+      })
+    }
+
+    // Start the trading loop interval
     const intervalId = setInterval(async () => {
       try {
         await executeTradingLoop(supabase, userId, config, keys)
-        botState.lastRun = new Date()
-        botState.error = null
-  } catch (error) {
+        await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: null
+        })
+      } catch (error) {
         console.error('Trading loop error:', error)
         
         let errorMessage: string
         if (error instanceof Error) {
           errorMessage = error.message
         } else if (typeof error === 'object' && error !== null) {
-          // Try to extract meaningful info from error object
           errorMessage = JSON.stringify(error, null, 2)
         } else {
           errorMessage = String(error)
@@ -220,7 +245,14 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
           type: typeof error,
           fullError: error
         })
-        botState.error = errorMessage || 'Unknown error'
+        
+        // Update bot state with error
+        await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: errorMessage
+        })
       }
     }, config.interval * 1000)
 
@@ -262,25 +294,27 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
     if (botState.intervalId) {
       clearInterval(botState.intervalId)
       botState.intervalId = null
+      botState.userId = null
     }
 
-    const wasRunning = botState.isRunning
-    botState.isRunning = false
-    botState.config = null
-    botState.error = null
+    // Update bot state in database
+    await supabase.rpc('update_bot_state', {
+      user_uuid: userId,
+      is_running_param: false,
+      config_param: null,
+      error_param: null
+    })
 
-    if (wasRunning) {
-      // Log bot stop
-      await supabase
-        .from('bot_logs')
-        .insert({
-          user_id: userId,
-          action: 'stop',
-          message: 'Bot stopped by user'
-        })
+    // Log bot stop
+    await supabase
+      .from('bot_logs')
+      .insert({
+        user_id: userId,
+        action: 'stop',
+        message: 'Bot stopped by user'
+      })
 
-      console.log(`Trading bot stopped for user ${userId}`)
-    }
+    console.log(`Trading bot stopped for user ${userId}`)
 
     return NextResponse.json({
       success: true,
@@ -887,6 +921,18 @@ async function executeTradeSignal(
 // Get bot status
 async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
   try {
+    // Get bot state from database
+    const { data: botStateData } = await supabase.rpc('get_bot_state', {
+      user_uuid: userId
+    })
+
+    const dbBotState = botStateData?.[0] || {
+      is_running: false,
+      config: null,
+      last_run: null,
+      error: null
+    }
+
     // Get recent trades count
     const { data: trades, error: tradesError } = await supabase.rpc('get_user_trades', {
       user_uuid: userId,
@@ -905,7 +951,7 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
     const currentSignals: TradingSignal[] = []
     
     // First try to get signals from running bot (within last 2 minutes)
-    if (botState.isRunning && botState.lastRun) {
+    if (dbBotState.is_running && dbBotState.last_run) {
       const recentLogs = await supabase
         .from('bot_logs')
         .select('*')
@@ -957,12 +1003,12 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
     }
 
     return {
-      isRunning: botState.isRunning,
-      lastRun: botState.lastRun?.toISOString() || null,
+      isRunning: dbBotState.is_running,
+      lastRun: dbBotState.last_run || null,
       totalTrades: trades?.length || 0,
       activePositions: positions?.length || 0,
       currentSignals,
-      error: botState.error || undefined
+      error: dbBotState.error || undefined
     }
 
   } catch (error) {
