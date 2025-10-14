@@ -216,7 +216,7 @@ export default function PaperTradingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0f1117] text-white p-8">
+      <div className="min-h-screen text-white p-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin" />
           <span className="ml-2">Loading paper trading data...</span>
@@ -226,7 +226,7 @@ export default function PaperTradingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+    <div className="min-h-screen text-white p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>

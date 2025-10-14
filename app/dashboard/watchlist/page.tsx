@@ -289,7 +289,7 @@ export default function WatchlistPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#0f1117] text-white flex items-center justify-center">
+      <div className="min-h-screen text-white flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
           <p className="text-gray-400">Loading watchlist...</p>
@@ -299,7 +299,7 @@ export default function WatchlistPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+    <div className="min-h-screen text-white p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>

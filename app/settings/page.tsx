@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 
 export default function SettingsPage() {
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white pl-20">
+    <div className="min-h-screen text-white pl-20">
       <div className="container mx-auto px-6 py-8 max-w-6xl">
         <div className="mb-8">
           <h1 className="text-4xl font-bold flex items-center gap-3 mb-2">
