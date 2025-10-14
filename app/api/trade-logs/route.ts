@@ -179,12 +179,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 existingTrade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100
               } else {
                 // Add position from Alpaca that's not in trade_logs
+                const qty = Math.abs(parseFloat(position.qty))
+                const costBasis = parseFloat(position.cost_basis)
+                const avgEntryPrice = qty > 0 ? costBasis / qty : 0
+                
                 currentTrades.push({
                   id: BigInt(0), // Placeholder
                   symbol: position.symbol,
-                  qty: Math.abs(parseFloat(position.qty)),
-                  buy_price: parseFloat(position.avg_entry_price),
-                  buy_timestamp: position.created_at || new Date().toISOString(),
+                  qty,
+                  buy_price: avgEntryPrice,
+                  buy_timestamp: new Date().toISOString(), // Alpaca doesn't provide this in position
                   current_price: parseFloat(position.current_price),
                   current_value: parseFloat(position.market_value),
                   unrealized_pl: parseFloat(position.unrealized_pl),
