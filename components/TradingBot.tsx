@@ -52,6 +52,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isMarketOpen, setIsMarketOpen] = useState(true) // Default to true
   const [config, setConfig] = useState<BotConfig>({
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
     interval: 10, // 10 seconds
@@ -66,15 +67,43 @@ export default function TradingBot({ mode }: TradingBotProps) {
     accountType: mode,
     strategy: mode === 'paper' ? 'cash' : '25k_plus'
   })
+  
+  // Check market hours
+  const checkMarketHours = () => {
+    const now = new Date()
+    const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}))
+    const day = et.getDay()
+    const hours = et.getHours()
+    const minutes = et.getMinutes()
+    
+    // Market closed on weekends
+    if (day === 0 || day === 6) return false
+    
+    // Market open 9:30 AM - 4:00 PM ET
+    const currentMinutes = hours * 60 + minutes
+    const marketOpen = 9 * 60 + 30 // 9:30 AM
+    const marketClose = 16 * 60 // 4:00 PM
+    
+    return currentMinutes >= marketOpen && currentMinutes < marketClose
+  }
 
   // Fetch bot status on component mount
   useEffect(() => {
     fetchBotStatus()
     
-    // Set up polling for bot status
-    const interval = setInterval(fetchBotStatus, 5000) // Poll every 5 seconds
+    // Check market hours on mount and every minute
+    setIsMarketOpen(checkMarketHours())
+    const marketCheckInterval = setInterval(() => {
+      setIsMarketOpen(checkMarketHours())
+    }, 60000) // Check every minute
     
-    return () => clearInterval(interval)
+    // Set up polling for bot status
+    const statusInterval = setInterval(fetchBotStatus, 5000) // Poll every 5 seconds
+    
+    return () => {
+      clearInterval(marketCheckInterval)
+      clearInterval(statusInterval)
+    }
   }, [])
 
   const fetchBotStatus = async () => {
@@ -320,9 +349,16 @@ export default function TradingBot({ mode }: TradingBotProps) {
           </div>
           
           {/* Market Hours Info */}
-          <div className="text-xs text-blue-300 bg-blue-950 border border-blue-800 p-2 rounded">
-            <strong>Note:</strong> Market is currently closed. Use "Test Signals" to see how the bot works with realistic data.
-          </div>
+          {!isMarketOpen && (
+            <div className="text-xs text-yellow-300 bg-yellow-950 border border-yellow-800 p-2 rounded">
+              <strong>⏰ Market Closed:</strong> Market is currently closed. Use "Test Signals" to see how the bot works with last available data.
+            </div>
+          )}
+          {isMarketOpen && (
+            <div className="text-xs text-green-300 bg-green-950 border border-green-800 p-2 rounded">
+              <strong>🟢 Market Open:</strong> Live trading active. Bot will scan 70+ stocks and make intelligent decisions.
+            </div>
+          )}
         </CardContent>
       </Card>
 
