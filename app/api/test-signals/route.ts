@@ -65,21 +65,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.warn('⚠️  FRED data unavailable:', error)
     }
 
-    // Get technical indicators
-    const indicatorsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/stocks/indicators`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols })
-    })
-
-    if (!indicatorsResponse.ok) {
+    // Get technical indicators by calling the API route handler directly
+    console.log('📈 Fetching technical indicators...')
+    let indicatorsData: any
+    
+    try {
+      // Import and call the indicators API handler
+      const { POST: getIndicators } = await import('@/app/api/stocks/indicators/route')
+      const indicatorsReq = new NextRequest('http://localhost/api/stocks/indicators', {
+        method: 'POST',
+        body: JSON.stringify({ symbols })
+      })
+      const indicatorsRes = await getIndicators(indicatorsReq)
+      indicatorsData = await indicatorsRes.json()
+      
+      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+        throw new Error('No technical indicators available')
+      }
+      
+      console.log(`✅ Got indicators for ${indicatorsData.indicators.length} symbols`)
+    } catch (error) {
+      console.error('❌ Failed to get technical indicators:', error)
       throw new Error('Failed to fetch technical indicators')
-    }
-
-    const indicatorsData = await indicatorsResponse.json()
-
-    if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
-      throw new Error('No technical indicators available')
     }
 
     // Get news sentiment
@@ -102,24 +109,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    // Call ML prediction service
-    const mlResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/ml/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        features: enhancedFeatures,
-        include_probabilities: true
+    // Call ML prediction service by calling the API route handler directly
+    console.log('🧠 Calling ML prediction service...')
+    let mlData: any
+    
+    try {
+      const { POST: getMLPredictions } = await import('@/app/api/ml/predict/route')
+      const mlReq = new NextRequest('http://localhost/api/ml/predict', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          features: enhancedFeatures,
+          include_probabilities: true
+        })
       })
-    })
-
-    if (!mlResponse.ok) {
+      const mlRes = await getMLPredictions(mlReq)
+      mlData = await mlRes.json()
+      
+      if (!mlData.success || !mlData.signals) {
+        throw new Error('ML service did not return valid signals')
+      }
+      
+      console.log(`✅ Got ML predictions for ${mlData.signals.length} symbols`)
+    } catch (error) {
+      console.error('❌ Failed to get ML predictions:', error)
       throw new Error('ML service unavailable')
-    }
-
-    const mlData = await mlResponse.json()
-
-    if (!mlData.success || !mlData.signals) {
-      throw new Error('ML service did not return valid signals')
     }
 
     // Enhance signals with news sentiment and FRED data
