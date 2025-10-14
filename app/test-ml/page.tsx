@@ -224,7 +224,7 @@ export default function TestMLPage() {
               onChange={(e) => setSymbols(e.target.value)}
               className="flex-1"
             />
-            <Button onClick={getPredictions} disabled={loading}>
+            <Button onClick={() => getPredictions()} disabled={loading}>
               {loading ? 'Analyzing...' : 'Get Predictions'}
             </Button>
             <Button 
