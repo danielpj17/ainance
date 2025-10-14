@@ -416,43 +416,91 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
 
     console.log(`✅ ML predictions received for ${mlData.signals.length} symbols`)
 
-    // STEP 7: Filter and Enhance Signals with News Sentiment
-    let signals = mlData.signals
-      .map((s: any) => {
-        const sentiment = sentimentData[s.symbol]
-        const sentimentBoost = sentiment ? sentiment.score * 0.15 : 0 // Up to 15% boost
-        const adjustedConfidence = Math.min(s.confidence + sentimentBoost, 1.0)
-        
-        return {
-          symbol: s.symbol,
-          action: s.action,
-          confidence: s.confidence,
-          adjusted_confidence: adjustedConfidence,
-          price: s.price || 0,
-          timestamp: s.timestamp || new Date().toISOString(),
-          reasoning: s.reasoning || `ML ${s.action} signal`,
-          news_sentiment: sentiment?.score || 0,
-          news_headlines: sentiment?.headlines || []
-        }
-      })
-      .filter((s: any) => s.action !== 'hold' && s.adjusted_confidence >= minConfidence)
+    // STEP 7: Get Current Positions
+    console.log('📊 Checking current positions...')
+    const positions = await alpacaClient.getPositions()
+    const currentHoldings = positions.map((p: any) => p.symbol)
+    console.log(`📌 Currently holding ${currentHoldings.length} positions: ${currentHoldings.join(', ')}`)
+
+    // STEP 8: Process ML Signals - Separate BUY and SELL
+    const allSignals = mlData.signals.map((s: any) => {
+      const sentiment = sentimentData[s.symbol]
+      const sentimentBoost = sentiment ? sentiment.score * 0.15 : 0
+      const adjustedConfidence = Math.min(s.confidence + sentimentBoost, 1.0)
+      
+      return {
+        symbol: s.symbol,
+        action: s.action,
+        confidence: s.confidence,
+        adjusted_confidence: adjustedConfidence,
+        price: s.price || 0,
+        timestamp: s.timestamp || new Date().toISOString(),
+        reasoning: s.reasoning || `ML ${s.action} signal`,
+        news_sentiment: sentiment?.score || 0,
+        news_headlines: sentiment?.headlines || [],
+        is_held: currentHoldings.includes(s.symbol)
+      }
+    })
+
+    // SELL signals: Only for positions we currently hold
+    const sellSignals = allSignals
+      .filter((s: any) => s.action === 'sell' && s.is_held && s.adjusted_confidence >= minConfidence)
       .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
 
-    console.log(`🎯 Generated ${signals.length} high-confidence signals (filtered from ${mlData.signals.length})`)
+    // BUY signals: Only for positions we don't hold
+    const buySignals = allSignals
+      .filter((s: any) => s.action === 'buy' && !s.is_held && s.adjusted_confidence >= minConfidence)
+      .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
 
-    // STEP 8: Intelligent Capital Allocation
-    const account = await alpacaClient.getAccount()
-    const availableCash = parseFloat(account.buying_power)
+    console.log(`🎯 Generated ${sellSignals.length} SELL signals (for existing positions)`)
+    console.log(`🎯 Generated ${buySignals.length} BUY signals (for new positions)`)
     
-    signals = allocateCapital(signals, availableCash, marketRisk)
+    // Combine: Process SELLs first (free up capital), then BUYs
+    let signals = [...sellSignals, ...buySignals]
+
+    // STEP 9: Process SELL Signals (exit existing positions)
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`🔄 PROCESSING SELL SIGNALS: ${sellSignals.length} positions to exit`)
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    for (const sellSignal of sellSignals) {
+      console.log(`📉 SELL ${sellSignal.symbol} @ $${sellSignal.price.toFixed(2)}`)
+      console.log(`   Confidence: ${(sellSignal.adjusted_confidence * 100).toFixed(1)}%`)
+      console.log(`   Reasoning: ${sellSignal.reasoning}`)
+      
+      // Get current position details
+      const position = positions.find((p: any) => p.symbol === sellSignal.symbol)
+      if (position) {
+        sellSignal.shares = Math.abs(parseInt(position.qty))
+        sellSignal.allocated_capital = Math.abs(parseFloat(position.market_value))
+        console.log(`   Selling entire position: ${sellSignal.shares} shares = $${sellSignal.allocated_capital.toFixed(2)}`)
+      }
+    }
+
+    // STEP 10: Intelligent Capital Allocation for BUY Signals
+    const account = await alpacaClient.getAccount()
+    let availableCash = parseFloat(account.buying_power)
+    
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`💰 ALLOCATING CAPITAL FOR BUY SIGNALS: ${buySignals.length} candidates`)
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    const allocatedBuySignals = allocateCapital(buySignals, availableCash, marketRisk)
+    
+    // Combine all signals: SELLs (already configured) + allocated BUYs
+    signals = [...sellSignals, ...allocatedBuySignals]
 
     console.log('═══════════════════════════════════════════════════════════')
-    console.log(`💰 CAPITAL ALLOCATION COMPLETE: ${signals.length} positions`)
+    console.log(`🎯 FINAL TRADE PLAN: ${signals.length} total (${sellSignals.length} sells, ${allocatedBuySignals.length} buys)`)
     console.log('═══════════════════════════════════════════════════════════')
 
     signals.forEach((signal: any, i: number) => {
       console.log(`${i + 1}. ${signal.action.toUpperCase()} ${signal.symbol} @ $${signal.price.toFixed(2)}`)
-      console.log(`   Confidence: ${(signal.adjusted_confidence * 100).toFixed(1)}% | Shares: ${signal.shares} | Capital: $${signal.allocated_capital.toFixed(2)}`)
+      if (signal.shares) {
+        console.log(`   Confidence: ${(signal.adjusted_confidence * 100).toFixed(1)}% | Shares: ${signal.shares} | Capital: $${signal.allocated_capital.toFixed(2)}`)
+      } else {
+        console.log(`   Confidence: ${(signal.adjusted_confidence * 100).toFixed(1)}%`)
+      }
       console.log(`   Reasoning: ${signal.reasoning}`)
       if (signal.news_sentiment !== 0) {
         console.log(`   News: ${signal.news_sentiment > 0 ? '📈' : '📉'} ${(signal.news_sentiment * 100).toFixed(1)}%`)
@@ -586,25 +634,29 @@ async function executeTradeSignal(
     const buyingPower = parseFloat(account.buying_power)
     const cash = parseFloat(account.cash)
 
-    // Final buying power check
-    if (totalCost > buyingPower) {
-      console.log(`❌ Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
-      return
-    }
+    // For BUY orders, check buying power
+    if (signal.action === 'buy') {
+      if (totalCost > buyingPower) {
+        console.log(`❌ Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
+        return
+      }
+      
+      // Validate trade parameters
+      const validation = TradingErrorHandler.validateTradeParams({
+        symbol: signal.symbol,
+        quantity: positionSize,
+        price: signal.price,
+        accountBalance: cash,
+        buyingPower: buyingPower
+      })
 
-    // Validate trade parameters
-    const validation = TradingErrorHandler.validateTradeParams({
-      symbol: signal.symbol,
-      quantity: positionSize,
-      price: signal.price,
-      accountBalance: cash,
-      buyingPower: buyingPower
-    })
-
-    if (!validation.valid) {
-      console.log(`Trade validation failed for ${signal.symbol}: ${validation.error}`)
-      return
+      if (!validation.valid) {
+        console.log(`❌ Trade validation failed for ${signal.symbol}: ${validation.error}`)
+        return
+      }
     }
+    
+    // For SELL orders, no buying power check needed (we're closing a position)
 
     // Check if market is open (for live trading)
     if (!alpacaClient.getConfig().paper) {
