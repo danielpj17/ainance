@@ -127,7 +127,7 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
 
   if (loading) {
     return (
-      <Card>
+      <Card className="glass-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -139,7 +139,7 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
   }
 
   return (
-    <Card>
+    <Card className="glass-card">
       <CardHeader>
         <CardTitle>Strategy Settings - {mode === 'paper' ? 'Paper Trading' : 'Live Trading'}</CardTitle>
         <CardDescription>

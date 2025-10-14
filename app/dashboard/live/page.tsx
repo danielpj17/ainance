@@ -186,7 +186,7 @@ export default function LiveTradingPage() {
       {/* Portfolio Summary */}
       {portfolioSummary && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
+          <Card className="glass-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Live Trades</CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
@@ -196,7 +196,7 @@ export default function LiveTradingPage() {
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="glass-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Real P&L</CardTitle>
               {portfolioSummary.total_pnl >= 0 ? 
@@ -211,7 +211,7 @@ export default function LiveTradingPage() {
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="glass-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -223,7 +223,7 @@ export default function LiveTradingPage() {
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="glass-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Avg Trade Size</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -250,7 +250,7 @@ export default function LiveTradingPage() {
       </Alert>
 
       {/* Manual Trade Execution (Disabled for Live Trading) */}
-      <Card className="opacity-50">
+      <Card className="opacity-50 glass-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Manual Trade Execution
@@ -272,7 +272,7 @@ export default function LiveTradingPage() {
       </Card>
 
       {/* Recent Live Trades */}
-      <Card>
+      <Card className="glass-card">
         <CardHeader>
           <CardTitle>Live Trading History</CardTitle>
           <CardDescription>
@@ -323,7 +323,7 @@ export default function LiveTradingPage() {
       </Card>
 
       {/* Trading Guidelines */}
-      <Card>
+      <Card className="glass-card">
         <CardHeader>
           <CardTitle>Live Trading Guidelines</CardTitle>
           <CardDescription>

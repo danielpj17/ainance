@@ -165,7 +165,7 @@ export default function TestMLPage() {
       </div>
 
       {/* ML Service Status */}
-      <Card className="mb-6">
+      <Card className="mb-6 glass-card">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             ML Service Status
@@ -218,7 +218,7 @@ export default function TestMLPage() {
       </Card>
 
       {/* Input Section */}
-      <Card className="mb-6">
+      <Card className="mb-6 glass-card">
         <CardHeader>
           <CardTitle>Get Predictions</CardTitle>
           <CardDescription>
@@ -301,7 +301,7 @@ export default function TestMLPage() {
               const bgColor = pred.action === 'buy' ? 'bg-green-500/10' : pred.action === 'sell' ? 'bg-red-500/10' : 'bg-yellow-500/10';
               
               return (
-                <Card key={pred.symbol} className={bgColor}>
+                <Card key={pred.symbol} className={`glass-card ${bgColor}`}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div>
@@ -387,7 +387,7 @@ export default function TestMLPage() {
       )}
 
       {/* Info Section */}
-      <Card className="mt-6">
+      <Card className="mt-6 glass-card">
         <CardHeader>
           <CardTitle>📊 Model Information</CardTitle>
         </CardHeader>

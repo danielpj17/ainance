@@ -249,7 +249,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
   return (
     <div className="space-y-6">
       {/* Bot Status Card */}
-      <Card className="bg-[#1a1d2e] border-gray-800">
+      <Card className="glass-card">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -364,7 +364,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
 
       {/* Current Signals */}
       {botStatus?.currentSignals && botStatus.currentSignals.length > 0 && (
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">Current Trading Signals</CardTitle>
             <CardDescription className="text-gray-400">
