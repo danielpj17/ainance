@@ -141,8 +141,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               for (const position of openPositions) {
                 try {
                   const quote = await alpacaClient.getLatestQuote(position.symbol)
-                  if (quote && quote.ap) {
-                    position.current_price = parseFloat(quote.ap)
+                  // Our alpaca client returns { bid, ask, bidSize, askSize }
+                  // Use ask as the current executable price for buys
+                  if (quote && typeof quote.ask === 'number') {
+                    position.current_price = quote.ask
                     position.current_value = position.current_price * position.total_qty
                     position.unrealized_pl = position.current_value - position.total_cost
                     position.pl_percent = (position.unrealized_pl / position.total_cost) * 100

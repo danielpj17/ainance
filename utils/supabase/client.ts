@@ -49,7 +49,7 @@ export const createClient = () => {
       signOut: async () => ({
         error: null,
       }),
-      onAuthStateChange: (callback) => {
+      onAuthStateChange: (callback: any) => {
         // Immediately call with signed in state
         callback('SIGNED_IN', getDemoSession())
         return {
