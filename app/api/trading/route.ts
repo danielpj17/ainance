@@ -278,8 +278,18 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
 
   } catch (error) {
     console.error('Error starting bot:', error)
-    botState.isRunning = false
-    botState.error = error instanceof Error ? error.message : 'Unknown error'
+    
+    // Update database to reflect error
+    try {
+      await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: false,
+        config_param: null,
+        error_param: error instanceof Error ? error.message : 'Unknown error'
+      })
+    } catch (dbError) {
+      console.error('Error updating bot state on failure:', dbError)
+    }
     
     return NextResponse.json({ 
       success: false, 
