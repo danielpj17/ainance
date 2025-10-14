@@ -1,3 +1,4 @@
+// Use CommonJS require to match runtime module shape for vader-sentiment
 const vader = require('vader-sentiment')
 
 export interface NewsArticle {

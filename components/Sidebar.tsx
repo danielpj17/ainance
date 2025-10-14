@@ -25,10 +25,10 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-20 bg-[#1a1d2e] border-r border-gray-800 flex flex-col items-center py-6 z-50">
+    <aside className="fixed left-0 top-0 h-full w-20 bg-[#0f1117]/70 backdrop-blur-xl border-r border-blue-400/20 flex flex-col items-center py-6 z-50">
       {/* Logo */}
       <Link href="/dashboard" className="mb-8">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center shadow-lg shadow-purple-500/20">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
           <span className="text-white font-bold text-xl">A</span>
         </div>
       </Link>
@@ -46,8 +46,8 @@ export default function Sidebar() {
               className={`
                 relative group flex items-center justify-center w-14 h-14 rounded-xl transition-all
                 ${isActive 
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30' 
-                  : 'text-gray-400 hover:text-white hover:bg-[#252838]'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/50' 
+                  : 'text-gray-400 hover:text-white hover:bg-blue-500/20'
                 }
               `}
               title={item.label}

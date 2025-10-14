@@ -14,6 +14,8 @@ export default function DashboardPage() {
   const [account, setAccount] = useState<any>(null)
   const [trades, setTrades] = useState<any[]>([])
   const [signals, setSignals] = useState<any[]>([])
+  const [tradeMetrics, setTradeMetrics] = useState<any>(null)
+  const [winRate, setWinRate] = useState<number>(0)
   
   // Mock trend data
   const trendData = [
@@ -67,13 +69,32 @@ export default function DashboardPage() {
           setSignals(signalsData.status.currentSignals.slice(0, 5))
         }
       }
+
+      // Fetch trade metrics for win rate calculation
+      const logsRes = await fetch('/api/logs?view=closed')
+      if (logsRes.ok) {
+        const logsData = await logsRes.json()
+        if (logsData.success) {
+          setTradeMetrics(logsData.data.metrics)
+          
+          // Calculate win rate from closed positions
+          const closedPositions = logsData.data.closedPositions || []
+          if (closedPositions.length > 0) {
+            const winningTrades = closedPositions.filter((pos: any) => pos.realized_pl > 0).length
+            const calculatedWinRate = (winningTrades / closedPositions.length) * 100
+            setWinRate(calculatedWinRate)
+          } else {
+            setWinRate(0)
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching data:', error)
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+    <div className="min-h-screen text-white p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -86,7 +107,7 @@ export default function DashboardPage() {
             <p className="text-2xl font-bold">${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}</p>
           </div>
           <div className="flex gap-2">
-            <Badge className="bg-purple-600 hover:bg-purple-700">High</Badge>
+            <Badge className="bg-blue-600 hover:bg-blue-700">High</Badge>
             <Badge variant="outline" className="text-gray-400 border-gray-600">Medium</Badge>
             <Badge variant="outline" className="text-gray-400 border-gray-600">Low</Badge>
           </div>
@@ -95,10 +116,10 @@ export default function DashboardPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Value</CardTitle>
-            <DollarSign className="h-5 w-5 text-purple-500" />
+            <DollarSign className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
@@ -111,7 +132,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Trades</CardTitle>
             <Activity className="h-5 w-5 text-blue-500" />
@@ -122,18 +143,22 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Win Rate</CardTitle>
             <TrendingUp className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">68.5%</div>
-            <p className="text-xs text-blue-500 mt-1">+5.2% this month</p>
+            <div className="text-3xl font-bold text-white">
+              {winRate.toFixed(1)}%
+            </div>
+            <p className={`text-xs mt-1 ${winRate > 0 ? 'text-blue-500' : 'text-gray-400'}`}>
+              {tradeMetrics ? `${tradeMetrics.closed_positions} closed trades` : 'No trades yet'}
+            </p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">AI Signals</CardTitle>
             <Activity className="h-5 w-5 text-yellow-500" />
@@ -147,7 +172,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Trend Chart */}
-        <Card className="lg:col-span-2 bg-[#1a1d2e] border-gray-800">
+        <Card className="lg:col-span-2 glass-card">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -156,7 +181,7 @@ export default function DashboardPage() {
               </div>
               <div className="flex gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
                   <span className="text-gray-400">Your Portfolio</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -196,7 +221,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Activity Feed */}
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">Recent Activity</CardTitle>
             <CardDescription className="text-gray-400">Latest trading actions</CardDescription>
@@ -204,7 +229,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-4">
               {recentActivity.map((activity, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-[#252838] rounded-lg">
+                <div key={idx} className="flex items-center justify-between p-3 bg-blue-500/10 backdrop-blur-sm rounded-lg">
                   <div className="flex items-center gap-3">
                     {activity.status === 'completed' ? (
                       <CheckCircle className="h-5 w-5 text-blue-500" />
@@ -228,7 +253,7 @@ export default function DashboardPage() {
 
       {/* Risk Analysis */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">Risk Analysis</CardTitle>
             <CardDescription className="text-gray-400">Portfolio risk distribution</CardDescription>
@@ -251,7 +276,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">AI Trading Signals</CardTitle>
             <CardDescription className="text-gray-400">Latest recommendations from AI</CardDescription>
@@ -259,7 +284,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-3">
               {signals.length > 0 ? signals.map((signal, idx) => (
-                <div key={idx} className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-colors">
+                <div key={idx} className="p-4 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-gray-700 hover:border-blue-500 transition-colors">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={signal.action === 'buy' ? 'bg-blue-600' : 'bg-red-600'}>

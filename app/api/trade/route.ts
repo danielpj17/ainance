@@ -1,7 +1,8 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/utils/supabase/server'
+import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
 import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
+import { isDemoMode } from '@/lib/demo-user'
 
 export interface TradeRequest {
   symbol: string
@@ -25,10 +26,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
   try {
     const supabase = await createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // In demo mode, always use demo user ID
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     const body = await req.json()
@@ -43,16 +50,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
     }
 
     // Get Alpaca credentials from environment variables first, fallback to database
-    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
-    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
-    let isPaper = true;
+    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY
+    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET
+    let isPaper = true
     
-    // If not in environment, try to get from database (only if user exists)
+    // If not in environment, try to get from database
     if (!alpacaApiKey || !alpacaSecretKey) {
-      if (user?.id) {
-        const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-          user_uuid: user.id
-        })
+      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+        user_uuid: userId
+      })
 
         if (!keysError && apiKeys?.[0]) {
           const keys = apiKeys[0]
@@ -64,7 +70,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
             isPaper = alpacaKeys.paper;
           }
         }
-      }
     }
 
     // Final check to ensure keys are available
@@ -121,7 +126,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
     const { data: tradeRecord, error: tradeError } = await supabase
       .from('trades')
       .insert({
-        user_id: user.id,
+        user_id: userId,
         symbol: tradeResult.symbol,
         action: side,
         qty: parseFloat(tradeResult.qty || '0'),
@@ -171,10 +176,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // In demo mode, always use demo user ID
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     const { searchParams } = new URL(req.url)
@@ -184,7 +195,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Get trades using the database function
     const { data: trades, error } = await supabase.rpc('get_user_trades', {
-      user_uuid: user.id,
+      user_uuid: userId,
       limit_count: limit,
       offset_count: offset,
       symbol_filter: symbol
