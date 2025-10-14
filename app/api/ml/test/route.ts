@@ -85,6 +85,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Call ML service
     console.log(`🤖 Calling ML service for ${body.features.length} symbols: ${body.features.map(f => f.symbol).join(', ')}`);
     console.log(`🔗 ML Service URL: ${ML_SERVICE_URL}`);
+    console.log(`📊 Sample feature data:`, JSON.stringify(body.features[0], null, 2));
     
     const mlResponse = await callMLService(body.features, body.include_probabilities);
     
