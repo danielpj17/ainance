@@ -20,7 +20,7 @@ export interface SettingsResponse {
 // GET - Fetch user settings
 export async function GET(req: NextRequest): Promise<NextResponse<SettingsResponse>> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
 // POST/PUT - Update user settings
 export async function POST(req: NextRequest): Promise<NextResponse<SettingsResponse>> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()

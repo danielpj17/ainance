@@ -6,6 +6,8 @@ import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-
 import { initializeNewsAnalyzer, getNewsAnalyzer } from '@/lib/news-sentiment'
 import { TradingErrorHandler, withRetry } from '@/lib/error-handler'
 import { isDemoMode } from '@/lib/demo-user'
+import { initializeFRED, isFREDInitialized } from '@/lib/fred-data'
+import { StockScanner, getDefaultScalpingStocks } from '@/lib/stock-scanner'
 
 export interface BotStatus {
   isRunning: boolean
@@ -42,7 +44,7 @@ let botState: {
 // POST - Start/Stop trading bot
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // In demo mode, always use demo user ID
     let userId: string
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 // GET - Get bot status
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // In demo mode, always use demo user ID
     let userId: string
@@ -128,26 +130,62 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
       }, { status: 400 })
     }
 
-    // Get user's API keys
-    const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-      user_uuid: userId
-    })
+    // Get Alpaca credentials from environment variables first, fallback to database
+    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
+    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
+    let newsApiKey: string | undefined = process.env.NEWS_API_KEY;
+    
+    // If not in environment, try to get from database (only if we have a real user ID)
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      if (userId && userId !== '00000000-0000-0000-0000-000000000000') {
+        const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+          user_uuid: userId
+        })
 
-    if (keysError || !apiKeys?.[0]) {
+        if (!keysError && apiKeys?.[0]) {
+          const keys = apiKeys[0]
+          alpacaApiKey = keys.alpaca_paper_key;
+          alpacaSecretKey = keys.alpaca_paper_secret;
+          newsApiKey = keys.news_api_key;
+        }
+      }
+    }
+
+    // Final check to ensure Alpaca keys are available
+    if (!alpacaApiKey || !alpacaSecretKey) {
       return NextResponse.json({ 
         success: false, 
-        error: 'API keys not found. Please configure your trading keys.' 
+        error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
       }, { status: 400 })
     }
 
-    const keys = apiKeys[0]
+    // Create a keys object for backward compatibility
+    const keys = {
+      alpaca_paper_key: alpacaApiKey,
+      alpaca_paper_secret: alpacaSecretKey,
+      news_api_key: newsApiKey || null,
+      alpaca_live_key: null,
+      alpaca_live_secret: null
+    }
     
     // Initialize news analyzer if NewsAPI key exists
-    if (keys.news_api_key) {
+    if (newsApiKey) {
       try {
-        initializeNewsAnalyzer(keys.news_api_key)
+        initializeNewsAnalyzer(newsApiKey)
+        console.log('✅ News analyzer initialized')
       } catch (error) {
-        console.warn('Failed to initialize news analyzer:', error)
+        console.warn('⚠️  Failed to initialize news analyzer:', error)
+      }
+    }
+
+    // Initialize FRED service if API key exists
+    const fredApiKey = process.env.FRED_API_KEY;
+    if (fredApiKey && !isFREDInitialized()) {
+      try {
+        initializeFRED(fredApiKey)
+        console.log('✅ FRED service initialized')
+      } catch (error) {
+        console.warn('⚠️  Failed to initialize FRED service:', error)
       }
     }
 
@@ -164,7 +202,25 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
         botState.error = null
   } catch (error) {
         console.error('Trading loop error:', error)
-        botState.error = error instanceof Error ? error.message : 'Unknown error'
+        
+        let errorMessage: string
+        if (error instanceof Error) {
+          errorMessage = error.message
+        } else if (typeof error === 'object' && error !== null) {
+          // Try to extract meaningful info from error object
+          errorMessage = JSON.stringify(error, null, 2)
+        } else {
+          errorMessage = String(error)
+        }
+        
+        console.error('Error details:', {
+          message: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+          name: error instanceof Error ? error.name : undefined,
+          type: typeof error,
+          fullError: error
+        })
+        botState.error = errorMessage || 'Unknown error'
       }
     }, config.interval * 1000)
 
@@ -243,7 +299,9 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
 // Execute the main trading loop
 async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
   try {
-    console.log(`Executing trading loop for ${config.symbols.join(', ')}`)
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('🤖 STARTING ADVANCED SCALPING BOT CYCLE')
+    console.log('═══════════════════════════════════════════════════════════')
 
     // Initialize Alpaca client
     const alpacaKeys = getAlpacaKeys(apiKeys, config.accountType, config.strategy)
@@ -255,57 +313,212 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     })
 
     await alpacaClient.initialize()
+    console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
     // Check if market is open (skip if closed for live trading)
     if (!alpacaKeys.paper) {
       const marketOpen = await alpacaClient.isMarketOpen()
       if (!marketOpen) {
-        console.log('Market is closed, skipping trading loop')
+        console.log('⏸️  Market is closed, skipping trading loop')
         return
       }
     }
 
-    // Get market data for all symbols
-    const marketData = await alpacaClient.getMarketData(config.symbols, '1Min')
-    
-    if (marketData.length === 0) {
-      console.log('No market data available')
-      return
-    }
+    // STEP 1: Get FRED Economic Indicators
+    let fredIndicators: any = null
+    let marketRisk = 0.3 // Default moderate risk
+    let minConfidence = 0.55 // Base confidence threshold
 
-    // Get news sentiment for symbols (if news API is available)
-    let sentimentData: { [symbol: string]: number } = {}
     try {
-      const newsAnalyzer = getNewsAnalyzer()
-      const sentimentResults = await newsAnalyzer.getSentimentForSymbols(config.symbols, 1)
-      
-      for (const [symbol, sentiment] of Object.entries(sentimentResults)) {
-        sentimentData[symbol] = sentiment.score
+      if (isFREDInitialized()) {
+        const { getFREDService } = await import('@/lib/fred-data')
+        const fredService = getFREDService()
+        fredIndicators = await fredService.getIndicators()
+        marketRisk = fredService.calculateMarketRisk(fredIndicators)
+        
+        // Adjust confidence threshold based on market risk
+        minConfidence = 0.55 + (marketRisk * 0.15) // Higher risk = higher threshold (0.55-0.70)
+        
+        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Min Confidence: ${(minConfidence * 100).toFixed(0)}%`)
+      } else {
+        console.log('⚠️  FRED not initialized, using default risk parameters')
       }
     } catch (error) {
-      console.warn('Failed to get news sentiment:', error)
-      // Continue without sentiment data
+      console.warn('⚠️  Could not fetch FRED data:', error)
     }
 
-    // Offload signal generation to Python RF model endpoint
-    const symbols = marketData.map(d => d.symbol)
-    const currentPrices = marketData.map(d => d.close)
-    const predictRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/model/predict`, {
+    // STEP 2: Dynamic Stock Scanning
+    let scalpingStocks: string[] = []
+    try {
+      console.log('🔍 Scanning universe for best scalping candidates...')
+      const scanner = new StockScanner(alpacaClient)
+      scalpingStocks = await scanner.getTopScalpingStocks(20)
+      
+      if (scalpingStocks.length === 0) {
+        console.log('⚠️  No candidates found, using default stocks')
+        scalpingStocks = getDefaultScalpingStocks()
+      }
+    } catch (error) {
+      console.warn('⚠️  Stock scanning failed, using default stocks:', error)
+      scalpingStocks = getDefaultScalpingStocks()
+    }
+
+    // STEP 3: Get Technical Indicators
+    console.log('📈 Fetching technical indicators...')
+    const indicatorsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/stocks/indicators`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols, mode: config.accountType, settings: config.settings })
+      body: JSON.stringify({ symbols: scalpingStocks })
     })
-    const predictJson = await predictRes.json().catch(() => ({ success: false }))
-    const signals: TradingSignal[] = (predictJson?.signals || []).map((s: any) => ({
-      symbol: s.symbol,
-      action: s.action,
-      confidence: s.confidence,
-      price: s.price,
-      timestamp: s.timestamp,
-      reasoning: s.reasoning || 'RF prediction'
+
+    if (!indicatorsResponse.ok) {
+      throw new Error(`Failed to fetch indicators: ${indicatorsResponse.status}`)
+    }
+
+    const indicatorsData = await indicatorsResponse.json()
+    
+    if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+      throw new Error('No technical indicators available')
+    }
+
+    console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols`)
+
+    // STEP 4: Get News Sentiment
+    let sentimentData: { [symbol: string]: any } = {}
+    try {
+      const newsAnalyzer = getNewsAnalyzer()
+      console.log('📰 Fetching news sentiment...')
+      sentimentData = await newsAnalyzer.getSentimentForSymbols(scalpingStocks, 1)
+      console.log(`✅ News sentiment received for ${Object.keys(sentimentData).length} symbols`)
+    } catch (error) {
+      console.warn('⚠️  News sentiment unavailable:', error)
+    }
+
+    // STEP 5: Enhance Features with News + FRED
+    console.log('🔬 Enhancing features with macro data...')
+    const enhancedFeatures = indicatorsData.indicators.map((indicator: any) => ({
+      ...indicator,
+      news_sentiment: sentimentData[indicator.symbol]?.score || 0,
+      news_confidence: sentimentData[indicator.symbol]?.confidence || 0,
+      market_risk: marketRisk,
+      vix: fredIndicators?.vix || 18,
+      yield_curve: fredIndicators?.yield_curve || 0,
+      fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    console.log(`Generated ${signals.length} trading signals`)
+    // STEP 6: Get ML Predictions
+    console.log('🧠 Calling ML prediction service...')
+    const mlResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/ml/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        features: enhancedFeatures,
+        include_probabilities: true
+      })
+    })
+
+    if (!mlResponse.ok) {
+      throw new Error(`ML service returned ${mlResponse.status}`)
+    }
+
+    const mlData = await mlResponse.json()
+    
+    if (!mlData.success || !mlData.signals) {
+      throw new Error('ML service did not return valid signals')
+    }
+
+    console.log(`✅ ML predictions received for ${mlData.signals.length} symbols`)
+
+    // STEP 7: Get Current Positions
+    console.log('📊 Checking current positions...')
+    const positions = await alpacaClient.getPositions()
+    const currentHoldings = positions.map((p: any) => p.symbol)
+    console.log(`📌 Currently holding ${currentHoldings.length} positions: ${currentHoldings.join(', ')}`)
+
+    // STEP 8: Process ML Signals - Separate BUY and SELL
+    const allSignals = mlData.signals.map((s: any) => {
+      const sentiment = sentimentData[s.symbol]
+      const sentimentBoost = sentiment ? sentiment.score * 0.15 : 0
+      const adjustedConfidence = Math.min(s.confidence + sentimentBoost, 1.0)
+      
+      return {
+        symbol: s.symbol,
+        action: s.action,
+        confidence: s.confidence,
+        adjusted_confidence: adjustedConfidence,
+        price: s.price || 0,
+        timestamp: s.timestamp || new Date().toISOString(),
+        reasoning: s.reasoning || `ML ${s.action} signal`,
+        news_sentiment: sentiment?.score || 0,
+        news_headlines: sentiment?.headlines || [],
+        is_held: currentHoldings.includes(s.symbol)
+      }
+    })
+
+    // SELL signals: Only for positions we currently hold
+    const sellSignals = allSignals
+      .filter((s: any) => s.action === 'sell' && s.is_held && s.adjusted_confidence >= minConfidence)
+      .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
+
+    // BUY signals: Only for positions we don't hold
+    const buySignals = allSignals
+      .filter((s: any) => s.action === 'buy' && !s.is_held && s.adjusted_confidence >= minConfidence)
+      .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
+
+    console.log(`🎯 Generated ${sellSignals.length} SELL signals (for existing positions)`)
+    console.log(`🎯 Generated ${buySignals.length} BUY signals (for new positions)`)
+    
+    // Combine: Process SELLs first (free up capital), then BUYs
+    let signals = [...sellSignals, ...buySignals]
+
+    // STEP 9: Process SELL Signals (exit existing positions)
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`🔄 PROCESSING SELL SIGNALS: ${sellSignals.length} positions to exit`)
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    for (const sellSignal of sellSignals) {
+      console.log(`📉 SELL ${sellSignal.symbol} @ $${sellSignal.price.toFixed(2)}`)
+      console.log(`   Confidence: ${(sellSignal.adjusted_confidence * 100).toFixed(1)}%`)
+      console.log(`   Reasoning: ${sellSignal.reasoning}`)
+      
+      // Get current position details
+      const position = positions.find((p: any) => p.symbol === sellSignal.symbol)
+      if (position) {
+        sellSignal.shares = Math.abs(parseInt(position.qty))
+        sellSignal.allocated_capital = Math.abs(parseFloat(position.market_value))
+        console.log(`   Selling entire position: ${sellSignal.shares} shares = $${sellSignal.allocated_capital.toFixed(2)}`)
+      }
+    }
+
+    // STEP 10: Intelligent Capital Allocation for BUY Signals
+    const account = await alpacaClient.getAccount()
+    let availableCash = parseFloat(account.buying_power)
+    
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`💰 ALLOCATING CAPITAL FOR BUY SIGNALS: ${buySignals.length} candidates`)
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    const allocatedBuySignals = allocateCapital(buySignals, availableCash, marketRisk)
+    
+    // Combine all signals: SELLs (already configured) + allocated BUYs
+    signals = [...sellSignals, ...allocatedBuySignals]
+
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`🎯 FINAL TRADE PLAN: ${signals.length} total (${sellSignals.length} sells, ${allocatedBuySignals.length} buys)`)
+    console.log('═══════════════════════════════════════════════════════════')
+
+    signals.forEach((signal: any, i: number) => {
+      console.log(`${i + 1}. ${signal.action.toUpperCase()} ${signal.symbol} @ $${signal.price.toFixed(2)}`)
+      if (signal.shares) {
+        console.log(`   Confidence: ${(signal.adjusted_confidence * 100).toFixed(1)}% | Shares: ${signal.shares} | Capital: $${signal.allocated_capital.toFixed(2)}`)
+      } else {
+        console.log(`   Confidence: ${(signal.adjusted_confidence * 100).toFixed(1)}%`)
+      }
+      console.log(`   Reasoning: ${signal.reasoning}`)
+      if (signal.news_sentiment !== 0) {
+        console.log(`   News: ${signal.news_sentiment > 0 ? '📈' : '📉'} ${(signal.news_sentiment * 100).toFixed(1)}%`)
+      }
+    })
 
     // Execute trades for signals with error handling
     for (const signal of signals) {
@@ -344,11 +557,14 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
         action: 'execute',
         message: `Trading loop executed. Generated ${signals.length} signals`,
         data: {
-          symbols: config.symbols,
-          signals: signals.map(s => ({
+          symbols: scalpingStocks,
+          signals: signals.map((s: any) => ({
             symbol: s.symbol,
             action: s.action,
-            confidence: s.confidence
+            confidence: s.confidence,
+            price: s.price,
+            reasoning: s.reasoning,
+            timestamp: s.timestamp
           }))
         }
       })
@@ -359,46 +575,101 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
   }
 }
 
+/**
+ * Intelligent capital allocation based on confidence and market risk
+ */
+function allocateCapital(signals: any[], availableCash: number, marketRisk: number): any[] {
+  console.log(`💰 Allocating capital: $${availableCash.toFixed(2)} available`)
+  
+  // In high risk markets, reduce position sizes
+  const riskAdjustment = 1 - (marketRisk * 0.5)
+  const maxPositionPct = 0.15 * riskAdjustment // Max 15% per position, adjusted for risk
+  const maxTotalExposure = 0.7 * riskAdjustment // Max 70% deployed, adjusted for risk
+  
+  console.log(`   Risk Adjustment: ${(riskAdjustment * 100).toFixed(0)}%`)
+  console.log(`   Max Per Position: ${(maxPositionPct * 100).toFixed(1)}%`)
+  console.log(`   Max Total Exposure: ${(maxTotalExposure * 100).toFixed(1)}%`)
+  
+  const maxPositionSize = availableCash * maxPositionPct
+  const maxTotalCash = availableCash * maxTotalExposure
+
+  let totalAllocated = 0
+  const allocatedSignals = []
+
+  for (const signal of signals) {
+    // Calculate position size based on adjusted confidence
+    // Higher confidence = larger position
+    const confidenceWeight = signal.adjusted_confidence || signal.confidence
+    const baseAllocation = maxPositionSize * (confidenceWeight / 1.0)
+    const positionValue = Math.min(baseAllocation, maxPositionSize)
+
+    if (totalAllocated + positionValue > maxTotalCash) {
+      console.log(`   ⚠️  Capital limit reached at ${totalAllocated.toFixed(2)}, skipping ${signal.symbol}`)
+      break
+    }
+
+    const shares = Math.floor(positionValue / signal.price)
+    const actualValue = shares * signal.price
+    
+    if (shares > 0 && actualValue > 0) {
+      allocatedSignals.push({
+        ...signal,
+        allocated_capital: actualValue,
+        shares,
+        allocation_pct: (actualValue / availableCash) * 100
+      })
+      totalAllocated += actualValue
+    }
+  }
+
+  console.log(`   ✅ Allocated $${totalAllocated.toFixed(2)} (${((totalAllocated / availableCash) * 100).toFixed(1)}%) across ${allocatedSignals.length} positions`)
+  
+  return allocatedSignals
+}
+
 // Execute a trade signal
 async function executeTradeSignal(
   supabase: any,
   userId: string,
-  signal: TradingSignal,
+  signal: any, // Extended signal with shares and allocated_capital
   alpacaClient: any,
   config: BotConfig
 ) {
   try {
-    // Get account info for validation
+    // Use pre-allocated position size from capital allocation
+    const positionSize = signal.shares || 1
+    const totalCost = signal.allocated_capital || (positionSize * signal.price)
+
+    console.log(`📝 Executing: ${signal.action.toUpperCase()} ${positionSize} shares of ${signal.symbol} @ $${signal.price.toFixed(2)} = $${totalCost.toFixed(2)}`)
+
+    // Get account info for final validation
     const account = await alpacaClient.getAccount()
     const buyingPower = parseFloat(account.buying_power)
     const cash = parseFloat(account.cash)
 
-    // Calculate position size
-    const positionSize = await alpacaClient.calculatePositionSize(
-      signal.symbol,
-      signal.price,
-      config.settings.max_trade_size / 100, // Convert percentage to decimal
-      config.settings.account_type === 'margin'
-    )
+    // For BUY orders, check buying power
+    if (signal.action === 'buy') {
+      if (totalCost > buyingPower) {
+        console.log(`❌ Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
+        return
+      }
+      
+      // Validate trade parameters
+      const validation = TradingErrorHandler.validateTradeParams({
+        symbol: signal.symbol,
+        quantity: positionSize,
+        price: signal.price,
+        accountBalance: cash,
+        buyingPower: buyingPower
+      })
 
-    // Validate trade parameters
-    const validation = TradingErrorHandler.validateTradeParams({
-      symbol: signal.symbol,
-      quantity: positionSize,
-      price: signal.price,
-      accountBalance: cash,
-      buyingPower: buyingPower
-    })
-
-    if (!validation.valid) {
-      console.log(`Trade validation failed for ${signal.symbol}: ${validation.error}`)
-      return
+      if (!validation.valid) {
+        console.log(`❌ Trade validation failed for ${signal.symbol}: ${validation.error}`)
+        return
+      }
     }
-
-    if (positionSize <= 0) {
-      console.log(`Invalid position size for ${signal.symbol}`)
-      return
-    }
+    
+    // For SELL orders, no buying power check needed (we're closing a position)
 
     // Check if market is open (for live trading)
     if (!alpacaClient.getConfig().paper) {
@@ -476,27 +747,58 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       .eq('user_id', userId)
       .eq('order_status', 'filled')
 
-    // Get recent signals (from bot logs)
-    const { data: recentLogs, error: logsError } = await supabase
-      .from('bot_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('action', 'execute')
-      .order('created_at', { ascending: false })
-      .limit(5)
-
+    // Get current signals (either from running bot or test signals)
     const currentSignals: TradingSignal[] = []
-    if (recentLogs && recentLogs.length > 0) {
-      const latestLog = recentLogs[0]
-      if (latestLog.data?.signals) {
-        currentSignals.push(...latestLog.data.signals.map((s: any) => ({
-          symbol: s.symbol,
-          action: s.action as 'buy' | 'sell' | 'hold',
-          confidence: s.confidence,
-          price: 0, // Would need to fetch current price
-          timestamp: latestLog.created_at,
-          reasoning: `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
-        })))
+    
+    // First try to get signals from running bot (within last 2 minutes)
+    if (botState.isRunning && botState.lastRun) {
+      const recentLogs = await supabase
+        .from('bot_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('action', 'execute')
+        .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString()) // Last 2 minutes
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (recentLogs.data && recentLogs.data.length > 0) {
+        const latestLog = recentLogs.data[0]
+        if (latestLog.data?.signals) {
+          currentSignals.push(...latestLog.data.signals.map((s: any) => ({
+            symbol: s.symbol,
+            action: s.action as 'buy' | 'sell' | 'hold',
+            confidence: s.confidence,
+            price: s.price || 0,
+            timestamp: s.timestamp || latestLog.created_at,
+            reasoning: s.reasoning || `Generated at ${new Date(latestLog.created_at).toLocaleTimeString()}`
+          })))
+        }
+      }
+    }
+    
+    // If no signals from running bot, check for test signals (within last 10 minutes)
+    if (currentSignals.length === 0) {
+      const testLogs = await supabase
+        .from('bot_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('action', 'test_signals')
+        .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString()) // Last 10 minutes
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (testLogs.data && testLogs.data.length > 0) {
+        const latestTestLog = testLogs.data[0]
+        if (latestTestLog.data?.signals) {
+          currentSignals.push(...latestTestLog.data.signals.map((s: any) => ({
+            symbol: s.symbol,
+            action: s.action as 'buy' | 'sell' | 'hold',
+            confidence: s.confidence,
+            price: s.price || 0,
+            timestamp: s.timestamp || latestTestLog.created_at,
+            reasoning: s.reasoning || `Test signal generated at ${new Date(latestTestLog.created_at).toLocaleTimeString()}`
+          })))
+        }
       }
     }
 

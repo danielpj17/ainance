@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Get user/session via server client (forwards Authorization)
-    const supabase = createServerClient(req, {});
+    const supabase = await createServerClient(req, {});
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

@@ -4,75 +4,78 @@ import { createClient } from '@/utils/supabase/server'
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createClient()
     const body = await req.json()
-    const symbols = body.symbols || []
-    const mode = body.mode || 'paper'
     
-    if (symbols.length === 0) {
+    const { features } = body
+    
+    if (!features) {
       return NextResponse.json({
-        success: true,
-        signals: [],
-        note: 'No symbols provided'
-      })
+        success: false,
+        error: 'Missing features in request body'
+      }, { status: 400 })
     }
 
-    // Use service role for storage access
-    const supabase = createClient()
-    
     // Check if model exists in storage
-    const { data: files, error: listError } = await supabase.storage
+    const { data: files } = await supabase.storage
       .from('models')
       .list()
     
-    if (listError || !files || files.length === 0) {
+    const hasModel = files?.some(f => 
+      f.name.includes('scalping_model') && (f.name.endsWith('.pkl') || f.name.endsWith('.json'))
+    )
+
+    if (!hasModel) {
       return NextResponse.json({
-        success: true,
-        signals: [],
-        note: 'Model not found yet. Train first.'
-      })
+        success: false,
+        error: 'Model not found. Please train the model first.'
+      }, { status: 404 })
     }
 
-    // Generate mock predictions for now
-    // In production on Vercel, this would use the trained Random Forest model
-    const now = new Date().toISOString()
-    const signals = symbols.map((symbol: string) => {
-      // Simple rule-based mock predictions
-      const random = Math.random()
-      let action: 'buy' | 'sell' | 'hold'
-      let confidence: number
-      
-      if (random > 0.6) {
-        action = 'buy'
-        confidence = 0.65 + Math.random() * 0.2
-      } else if (random < 0.4) {
-        action = 'sell'
-        confidence = 0.60 + Math.random() * 0.2
+    // Simple rule-based prediction logic
+    // In production with a real .pkl model, you'd load and use it here
+    const { rsi, macd, bbWidth, volumeRatio, newsSentiment, emaTrend } = features
+    
+    let signal = 0 // 0 = hold, 1 = buy, -1 = sell
+    let confidence = 0.5
+    
+    // Simple trading logic based on technical indicators
+    if (rsi > 70) {
+      signal = -1 // Overbought - sell
+      confidence = 0.7
+    } else if (rsi < 30) {
+      signal = 1 // Oversold - buy
+      confidence = 0.7
+    } else if (macd > 0 && emaTrend === 1) {
+      signal = 1 // Bullish momentum
+      confidence = 0.65
+    } else if (macd < 0 && emaTrend === -1) {
+      signal = -1 // Bearish momentum
+      confidence = 0.65
+    }
+    
+    // Adjust confidence based on sentiment
+    if (signal !== 0 && Math.abs(newsSentiment) > 0.2) {
+      if ((signal === 1 && newsSentiment > 0) || (signal === -1 && newsSentiment < 0)) {
+        confidence = Math.min(0.95, confidence + 0.15)
       } else {
-        action = 'hold'
-        confidence = 0.55 + Math.random() * 0.15
+        confidence = Math.max(0.4, confidence - 0.15)
       }
-      
-      return {
-        symbol,
-        action,
-        confidence: parseFloat(confidence.toFixed(2)),
-        price: 150.0 + Math.random() * 50,
-        timestamp: now,
-        reasoning: 'Mock prediction (deploy to Vercel for real RF model)'
-      }
-    })
+    }
 
     return NextResponse.json({
       success: true,
-      signals,
-      note: 'Using mock predictions. Deploy to Vercel to use trained Random Forest model.'
+      prediction: signal,
+      confidence: confidence,
+      features: features,
+      note: 'Using rule-based prediction. For ML-based predictions, upload a trained .pkl model from python-functions/model/train.py'
     })
 
   } catch (error: any) {
     console.error('Error in model prediction:', error)
     return NextResponse.json({
       success: false,
-      error: error.message || 'Failed to generate predictions'
+      error: error.message || 'Failed to make prediction'
     }, { status: 500 })
   }
 }

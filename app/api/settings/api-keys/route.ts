@@ -18,7 +18,7 @@ export interface ApiKeysResponse {
 // POST - Save encrypted API keys
 export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysResponse>> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = createServerClient()
     
     // In demo mode, always use demo user ID
     let userId: string
@@ -46,11 +46,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
     // Use the encrypted API key update function
     const { error } = await supabase.rpc('update_user_api_keys', {
       user_uuid: userId,
-      alpaca_paper_key: alpacaPaperKey,
-      alpaca_paper_secret: alpacaPaperSecret,
-      alpaca_live_key: alpacaLiveKey || null,
-      alpaca_live_secret: alpacaLiveSecret || null,
-      news_api_key: newsApiKey
+      p_alpaca_paper_key: alpacaPaperKey,
+      p_alpaca_paper_secret: alpacaPaperSecret,
+      p_alpaca_live_key: alpacaLiveKey || null,
+      p_alpaca_live_secret: alpacaLiveSecret || null,
+      p_news_api_key: newsApiKey
     })
 
     if (error) {
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
       }, { status: 500 })
     }
 
-    console.log('API keys saved successfully for user:', user.id)
+    console.log('API keys saved successfully for user:', userId)
 
     return NextResponse.json({
       success: true
@@ -79,17 +79,23 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
 // GET - Retrieve API keys (for validation/testing)
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = createServerClient()
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // In demo mode, always use demo user ID
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     // Get encrypted API keys (for testing - in production, you might not want to expose this)
     const { data, error } = await supabase.rpc('get_user_api_keys', {
-      user_uuid: user.id
+      user_uuid: userId
     })
 
     if (error) {

@@ -24,10 +24,36 @@ export async function GET(req: NextRequest) {
     const timeframe = (searchParams.get('timeframe') as any) || '1Min'
     const limit = parseInt(searchParams.get('limit') || '300')
 
+    // Try to get keys from database first
+    let alpacaApiKey: string | undefined
+    let alpacaSecretKey: string | undefined
+    
     const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: userId })
     const keys = apiKeys?.[0] || {}
     const alpacaKeys = getAlpacaKeys(keys, 'cash', 'cash')
-    const alpaca = createAlpacaClient({ apiKey: alpacaKeys.apiKey, secretKey: alpacaKeys.secretKey, baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets', paper: alpacaKeys.paper })
+    
+    alpacaApiKey = alpacaKeys.apiKey
+    alpacaSecretKey = alpacaKeys.secretKey
+    
+    // Fallback to environment variables if no keys in database
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
+      alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
+    }
+    
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      return NextResponse.json(
+        { success: false, error: 'Alpaca API keys not configured' },
+        { status: 400 }
+      )
+    }
+    
+    const alpaca = createAlpacaClient({
+      apiKey: alpacaApiKey,
+      secretKey: alpacaSecretKey,
+      baseUrl: 'https://paper-api.alpaca.markets',
+      paper: true
+    })
     await alpaca.initialize()
 
     const series = await alpaca.getBarsSeries(symbol, timeframe, limit)

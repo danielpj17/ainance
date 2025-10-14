@@ -255,26 +255,68 @@ class AlpacaWrapper {
   // Get market data for symbols
   public async getMarketData(symbols: string[], timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' = '1Min'): Promise<MarketData[]> {
     try {
-      const marketData = await this.client.getBars({
-        symbols,
-        timeframe,
-        limit: 100
+      console.log(`Fetching market data for symbols:`, symbols)
+      console.log(`Available methods:`, {
+        hasBarsV2: typeof this.client.getBarsV2,
+        hasGetBars: typeof this.client.getBars,
+        hasGetMultiBars: typeof this.client.getMultiBars
       })
+      
+      const marketData: any = {}
+      
+      // For Alpaca SDK v3, we need to fetch bars for each symbol individually
+      for (const symbol of symbols) {
+        try {
+          console.log(`Fetching bars for ${symbol}...`)
+          
+          // Try getBarsV2 first (v3 SDK)
+          if (typeof this.client.getBarsV2 === 'function') {
+            const iterator = this.client.getBarsV2(symbol, {
+              timeframe,
+              limit: 100,
+              start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() // Last 7 days
+            })
+            
+            const bars: any[] = []
+            for await (const bar of iterator) {
+              bars.push(bar)
+            }
+            marketData[symbol] = bars
+            console.log(`Got ${bars.length} bars for ${symbol}`)
+          }
+          // Fallback to getBars
+          else if (typeof this.client.getBars === 'function') {
+            const bars = await this.client.getBars(symbol, {
+              timeframe,
+              limit: 100
+            })
+            marketData[symbol] = Array.isArray(bars) ? bars : [bars]
+          }
+          else {
+            throw new Error('No compatible getBars method found in Alpaca client')
+          }
+        } catch (err) {
+          console.error(`Failed to get bars for ${symbol}:`, err)
+          // Continue with other symbols
+        }
+      }
       
       const results: MarketData[] = []
       for (const symbol of symbols) {
         const bars = marketData[symbol]
         if (bars && bars.length > 0) {
           const latestBar = bars[bars.length - 1]
+          console.log(`Raw bar data for ${symbol}:`, latestBar);
+          
           results.push({
             symbol,
-            open: latestBar.Open,
-            high: latestBar.High,
-            low: latestBar.Low,
-            close: latestBar.Close,
-            volume: latestBar.Volume,
-            timestamp: new Date(latestBar.Timestamp).toISOString(),
-            vwap: latestBar.VWAP
+            open: latestBar.OpenPrice || latestBar.Open || latestBar.o || latestBar.open || 0,
+            high: latestBar.HighPrice || latestBar.High || latestBar.h || latestBar.high || 0,
+            low: latestBar.LowPrice || latestBar.Low || latestBar.l || latestBar.low || 0,
+            close: latestBar.ClosePrice || latestBar.Close || latestBar.c || latestBar.close || 0,
+            volume: latestBar.Volume || latestBar.v || latestBar.volume || 0,
+            timestamp: new Date(latestBar.Timestamp || latestBar.t || latestBar.timestamp).toISOString(),
+            vwap: latestBar.VWAP || latestBar.vw || latestBar.vwap
           })
         }
       }
@@ -332,6 +374,22 @@ class AlpacaWrapper {
       return clock.is_open
     } catch (error) {
       console.error('Error checking market status:', error)
+      throw this.handleAlpacaError(error)
+    }
+  }
+
+  // Get portfolio history
+  public async getPortfolioHistory(options: {
+    period?: string
+    timeframe?: string
+    date_end?: string
+    extended_hours?: boolean
+  } = {}): Promise<any> {
+    try {
+      const history = await this.client.getPortfolioHistory(options)
+      return history
+    } catch (error) {
+      console.error('Error fetching portfolio history:', error)
       throw this.handleAlpacaError(error)
     }
   }

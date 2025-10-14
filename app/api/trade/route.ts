@@ -24,7 +24,7 @@ export interface TradeResponse {
 // POST - Execute trade via Alpaca API
 export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse>> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // In demo mode, always use demo user ID
     let userId: string
@@ -49,36 +49,43 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       }, { status: 400 })
     }
 
-    // Get user's API keys
-    const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-      user_uuid: userId
-    })
+    // Get Alpaca credentials from environment variables first, fallback to database
+    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY
+    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET
+    let isPaper = true
+    
+    // If not in environment, try to get from database
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+        user_uuid: userId
+      })
 
-    if (keysError || !apiKeys?.[0]) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'API keys not found. Please configure your trading keys.' 
-      }, { status: 400 })
+        if (!keysError && apiKeys?.[0]) {
+          const keys = apiKeys[0]
+          const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
+          
+          if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+            alpacaApiKey = alpacaKeys.apiKey;
+            alpacaSecretKey = alpacaKeys.secretKey;
+            isPaper = alpacaKeys.paper;
+          }
+        }
     }
 
-    const keys = apiKeys[0]
-    
-    // Use the new Alpaca client wrapper
-    const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
-    
-    if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
+    // Final check to ensure keys are available
+    if (!alpacaApiKey || !alpacaSecretKey) {
       return NextResponse.json({ 
         success: false, 
-        error: `No ${alpacaKeys.paper ? 'paper' : 'live'} trading API keys configured` 
+        error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
       }, { status: 400 })
     }
 
     // Initialize Alpaca client
     const alpacaClient = createAlpacaClient({
-      apiKey: alpacaKeys.apiKey,
-      secretKey: alpacaKeys.secretKey,
-      baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-      paper: alpacaKeys.paper
+      apiKey: alpacaApiKey,
+      secretKey: alpacaSecretKey,
+      baseUrl: isPaper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+      paper: isPaper
     })
 
     await alpacaClient.initialize()
@@ -167,7 +174,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
 // GET - Get user's trade history
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = createServerClient(req, {})
+    const supabase = await createServerClient(req, {})
     
     // In demo mode, always use demo user ID
     let userId: string
