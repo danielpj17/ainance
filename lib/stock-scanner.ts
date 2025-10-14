@@ -49,15 +49,24 @@ export class StockScanner {
 
   /**
    * Scan universe for best scalping candidates
+   * RATE LIMIT AWARE: Processes in small batches with delays
    */
   public async scanForCandidates(maxSymbols = 20): Promise<ScalpingCandidate[]> {
     console.log(`🔍 Scanning ${SCALPING_UNIVERSE.length} stocks for scalping opportunities...`);
 
     const candidates: ScalpingCandidate[] = [];
-    const batchSize = 10;
+    const batchSize = 5; // Reduced from 10 to avoid rate limits
+    let requestCount = 0;
+    const maxRequests = 150; // Stay well under 200/min limit
 
     // Process in batches to avoid rate limits
     for (let i = 0; i < SCALPING_UNIVERSE.length; i += batchSize) {
+      // Stop if we've made too many requests
+      if (requestCount >= maxRequests) {
+        console.log(`⚠️  Rate limit protection: Stopped at ${requestCount} requests`);
+        break;
+      }
+      
       const batch = SCALPING_UNIVERSE.slice(i, i + batchSize);
       
       const batchResults = await Promise.allSettled(
@@ -69,17 +78,25 @@ export class StockScanner {
           candidates.push(result.value);
         }
       }
+      
+      requestCount += batchSize * 2; // Each symbol needs ~2 API calls (quote + bars)
 
-      // Rate limiting delay between batches
+      // Longer delay between batches to respect rate limits
       if (i + batchSize < SCALPING_UNIVERSE.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 500)); // Increased from 100ms
+      }
+      
+      // If we have enough good candidates, stop early
+      if (candidates.length >= maxSymbols * 2) {
+        console.log(`✅ Found ${candidates.length} candidates early, stopping scan`);
+        break;
       }
     }
 
     // Sort by scalping score (descending)
     candidates.sort((a, b) => b.score - a.score);
 
-    console.log(`✅ Found ${candidates.length} valid scalping candidates`);
+    console.log(`✅ Found ${candidates.length} valid scalping candidates from ${requestCount} API requests`);
     
     if (candidates.length > 0) {
       const top5 = candidates.slice(0, 5);

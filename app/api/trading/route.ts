@@ -347,34 +347,46 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       console.warn('⚠️  Could not fetch FRED data:', error)
     }
 
-    // STEP 2: Dynamic Stock Scanning (with timeout and fallback)
+    // STEP 2: Stock Selection (skip scanning to avoid rate limits)
     let scalpingStocks: string[] = []
-    try {
-      console.log('🔍 Scanning universe for best scalping candidates...')
-      
-      // Use a timeout for scanning to prevent hanging
-      const scanPromise = (async () => {
-        const scanner = new StockScanner(alpacaClient)
-        return await scanner.getTopScalpingStocks(20)
-      })()
-      
-      const timeoutPromise = new Promise<string[]>((_, reject) => 
-        setTimeout(() => reject(new Error('Scanning timeout')), 15000)
-      )
-      
-      scalpingStocks = await Promise.race([scanPromise, timeoutPromise])
-      
-      if (scalpingStocks.length === 0) {
-        console.log('⚠️  No candidates found, using default stocks')
+    
+    // TEMPORARY: Skip scanning to avoid Alpaca rate limits
+    // The scanner makes too many API calls (2 per stock * 70 stocks = 140 requests)
+    // This exceeds Alpaca's 200 requests/minute limit
+    const ENABLE_SCANNING = process.env.ENABLE_STOCK_SCANNING === 'true'
+    
+    if (ENABLE_SCANNING) {
+      try {
+        console.log('🔍 Scanning universe for best scalping candidates...')
+        
+        // Use a timeout for scanning to prevent hanging
+        const scanPromise = (async () => {
+          const scanner = new StockScanner(alpacaClient)
+          return await scanner.getTopScalpingStocks(15) // Reduced from 20
+        })()
+        
+        const timeoutPromise = new Promise<string[]>((_, reject) => 
+          setTimeout(() => reject(new Error('Scanning timeout')), 20000)
+        )
+        
+        scalpingStocks = await Promise.race([scanPromise, timeoutPromise])
+        
+        if (scalpingStocks.length === 0) {
+          console.log('⚠️  No candidates found, using default stocks')
+          scalpingStocks = getDefaultScalpingStocks()
+        } else {
+          console.log(`✅ Scanning complete: ${scalpingStocks.length} candidates selected`)
+        }
+      } catch (error) {
+        console.warn('⚠️  Stock scanning failed, using default stocks:', error)
         scalpingStocks = getDefaultScalpingStocks()
-      } else {
-        console.log(`✅ Scanning complete: ${scalpingStocks.length} candidates selected`)
       }
-    } catch (error) {
-      console.warn('⚠️  Stock scanning failed, using default stocks:', error)
+    } else {
+      console.log('📋 Using curated default stocks (scanning disabled to avoid rate limits)')
       scalpingStocks = getDefaultScalpingStocks()
-      console.log(`📋 Using ${scalpingStocks.length} default stocks: ${scalpingStocks.join(', ')}`)
     }
+    
+    console.log(`📊 Trading ${scalpingStocks.length} stocks: ${scalpingStocks.join(', ')}`)
 
     // STEP 3: Get Technical Indicators (call handler directly with error handling)
     console.log(`📈 Fetching technical indicators for ${scalpingStocks.length} symbols...`)
