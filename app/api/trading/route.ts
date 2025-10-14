@@ -347,24 +347,37 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       console.warn('⚠️  Could not fetch FRED data:', error)
     }
 
-    // STEP 2: Dynamic Stock Scanning
+    // STEP 2: Dynamic Stock Scanning (with timeout and fallback)
     let scalpingStocks: string[] = []
     try {
       console.log('🔍 Scanning universe for best scalping candidates...')
-      const scanner = new StockScanner(alpacaClient)
-      scalpingStocks = await scanner.getTopScalpingStocks(20)
+      
+      // Use a timeout for scanning to prevent hanging
+      const scanPromise = (async () => {
+        const scanner = new StockScanner(alpacaClient)
+        return await scanner.getTopScalpingStocks(20)
+      })()
+      
+      const timeoutPromise = new Promise<string[]>((_, reject) => 
+        setTimeout(() => reject(new Error('Scanning timeout')), 15000)
+      )
+      
+      scalpingStocks = await Promise.race([scanPromise, timeoutPromise])
       
       if (scalpingStocks.length === 0) {
         console.log('⚠️  No candidates found, using default stocks')
         scalpingStocks = getDefaultScalpingStocks()
+      } else {
+        console.log(`✅ Scanning complete: ${scalpingStocks.length} candidates selected`)
       }
     } catch (error) {
       console.warn('⚠️  Stock scanning failed, using default stocks:', error)
       scalpingStocks = getDefaultScalpingStocks()
+      console.log(`📋 Using ${scalpingStocks.length} default stocks: ${scalpingStocks.join(', ')}`)
     }
 
-    // STEP 3: Get Technical Indicators (call handler directly)
-    console.log('📈 Fetching technical indicators...')
+    // STEP 3: Get Technical Indicators (call handler directly with error handling)
+    console.log(`📈 Fetching technical indicators for ${scalpingStocks.length} symbols...`)
     let indicatorsData: any
     
     try {
@@ -376,14 +389,35 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       const indicatorsRes = await getIndicators(indicatorsReq)
       indicatorsData = await indicatorsRes.json()
       
-      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+      console.log('📊 Indicators API response:', indicatorsData)
+      
+      if (!indicatorsData.success) {
+        console.error('❌ Indicators API returned error:', indicatorsData.error)
+        throw new Error(indicatorsData.error || 'Indicators API failed')
+      }
+      
+      if (!indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+        console.error('❌ No indicators returned')
+        if (indicatorsData.errors) {
+          console.error('Indicator errors:', indicatorsData.errors)
+        }
         throw new Error('No technical indicators available')
       }
       
       console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols`)
-    } catch (error) {
+      
+      // Log any partial failures
+      if (indicatorsData.errors && indicatorsData.errors.length > 0) {
+        console.warn(`⚠️  Some symbols failed: ${indicatorsData.errors.join(', ')}`)
+      }
+    } catch (error: any) {
       console.error('❌ Failed to get technical indicators:', error)
-      throw error
+      console.error('Error details:', {
+        message: error.message,
+        symbols: scalpingStocks,
+        count: scalpingStocks.length
+      })
+      throw new Error(`Technical indicators failed: ${error.message}`)
     }
 
     // STEP 4: Get News Sentiment
