@@ -20,6 +20,11 @@ export interface BotStatus {
     price: number
     timestamp: string
     reasoning: string
+    news_sentiment?: number
+    market_risk?: number
+    vix?: number
+    data_timestamp?: string
+    market_open?: boolean
   }>
   error?: string
 }
@@ -357,7 +362,43 @@ export default function TradingBot({ mode }: TradingBotProps) {
                   <div className="text-sm text-gray-300 bg-[#1a1d2e] p-2 rounded border border-gray-700">
                     <strong className="text-white">Reasoning:</strong> {signal.reasoning}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  
+                  {/* Enhanced Metrics */}
+                  {(signal.news_sentiment !== undefined || signal.market_risk !== undefined || signal.vix !== undefined) && (
+                    <div className="mt-3 pt-3 border-t border-gray-700">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        {signal.news_sentiment !== undefined && (
+                          <div className="text-center">
+                            <div className={`font-bold ${signal.news_sentiment > 0 ? 'text-green-400' : signal.news_sentiment < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                              {signal.news_sentiment > 0 ? '📈' : signal.news_sentiment < 0 ? '📉' : '➡️'} {(signal.news_sentiment * 100).toFixed(1)}%
+                            </div>
+                            <div className="text-gray-500">News</div>
+                          </div>
+                        )}
+                        {signal.market_risk !== undefined && (
+                          <div className="text-center">
+                            <div className={`font-bold ${signal.market_risk < 0.3 ? 'text-green-400' : signal.market_risk < 0.6 ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {(signal.market_risk * 100).toFixed(0)}%
+                            </div>
+                            <div className="text-gray-500">Risk</div>
+                          </div>
+                        )}
+                        {signal.vix !== undefined && (
+                          <div className="text-center">
+                            <div className={`font-bold ${signal.vix < 20 ? 'text-green-400' : signal.vix < 30 ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {signal.vix.toFixed(1)}
+                            </div>
+                            <div className="text-gray-500">VIX</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="text-xs text-gray-500 mt-2">
+                    {signal.data_timestamp && !signal.market_open && (
+                      <div className="text-yellow-400 mb-1">⏰ Data from: {signal.data_timestamp}</div>
+                    )}
                     Generated: {new Date(signal.timestamp).toLocaleString()}
                   </div>
                 </div>

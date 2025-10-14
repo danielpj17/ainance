@@ -25,6 +25,11 @@ interface Prediction {
     stochastic: number;
   };
   timestamp?: string;
+  news_sentiment?: number;
+  market_risk?: number;
+  vix?: number;
+  data_timestamp?: string;
+  market_open?: boolean;
 }
 
 interface MLServiceInfo {
@@ -48,6 +53,7 @@ export default function TestMLPage() {
   const [error, setError] = useState<string | null>(null);
   const [mlServiceInfo, setMlServiceInfo] = useState<MLServiceInfo>({ status: 'unknown' });
   const [debugInfo, setDebugInfo] = useState<DebugInfo>({});
+  const [marketStatus, setMarketStatus] = useState<string>('');
 
   const checkMLService = async () => {
     try {
@@ -135,6 +141,9 @@ export default function TestMLPage() {
       if (data.success && data.signals) {
         setPredictions(data.signals);
         setDebugInfo(data.debug || {});
+        if (data.market_status) {
+          setMarketStatus(data.market_status);
+        }
       } else {
         throw new Error('No predictions returned');
       }
@@ -260,6 +269,15 @@ export default function TestMLPage() {
             </p>
           )}
           
+          {marketStatus && (
+            <div className={`mt-4 p-3 rounded-md text-sm ${predictions[0]?.market_open ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400'}`}>
+              <strong>{predictions[0]?.market_open ? '🟢' : '🟡'} {marketStatus}</strong>
+              {!predictions[0]?.market_open && predictions[0]?.data_timestamp && (
+                <div className="mt-1">Data from: {predictions[0].data_timestamp}</div>
+              )}
+            </div>
+          )}
+          
           {Object.keys(debugInfo).length > 0 && (
             <div className="mt-4 p-3 bg-blue-500/10 text-blue-700 dark:text-blue-400 rounded-md text-sm">
               <strong>🔍 Debug Info:</strong>
@@ -327,6 +345,39 @@ export default function TestMLPage() {
                         <div>Stoch: {pred.indicators?.stochastic || 'N/A'}</div>
                       </div>
                     </div>
+
+                    {/* Enhanced Metrics */}
+                    {(pred.news_sentiment !== undefined || pred.market_risk !== undefined || pred.vix !== undefined) && (
+                      <div className="border-t pt-3 mt-3">
+                        <strong className="text-sm">Enhanced Metrics:</strong>
+                        <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                          {pred.news_sentiment !== undefined && (
+                            <div className="text-center p-2 rounded bg-muted">
+                              <div className={`font-bold ${pred.news_sentiment > 0 ? 'text-green-500' : pred.news_sentiment < 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                                {pred.news_sentiment > 0 ? '📈' : pred.news_sentiment < 0 ? '📉' : '➡️'} {(pred.news_sentiment * 100).toFixed(1)}%
+                              </div>
+                              <div className="text-muted-foreground mt-1">News</div>
+                            </div>
+                          )}
+                          {pred.market_risk !== undefined && (
+                            <div className="text-center p-2 rounded bg-muted">
+                              <div className={`font-bold ${pred.market_risk < 0.3 ? 'text-green-500' : pred.market_risk < 0.6 ? 'text-yellow-500' : 'text-red-500'}`}>
+                                {(pred.market_risk * 100).toFixed(0)}%
+                              </div>
+                              <div className="text-muted-foreground mt-1">Risk</div>
+                            </div>
+                          )}
+                          {pred.vix !== undefined && (
+                            <div className="text-center p-2 rounded bg-muted">
+                              <div className={`font-bold ${pred.vix < 20 ? 'text-green-500' : pred.vix < 30 ? 'text-yellow-500' : 'text-red-500'}`}>
+                                {pred.vix.toFixed(1)}
+                              </div>
+                              <div className="text-muted-foreground mt-1">VIX</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );

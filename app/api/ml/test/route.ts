@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getMarketStatus } from '@/lib/market-utils';
 
 export const runtime = 'nodejs';
 
@@ -95,12 +96,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       timestamp: mlResponse.timestamp
     });
     
+    // Get market status for display
+    const marketStatus = getMarketStatus();
+    
+    // Enhance signals with market status info if available
+    const enhancedSignals = mlResponse.signals.map((signal: any) => ({
+      ...signal,
+      market_open: marketStatus.open,
+      data_timestamp: marketStatus.timestamp
+    }));
+    
     return NextResponse.json({
       success: true,
-      signals: mlResponse.signals,
+      signals: enhancedSignals,
       cached: false,
       model_version: mlResponse.model_version,
       timestamp: mlResponse.timestamp,
+      market_status: marketStatus.message,
+      market_open: marketStatus.open,
+      data_timestamp: marketStatus.timestamp,
       debug: {
         ml_service_url: ML_SERVICE_URL,
         request_features_count: body.features.length,
