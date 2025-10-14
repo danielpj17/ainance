@@ -496,8 +496,8 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
         action: 'execute',
         message: `Trading loop executed. Generated ${signals.length} signals`,
         data: {
-          symbols: config.symbols,
-          signals: signals.map(s => ({
+          symbols: scalpingStocks,
+          signals: signals.map((s: any) => ({
             symbol: s.symbol,
             action: s.action,
             confidence: s.confidence,
