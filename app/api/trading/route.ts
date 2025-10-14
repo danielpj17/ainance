@@ -1,10 +1,11 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/utils/supabase/server'
+import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
 import { tradingModel, TradingSignal, TradingSettings } from '@/lib/trading-model'
 import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
 import { initializeNewsAnalyzer, getNewsAnalyzer } from '@/lib/news-sentiment'
 import { TradingErrorHandler, withRetry } from '@/lib/error-handler'
+import { isDemoMode } from '@/lib/demo-user'
 
 export interface BotStatus {
   isRunning: boolean
@@ -43,19 +44,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // In demo mode, always use demo user ID
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     const body = await req.json()
     const { action, config }: { action: 'start' | 'stop', config?: BotConfig } = body
 
     if (action === 'start') {
-      return await startBot(supabase, user.id, config!)
+      return await startBot(supabase, userId, config!)
     } else if (action === 'stop') {
-      return await stopBot(supabase, user.id)
+      return await stopBot(supabase, userId)
     } else {
       return NextResponse.json({ 
         success: false, 
@@ -77,13 +84,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // In demo mode, always use demo user ID
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
-    const status = await getBotStatus(supabase, user.id)
+    const status = await getBotStatus(supabase, userId)
 
     return NextResponse.json({
       success: true,

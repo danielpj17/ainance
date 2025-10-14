@@ -1,27 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import { createClient } from "@/utils/supabase/client";
+import { isDemoMode } from "@/lib/demo-user";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
+  // In demo mode, always allow access - no auth checks needed
+  // All users share the same demo account
+  
+  if (isDemoMode()) {
+    return <>{children}</>;
+  }
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      if (pathname === "/auth") return;
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace("/auth");
-      }
-    };
-    checkAuth();
-  }, [router, pathname]);
-
+  // Real authentication logic would go here when DEMO_MODE is disabled
+  // For now, always allow access
   return <>{children}</>;
 }
 

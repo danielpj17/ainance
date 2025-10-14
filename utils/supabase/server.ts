@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { getDemoUserId } from '@/lib/demo-user'
 
 export const createClient = () => {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -21,3 +22,6 @@ export const createClient = () => {
 
 // Accept optional args for compatibility with call sites using (req, res)
 export const createServerClient = (_req?: any, _res?: any) => createClient()
+
+// Helper to get demo user ID for server-side operations
+export const getDemoUserIdServer = () => getDemoUserId()

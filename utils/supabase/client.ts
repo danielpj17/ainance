@@ -1,13 +1,9 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { isDemoMode, getDemoUser, getDemoSession } from '@/lib/demo-user'
 
 export const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  // Debug logs for client-side envs (safe: only public vars)
-  // Remove after verification
-  console.log('NEXT_PUBLIC_SUPABASE_URL', process.env.NEXT_PUBLIC_SUPABASE_URL)
-  console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY set?', Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY))
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
@@ -15,5 +11,42 @@ export const createClient = () => {
     )
   }
 
-  return createSupabaseClient(supabaseUrl, supabaseAnonKey)
+  const client = createSupabaseClient(supabaseUrl, supabaseAnonKey)
+
+  // In demo mode, override auth methods to always return demo user
+  if (isDemoMode()) {
+    const originalAuth = client.auth
+
+    client.auth = {
+      ...originalAuth,
+      getUser: async () => ({
+        data: { user: getDemoUser() },
+        error: null,
+      }),
+      getSession: async () => ({
+        data: { session: getDemoSession() },
+        error: null,
+      }),
+      signInWithPassword: async () => ({
+        data: { user: getDemoUser(), session: getDemoSession() },
+        error: null,
+      }),
+      signUp: async () => ({
+        data: { user: getDemoUser(), session: getDemoSession() },
+        error: null,
+      }),
+      signOut: async () => ({
+        error: null,
+      }),
+      onAuthStateChange: (callback) => {
+        // Immediately call with signed in state
+        callback('SIGNED_IN', getDemoSession())
+        return {
+          data: { subscription: { unsubscribe: () => {} } },
+        }
+      },
+    } as any
+  }
+
+  return client
 }

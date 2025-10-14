@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import AuthGuard from "@/components/AuthGuard";
+import DemoModeBanner from "@/components/DemoModeBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,8 +16,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Ainance - AI Trading Platform",
-  description: "AI-powered trading platform with real-time analytics",
+  title: "Ainance Demo - AI Trading Platform",
+  description: "AI-powered trading platform with real-time analytics - Demo Mode",
 };
 
 export default function RootLayout({
@@ -28,11 +29,14 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0f1117]`}>
         <AuthGuard>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <main className="flex-1 ml-20">
-              {children}
-            </main>
+          <div className="flex min-h-screen flex-col">
+            <DemoModeBanner />
+            <div className="flex flex-1">
+              <Sidebar />
+              <main className="flex-1 ml-20">
+                {children}
+              </main>
+            </div>
           </div>
         </AuthGuard>
       </body>

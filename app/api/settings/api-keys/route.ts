@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/utils/supabase/server'
+import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
+import { isDemoMode } from '@/lib/demo-user'
 
 export interface ApiKeysRequest {
   alpacaPaperKey: string
@@ -19,10 +20,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
   try {
     const supabase = createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // In demo mode, always use demo user ID
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     const body = await req.json()
@@ -38,7 +45,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
 
     // Use the encrypted API key update function
     const { error } = await supabase.rpc('update_user_api_keys', {
-      user_uuid: user.id,
+      user_uuid: userId,
       alpaca_paper_key: alpacaPaperKey,
       alpaca_paper_secret: alpacaPaperSecret,
       alpaca_live_key: alpacaLiveKey || null,

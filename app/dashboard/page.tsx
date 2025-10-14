@@ -14,6 +14,8 @@ export default function DashboardPage() {
   const [account, setAccount] = useState<any>(null)
   const [trades, setTrades] = useState<any[]>([])
   const [signals, setSignals] = useState<any[]>([])
+  const [tradeMetrics, setTradeMetrics] = useState<any>(null)
+  const [winRate, setWinRate] = useState<number>(0)
   
   // Mock trend data
   const trendData = [
@@ -65,6 +67,25 @@ export default function DashboardPage() {
         const signalsData = await signalsRes.json()
         if (signalsData.success && signalsData.status?.currentSignals) {
           setSignals(signalsData.status.currentSignals.slice(0, 5))
+        }
+      }
+
+      // Fetch trade metrics for win rate calculation
+      const logsRes = await fetch('/api/logs?view=closed')
+      if (logsRes.ok) {
+        const logsData = await logsRes.json()
+        if (logsData.success) {
+          setTradeMetrics(logsData.data.metrics)
+          
+          // Calculate win rate from closed positions
+          const closedPositions = logsData.data.closedPositions || []
+          if (closedPositions.length > 0) {
+            const winningTrades = closedPositions.filter((pos: any) => pos.realized_pl > 0).length
+            const calculatedWinRate = (winningTrades / closedPositions.length) * 100
+            setWinRate(calculatedWinRate)
+          } else {
+            setWinRate(0)
+          }
         }
       }
     } catch (error) {
@@ -128,8 +149,12 @@ export default function DashboardPage() {
             <TrendingUp className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">68.5%</div>
-            <p className="text-xs text-blue-500 mt-1">+5.2% this month</p>
+            <div className="text-3xl font-bold text-white">
+              {winRate.toFixed(1)}%
+            </div>
+            <p className={`text-xs mt-1 ${winRate > 0 ? 'text-blue-500' : 'text-gray-400'}`}>
+              {tradeMetrics ? `${tradeMetrics.closed_positions} closed trades` : 'No trades yet'}
+            </p>
           </CardContent>
         </Card>
 
