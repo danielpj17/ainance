@@ -146,9 +146,9 @@ function calculateStochastic(prices: number[], period = 14): number {
 }
 
 /**
- * Fetch historical bars from Alpaca
+ * Fetch historical bars from Alpaca (with volume data)
  */
-async function fetchAlpacaBars(symbol: string, limit = 100): Promise<number[]> {
+async function fetchAlpacaBars(symbol: string, limit = 100): Promise<{ prices: number[]; volumes: number[] }> {
   // Get date range (last 6 months to ensure we have enough data)
   const end = new Date();
   const start = new Date();
@@ -181,7 +181,10 @@ async function fetchAlpacaBars(symbol: string, limit = 100): Promise<number[]> {
     throw new Error(`No historical data available for ${symbol}. The stock may be delisted or data feed is unavailable.`);
   }
 
-  return data.bars.map((bar: any) => bar.c); // Close prices
+  return {
+    prices: data.bars.map((bar: any) => bar.c), // Close prices
+    volumes: data.bars.map((bar: any) => bar.v)  // Volume data
+  };
 }
 
 /**
@@ -212,8 +215,8 @@ async function fetchLatestQuote(symbol: string): Promise<number> {
  */
 async function calculateIndicators(symbol: string): Promise<StockData> {
   try {
-    // Fetch historical data
-    const prices = await fetchAlpacaBars(symbol, 100);
+    // Fetch historical data with volumes
+    const { prices, volumes } = await fetchAlpacaBars(symbol, 100);
     
     // Use latest bar price instead of real-time quote (works when market is closed)
     let currentPrice = prices[prices.length - 1]; // Most recent close price
@@ -249,8 +252,14 @@ async function calculateIndicators(symbol: string): Promise<StockData> {
     const ema50 = calculateEMA(prices, 50);
     const ema_trend = currentPrice > ema50 ? 1 : 0;
 
-    // Volume ratio (simplified - would need volume data)
-    const volume_ratio = 1.0;
+    // Volume ratio (current volume vs 20-day average)
+    let volume_ratio = 1.0;
+    if (volumes && volumes.length >= 20) {
+      const recentVolumes = volumes.slice(-20);
+      const avgVolume = recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length;
+      const currentVolume = volumes[volumes.length - 1];
+      volume_ratio = avgVolume > 0 ? currentVolume / avgVolume : 1.0;
+    }
 
     return {
       symbol,
