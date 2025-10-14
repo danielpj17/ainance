@@ -153,7 +153,7 @@ export default function TradeTerminalPage() {
   useEffect(() => { fetchBars() }, [symbol, timeframe])
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+    <div className="min-h-screen text-white p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -162,7 +162,7 @@ export default function TradeTerminalPage() {
         </div>
         <div className="flex items-center gap-3">
           <Badge className="bg-blue-600 text-white px-4 py-2">Paper Trading</Badge>
-          <Button variant="outline" size="icon" onClick={fetchBars} className="border-gray-700 hover:bg-[#252838]">
+          <Button variant="outline" size="icon" onClick={fetchBars} className="border-gray-700 hover:bg-blue-500/10 backdrop-blur-sm">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
@@ -177,10 +177,10 @@ export default function TradeTerminalPage() {
 
       {/* Account Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card className="bg-[#1a1d2e] border-gray-800 hover:border-purple-500 transition-colors">
+        <Card className="glass-card hover:border-blue-500 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Portfolio</CardTitle>
-            <DollarSign className="h-5 w-5 text-purple-500" />
+            <DollarSign className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-white">
@@ -190,7 +190,7 @@ export default function TradeTerminalPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800 hover:border-blue-500 transition-colors">
+        <Card className="glass-card hover:border-blue-500 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Cash</CardTitle>
             <DollarSign className="h-5 w-5 text-blue-500" />
@@ -203,7 +203,7 @@ export default function TradeTerminalPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800 hover:border-blue-500 transition-colors">
+        <Card className="glass-card hover:border-blue-500 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Buying Power</CardTitle>
             <Activity className="h-5 w-5 text-blue-500" />
@@ -216,7 +216,7 @@ export default function TradeTerminalPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800 hover:border-yellow-500 transition-colors">
+        <Card className="glass-card hover:border-yellow-500 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">{symbol}</CardTitle>
             {priceChange >= 0 ? <TrendingUp className="h-5 w-5 text-blue-500" /> : <TrendingDown className="h-5 w-5 text-red-500" />}
@@ -232,11 +232,11 @@ export default function TradeTerminalPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chart */}
-        <Card className="lg:col-span-2 bg-[#1a1d2e] border-gray-800">
+        <Card className="lg:col-span-2 glass-card">
           <CardHeader>
             <CardTitle className="flex items-center justify-between text-white">
               <span>Market Chart</span>
-              {loading && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
+              {loading && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
             </CardTitle>
             <CardDescription className="text-gray-400">Real-time price data</CardDescription>
           </CardHeader>
@@ -247,14 +247,14 @@ export default function TradeTerminalPage() {
                   value={symbol} 
                   onChange={(e) => setSymbol(e.target.value.toUpperCase())} 
                   placeholder="Symbol" 
-                  className="bg-[#252838] border-gray-700 text-white font-mono focus:border-purple-500"
+                  className="bg-blue-500/10 backdrop-blur-sm border-gray-700 text-white font-mono focus:border-blue-500"
                 />
               </div>
               <Select value={timeframe} onValueChange={(v:any) => setTimeframe(v)}>
-                <SelectTrigger className="bg-[#252838] border-gray-700 text-white">
+                <SelectTrigger className="bg-blue-500/10 backdrop-blur-sm border-gray-700 text-white">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#252838] border-gray-700">
+                <SelectContent className="bg-blue-500/10 backdrop-blur-sm border-gray-700">
                   <SelectItem value="1Min">1m</SelectItem>
                   <SelectItem value="5Min">5m</SelectItem>
                   <SelectItem value="15Min">15m</SelectItem>
@@ -262,7 +262,7 @@ export default function TradeTerminalPage() {
                   <SelectItem value="1Day">1d</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={fetchBars} disabled={loading} className="bg-purple-600 hover:bg-purple-700">
+              <Button onClick={fetchBars} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
                 {loading ? (<><Loader2 className="h-4 w-4 animate-spin mr-2"/>Load</>) : 'Refresh'}
               </Button>
             </div>
@@ -332,7 +332,7 @@ export default function TradeTerminalPage() {
 
         {/* Order Panel + AI */}
         <div className="space-y-6">
-          <Card className="bg-[#1a1d2e] border-gray-800">
+          <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-white">Place Order</CardTitle>
               <CardDescription className="text-gray-400">Execute trades</CardDescription>
@@ -342,14 +342,14 @@ export default function TradeTerminalPage() {
                 <Button 
                   onClick={() => setSide('buy')} 
                   variant={side === 'buy' ? 'default' : 'outline'}
-                  className={side === 'buy' ? 'bg-blue-600 hover:bg-blue-700' : 'border-gray-700 hover:bg-[#252838]'}
+                  className={side === 'buy' ? 'bg-blue-600 hover:bg-blue-700' : 'border-gray-700 hover:bg-blue-500/10 backdrop-blur-sm'}
                 >
                   Buy
                 </Button>
                 <Button 
                   onClick={() => setSide('sell')} 
                   variant={side === 'sell' ? 'default' : 'outline'}
-                  className={side === 'sell' ? 'bg-red-600 hover:bg-red-700' : 'border-gray-700 hover:bg-[#252838]'}
+                  className={side === 'sell' ? 'bg-red-600 hover:bg-red-700' : 'border-gray-700 hover:bg-blue-500/10 backdrop-blur-sm'}
                 >
                   Sell
                 </Button>
@@ -362,17 +362,17 @@ export default function TradeTerminalPage() {
                   min={1} 
                   value={qty} 
                   onChange={(e)=>setQty(parseInt(e.target.value)||1)} 
-                  className="bg-[#252838] border-gray-700 text-white"
+                  className="bg-blue-500/10 backdrop-blur-sm border-gray-700 text-white"
                 />
               </div>
 
               <div>
                 <label className="text-sm font-medium text-gray-400 mb-2 block">Order Type</label>
                 <Select value={orderType} onValueChange={(v:any)=>setOrderType(v)}>
-                  <SelectTrigger className="bg-[#252838] border-gray-700 text-white">
+                  <SelectTrigger className="bg-blue-500/10 backdrop-blur-sm border-gray-700 text-white">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#252838] border-gray-700">
+                  <SelectContent className="bg-blue-500/10 backdrop-blur-sm border-gray-700">
                     <SelectItem value="market">Market</SelectItem>
                     <SelectItem value="limit">Limit</SelectItem>
                   </SelectContent>
@@ -388,7 +388,7 @@ export default function TradeTerminalPage() {
                     value={limitPrice} 
                     onChange={(e)=>setLimitPrice(e.target.value)} 
                     placeholder="0.00" 
-                    className="bg-[#252838] border-gray-700 text-white"
+                    className="bg-blue-500/10 backdrop-blur-sm border-gray-700 text-white"
                   />
                 </div>
               )}
@@ -406,7 +406,7 @@ export default function TradeTerminalPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#1a1d2e] border-gray-800">
+          <Card className="glass-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
                 <Zap className="h-5 w-5 text-yellow-500" />
@@ -417,7 +417,7 @@ export default function TradeTerminalPage() {
             <CardContent>
               <div className="space-y-3">
                 {signals.length > 0 ? signals.map((signal, idx) => (
-                  <div key={idx} className="p-3 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-colors">
+                  <div key={idx} className="p-3 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-gray-700 hover:border-blue-500 transition-colors">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={`${signal.action === 'buy' ? 'bg-blue-600' : 'bg-red-600'} font-mono text-xs`}>
@@ -433,7 +433,7 @@ export default function TradeTerminalPage() {
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      className="w-full border-gray-700 hover:bg-purple-600 hover:border-purple-600" 
+                      className="w-full border-gray-700 hover:bg-blue-600 hover:border-blue-600" 
                       onClick={() => executeAISignal(signal)}
                     >
                       Execute

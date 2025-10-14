@@ -27,16 +27,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0f1117]`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AuthGuard>
-          <div className="flex min-h-screen flex-col">
-            <DemoModeBanner />
-            <div className="flex flex-1">
-              <Sidebar />
-              <main className="flex-1 ml-20">
-                {children}
-              </main>
-            </div>
+          <DemoModeBanner />
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <main className="flex-1 ml-20 pt-0">
+              {children}
+            </main>
           </div>
         </AuthGuard>
       </body>

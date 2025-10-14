@@ -141,7 +141,7 @@ export default function TradeLogsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-white p-8">
+    <div className="min-h-screen text-white p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -161,7 +161,7 @@ export default function TradeLogsPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Spent</CardTitle>
             <DollarSign className="h-5 w-5 text-red-500" />
@@ -174,7 +174,7 @@ export default function TradeLogsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Received</CardTitle>
             <DollarSign className="h-5 w-5 text-green-500" />
@@ -187,7 +187,7 @@ export default function TradeLogsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Realized P&L</CardTitle>
             {metrics.realized_pl >= 0 ? (
@@ -204,7 +204,7 @@ export default function TradeLogsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Unrealized P&L</CardTitle>
             {metrics.unrealized_pl >= 0 ? (
@@ -225,20 +225,20 @@ export default function TradeLogsPage() {
       {/* Tabs for different views */}
       <Tabs defaultValue="realized" className="space-y-6">
         <TabsList className="bg-[#1a1d2e] border border-gray-800">
-          <TabsTrigger value="realized" className="data-[state=active]:bg-purple-600">
+          <TabsTrigger value="realized" className="data-[state=active]:bg-blue-600">
             Realized P&L
           </TabsTrigger>
-          <TabsTrigger value="unrealized" className="data-[state=active]:bg-purple-600">
+          <TabsTrigger value="unrealized" className="data-[state=active]:bg-blue-600">
             Open Positions
           </TabsTrigger>
-          <TabsTrigger value="all" className="data-[state=active]:bg-purple-600">
+          <TabsTrigger value="all" className="data-[state=active]:bg-blue-600">
             All Trades
           </TabsTrigger>
         </TabsList>
 
         {/* Realized P&L Tab */}
         <TabsContent value="realized">
-          <Card className="bg-[#1a1d2e] border-gray-800">
+          <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-white">Realized P&L - Closed Positions</CardTitle>
               <CardDescription className="text-gray-400">
@@ -248,7 +248,7 @@ export default function TradeLogsPage() {
             <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                 </div>
               ) : closedPositions.length > 0 ? (
                 <div className="overflow-x-auto">
@@ -302,7 +302,7 @@ export default function TradeLogsPage() {
 
         {/* Open Positions Tab */}
         <TabsContent value="unrealized">
-          <Card className="bg-[#1a1d2e] border-gray-800">
+          <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-white">Open Positions - Unrealized P&L</CardTitle>
               <CardDescription className="text-gray-400">
@@ -312,7 +312,7 @@ export default function TradeLogsPage() {
             <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                 </div>
               ) : openPositions.length > 0 ? (
                 <div className="overflow-x-auto">
@@ -376,7 +376,7 @@ export default function TradeLogsPage() {
 
         {/* All Trades Tab */}
         <TabsContent value="all">
-          <Card className="bg-[#1a1d2e] border-gray-800">
+          <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-white">All Trades History</CardTitle>
               <CardDescription className="text-gray-400">
@@ -386,7 +386,7 @@ export default function TradeLogsPage() {
             <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                 </div>
               ) : allTrades.length > 0 ? (
                 <div className="overflow-x-auto">

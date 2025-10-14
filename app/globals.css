@@ -118,5 +118,33 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-image: url('/home.png');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+  
+  /* Frosted glass utilities */
+  .glass {
+    background: rgba(15, 17, 23, 0.1) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(96, 165, 250, 0.2);
+  }
+  
+  .glass-dark {
+    background: rgba(15, 17, 23, 0.8) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+  }
+  
+  .glass-card {
+    background: rgba(15, 17, 23, 0.7) !important;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(96, 165, 250, 0.3) !important;
+    box-shadow: 0 25px 50px -12px rgba(59, 130, 246, 0.1);
   }
 }
