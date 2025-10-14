@@ -350,25 +350,28 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       scalpingStocks = getDefaultScalpingStocks()
     }
 
-    // STEP 3: Get Technical Indicators
+    // STEP 3: Get Technical Indicators (call handler directly)
     console.log('📈 Fetching technical indicators...')
-    const indicatorsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/stocks/indicators`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbols: scalpingStocks })
-    })
-
-    if (!indicatorsResponse.ok) {
-      throw new Error(`Failed to fetch indicators: ${indicatorsResponse.status}`)
-    }
-
-    const indicatorsData = await indicatorsResponse.json()
+    let indicatorsData: any
     
-    if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
-      throw new Error('No technical indicators available')
+    try {
+      const { POST: getIndicators } = await import('@/app/api/stocks/indicators/route')
+      const indicatorsReq = new NextRequest('http://localhost/api/stocks/indicators', {
+        method: 'POST',
+        body: JSON.stringify({ symbols: scalpingStocks })
+      })
+      const indicatorsRes = await getIndicators(indicatorsReq)
+      indicatorsData = await indicatorsRes.json()
+      
+      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+        throw new Error('No technical indicators available')
+      }
+      
+      console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols`)
+    } catch (error) {
+      console.error('❌ Failed to get technical indicators:', error)
+      throw error
     }
-
-    console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols`)
 
     // STEP 4: Get News Sentiment
     let sentimentData: { [symbol: string]: any } = {}
@@ -393,28 +396,57 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    // STEP 6: Get ML Predictions
-    console.log('🧠 Calling ML prediction service...')
-    const mlResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/ml/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        features: enhancedFeatures,
-        include_probabilities: true
-      })
-    })
-
-    if (!mlResponse.ok) {
-      throw new Error(`ML service returned ${mlResponse.status}`)
-    }
-
-    const mlData = await mlResponse.json()
+    // STEP 6: Get ML Predictions (call ML service directly)
+    console.log('🧠 Calling ML prediction service directly...')
+    const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '')
     
-    if (!mlData.success || !mlData.signals) {
-      throw new Error('ML service did not return valid signals')
+    let mlData: any
+    
+    try {
+      // Strip enhanced features before sending to ML model
+      const coreFeatures = enhancedFeatures.map((f: any) => ({
+        symbol: f.symbol,
+        rsi: f.rsi,
+        macd: f.macd,
+        macd_histogram: f.macd_histogram,
+        bb_width: f.bb_width,
+        bb_position: f.bb_position,
+        ema_trend: f.ema_trend,
+        volume_ratio: f.volume_ratio,
+        stochastic: f.stochastic,
+        price_change_1d: f.price_change_1d,
+        price_change_5d: f.price_change_5d,
+        price_change_10d: f.price_change_10d,
+        volatility_20: f.volatility_20,
+        news_sentiment: f.news_sentiment,
+        price: f.price
+      }))
+      
+      const mlResponse = await fetch(`${ML_SERVICE_URL}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          features: coreFeatures,
+          include_probabilities: true
+        }),
+        signal: AbortSignal.timeout(10000)
+      })
+      
+      if (!mlResponse.ok) {
+        throw new Error(`ML service returned ${mlResponse.status}`)
+      }
+      
+      mlData = await mlResponse.json()
+      
+      if (!mlData.success || !mlData.signals) {
+        throw new Error('ML service did not return valid signals')
+      }
+      
+      console.log(`✅ ML predictions received for ${mlData.signals.length} symbols`)
+    } catch (error: any) {
+      console.error('❌ Failed to get ML predictions:', error)
+      throw new Error(`ML service unavailable: ${error.message}`)
     }
-
-    console.log(`✅ ML predictions received for ${mlData.signals.length} symbols`)
 
     // STEP 7: Get Current Positions
     console.log('📊 Checking current positions...')
