@@ -800,7 +800,7 @@ async function executeTradeSignal(
       return // Skip hold signals
     }
 
-    // Log the trade
+    // Log the trade (legacy trades table)
     const { error: tradeError } = await supabase
       .from('trades')
       .insert({
@@ -820,6 +820,60 @@ async function executeTradeSignal(
 
     if (tradeError) {
       console.error('Error logging trade:', tradeError)
+    }
+
+    // Log to trade_logs with comprehensive decision metrics
+    const decisionMetrics = {
+      confidence: signal.confidence,
+      adjusted_confidence: signal.adjusted_confidence,
+      reasoning: signal.reasoning,
+      news_sentiment: signal.news_sentiment,
+      news_headlines: signal.news_headlines,
+      market_risk: signal.market_risk || 0,
+      price: signal.price,
+      timestamp: new Date().toISOString(),
+      alpaca_order_id: order.id,
+      order_status: order.status
+    }
+
+    if (signal.action === 'buy') {
+      // Create new trade log entry for buy
+      const { error: logError } = await supabase
+        .from('trade_logs')
+        .insert({
+          user_id: userId,
+          symbol: signal.symbol,
+          action: 'buy',
+          qty: positionSize,
+          price: signal.price,
+          total_value: positionSize * signal.price,
+          timestamp: new Date().toISOString(),
+          status: 'open',
+          buy_timestamp: new Date().toISOString(),
+          buy_price: signal.price,
+          buy_decision_metrics: decisionMetrics,
+          strategy: config.strategy,
+          account_type: config.accountType,
+          alpaca_order_id: order.id,
+          order_status: order.status
+        })
+
+      if (logError) {
+        console.error('Error logging to trade_logs:', logError)
+      }
+    } else if (signal.action === 'sell') {
+      // Update existing trade log entry for sell
+      const { error: closeError } = await supabase.rpc('close_trade_position', {
+        user_uuid: userId,
+        symbol_param: signal.symbol,
+        sell_qty: positionSize,
+        sell_price_param: signal.price,
+        sell_metrics: decisionMetrics
+      })
+
+      if (closeError) {
+        console.error('Error closing trade in trade_logs:', closeError)
+      }
     }
 
     console.log(`Trade executed: ${signal.action} ${positionSize} ${signal.symbol} @ $${signal.price}`)

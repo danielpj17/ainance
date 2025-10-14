@@ -2,13 +2,14 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Home, Activity, TrendingUp, Settings, Brain, ListTree, LogOut } from 'lucide-react'
+import { Home, Activity, TrendingUp, Settings, Brain, ListTree, LogOut, FileText } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 const navItems = [
   { icon: Home, href: '/dashboard', label: 'Dashboard' },
   { icon: Activity, href: '/dashboard/paper', label: 'Paper Trading' },
   { icon: TrendingUp, href: '/dashboard/live', label: 'Live Trading' },
+  { icon: FileText, href: '/dashboard/trade-logs', label: 'Trade Logs' },
   { icon: ListTree, href: '/dashboard/watchlist', label: 'Watchlist' },
   { icon: Brain, href: '/test-ml', label: 'ML Testing' },
   { icon: Settings, href: '/settings', label: 'Settings' },
