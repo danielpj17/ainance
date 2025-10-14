@@ -332,46 +332,97 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       // Continue without sentiment data
     }
 
-    // Generate trading signals using rule-based logic
-    console.log('Generating trading signals...')
-    console.log('Sentiment data:', sentimentData)
-    const symbols = marketData.map(d => d.symbol)
-    const currentPrices = marketData.map(d => d.close)
+    // Generate trading signals using ML model
+    console.log('Generating ML-based trading signals...')
     
     let signals: TradingSignal[] = []
     try {
-      // Use simple rule-based signals (sentiment + price momentum)
+      // Step 1: Get technical indicators for all symbols
+      console.log('Fetching technical indicators from /api/stocks/indicators...')
+      const indicatorsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/stocks/indicators`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols: config.symbols })
+      })
+
+      if (!indicatorsResponse.ok) {
+        throw new Error(`Failed to fetch indicators: ${indicatorsResponse.status}`)
+      }
+
+      const indicatorsData = await indicatorsResponse.json()
+      
+      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+        console.warn('No technical indicators available, falling back to simple signals')
+        throw new Error('No technical indicators available')
+      }
+
+      console.log(`Technical indicators received for ${indicatorsData.indicators.length} symbols`)
+
+      // Step 2: Call ML prediction service
+      console.log('Calling ML prediction service...')
+      const mlResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/ml/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          features: indicatorsData.indicators,
+          include_probabilities: true
+        })
+      })
+
+      if (!mlResponse.ok) {
+        throw new Error(`ML service returned ${mlResponse.status}`)
+      }
+
+      const mlData = await mlResponse.json()
+      
+      if (!mlData.success || !mlData.signals) {
+        throw new Error('ML service did not return valid signals')
+      }
+
+      console.log(`ML predictions received for ${mlData.signals.length} symbols`)
+
+      // Step 3: Convert ML signals to trading signals
+      signals = mlData.signals
+        .filter((s: any) => s.action !== 'hold' && s.confidence >= 0.55) // Only actionable signals
+        .map((s: any) => ({
+          symbol: s.symbol,
+          action: s.action,
+          confidence: s.confidence,
+          price: s.price || 0,
+          timestamp: s.timestamp || new Date().toISOString(),
+          reasoning: s.reasoning || `ML ${s.action} signal`
+        }))
+
+      console.log(`Generated ${signals.length} actionable ML trading signals (filtered from ${mlData.signals.length} total)`)
+      
+      signals.forEach(signal => {
+        console.log(`✅ ML Signal: ${signal.action.toUpperCase()} ${signal.symbol} @ $${signal.price} (confidence: ${signal.confidence.toFixed(2)})`)
+        console.log(`   Reasoning: ${signal.reasoning}`)
+      })
+
+    } catch (error) {
+      console.error('Error generating ML signals:', error)
+      console.warn('Falling back to sentiment-based signals...')
+      
+      // Fallback to simple sentiment-based signals if ML fails
       for (let i = 0; i < marketData.length; i++) {
         const data = marketData[i]
         const sentiment = sentimentData[data.symbol] || 0
         
-        console.log(`${data.symbol}: sentiment=${sentiment.toFixed(3)}, price=$${data.close}`)
-        
-        // More aggressive signal generation with lower thresholds
         let action: 'buy' | 'sell' | 'hold' = 'hold'
         let confidence = 0.5
-        let reasoning = 'No clear signal'
+        let reasoning = 'Fallback: sentiment-based signal'
         
-        // Bullish conditions: positive sentiment (lowered threshold from 0.3 to 0.1)
-        if (sentiment > 0.1) {
+        if (sentiment > 0.2) {
           action = 'buy'
           confidence = 0.6 + (sentiment * 0.4)
-          reasoning = `Positive sentiment (${sentiment.toFixed(2)}) suggests upward momentum`
-        }
-        // Bearish conditions: negative sentiment (lowered threshold from -0.3 to -0.1)
-        else if (sentiment < -0.1) {
+          reasoning = `Fallback: Positive sentiment (${sentiment.toFixed(2)})`
+        } else if (sentiment < -0.2) {
           action = 'sell'
           confidence = 0.6 + (Math.abs(sentiment) * 0.4)
-          reasoning = `Negative sentiment (${sentiment.toFixed(2)}) suggests downward pressure`
-        }
-        // Neutral but lean bullish (for testing)
-        else if (sentiment >= 0) {
-          action = 'buy'
-          confidence = 0.55
-          reasoning = `Neutral to slightly positive sentiment, market conditions favorable`
+          reasoning = `Fallback: Negative sentiment (${sentiment.toFixed(2)})`
         }
         
-        // Only add signals with sufficient confidence
         if (action !== 'hold' && confidence >= 0.55) {
           signals.push({
             symbol: data.symbol,
@@ -379,19 +430,12 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
             confidence,
             price: data.close,
             timestamp: new Date().toISOString(),
-            reasoning: `${reasoning} | Price: $${data.close} | Sentiment: ${sentiment.toFixed(3)}`
+            reasoning
           })
-          console.log(`✅ Signal generated: ${action.toUpperCase()} ${data.symbol} @ $${data.close} (confidence: ${confidence.toFixed(2)})`)
-        } else {
-          console.log(`⏸️  No signal for ${data.symbol} (action: ${action}, confidence: ${confidence.toFixed(2)})`)
         }
       }
       
-      console.log(`Generated ${signals.length} trading signals`)
-    } catch (error) {
-      console.error('Error generating signals:', error)
-      const errorMsg = error instanceof Error ? error.message : JSON.stringify(error)
-      throw new Error(`Failed to generate trading signals: ${errorMsg}`)
+      console.log(`Generated ${signals.length} fallback signals`)
     }
 
     // Execute trades for signals with error handling
