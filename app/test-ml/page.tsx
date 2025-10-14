@@ -35,12 +35,19 @@ interface MLServiceInfo {
   uptime_seconds?: number;
 }
 
+interface DebugInfo {
+  ml_service_url?: string;
+  request_features_count?: number;
+  response_signals_count?: number;
+}
+
 export default function TestMLPage() {
   const [symbols, setSymbols] = useState('AAPL,TSLA,NVDA');
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mlServiceInfo, setMlServiceInfo] = useState<MLServiceInfo>({ status: 'unknown' });
+  const [debugInfo, setDebugInfo] = useState<DebugInfo>({});
 
   const checkMLService = async () => {
     try {
@@ -65,7 +72,7 @@ export default function TestMLPage() {
     }
   };
 
-  const getPredictions = async () => {
+  const getPredictions = async (forceFresh = false) => {
     setLoading(true);
     setError(null);
 
@@ -113,7 +120,10 @@ export default function TestMLPage() {
       const response = await fetch('/api/ml/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ features })
+        body: JSON.stringify({ 
+          features,
+          force_fresh: forceFresh
+        })
       });
 
       if (!response.ok) {
@@ -124,6 +134,7 @@ export default function TestMLPage() {
       
       if (data.success && data.signals) {
         setPredictions(data.signals);
+        setDebugInfo(data.debug || {});
       } else {
         throw new Error('No predictions returned');
       }
@@ -216,6 +227,14 @@ export default function TestMLPage() {
             <Button onClick={getPredictions} disabled={loading}>
               {loading ? 'Analyzing...' : 'Get Predictions'}
             </Button>
+            <Button 
+              onClick={() => getPredictions(true)} 
+              disabled={loading}
+              variant="outline"
+              title="Force fresh predictions (bypass any caching)"
+            >
+              {loading ? 'Analyzing...' : 'Force Fresh'}
+            </Button>
           </div>
           {error && (
             <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">
@@ -239,6 +258,23 @@ export default function TestMLPage() {
             <p className="text-sm text-muted-foreground">
               Generated: {new Date(predictions[0].timestamp).toLocaleString()}
             </p>
+          )}
+          
+          {Object.keys(debugInfo).length > 0 && (
+            <div className="mt-4 p-3 bg-blue-500/10 text-blue-700 dark:text-blue-400 rounded-md text-sm">
+              <strong>🔍 Debug Info:</strong>
+              <div className="mt-1 space-y-1">
+                {debugInfo.ml_service_url && (
+                  <div>ML Service URL: {debugInfo.ml_service_url}</div>
+                )}
+                {debugInfo.request_features_count && (
+                  <div>Features sent: {debugInfo.request_features_count}</div>
+                )}
+                {debugInfo.response_signals_count && (
+                  <div>Signals received: {debugInfo.response_signals_count}</div>
+                )}
+              </div>
+            </div>
           )}
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

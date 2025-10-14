@@ -84,15 +84,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     
     // Call ML service
     console.log(`🤖 Calling ML service for ${body.features.length} symbols: ${body.features.map(f => f.symbol).join(', ')}`);
+    console.log(`🔗 ML Service URL: ${ML_SERVICE_URL}`);
     
     const mlResponse = await callMLService(body.features, body.include_probabilities);
+    
+    console.log(`✅ ML Response received:`, {
+      model_version: mlResponse.model_version,
+      signal_count: mlResponse.signals?.length,
+      timestamp: mlResponse.timestamp
+    });
     
     return NextResponse.json({
       success: true,
       signals: mlResponse.signals,
       cached: false,
       model_version: mlResponse.model_version,
-      timestamp: mlResponse.timestamp
+      timestamp: mlResponse.timestamp,
+      debug: {
+        ml_service_url: ML_SERVICE_URL,
+        request_features_count: body.features.length,
+        response_signals_count: mlResponse.signals?.length
+      }
     });
     
   } catch (error: any) {
