@@ -109,30 +109,56 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    // Call ML prediction service by calling the API route handler directly
-    console.log('🧠 Calling ML prediction service...')
+    // Call ML service directly (skip the /api/ml/predict wrapper to avoid auth issues)
+    console.log('🧠 Calling ML prediction service directly...')
+    const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '');
+    
     let mlData: any
     
     try {
-      const { POST: getMLPredictions } = await import('@/app/api/ml/predict/route')
-      const mlReq = new NextRequest('http://localhost/api/ml/predict', {
+      // Strip enhanced features before sending to ML model
+      const coreFeatures = enhancedFeatures.map((f: any) => ({
+        symbol: f.symbol,
+        rsi: f.rsi,
+        macd: f.macd,
+        macd_histogram: f.macd_histogram,
+        bb_width: f.bb_width,
+        bb_position: f.bb_position,
+        ema_trend: f.ema_trend,
+        volume_ratio: f.volume_ratio,
+        stochastic: f.stochastic,
+        price_change_1d: f.price_change_1d,
+        price_change_5d: f.price_change_5d,
+        price_change_10d: f.price_change_10d,
+        volatility_20: f.volatility_20,
+        news_sentiment: f.news_sentiment,
+        price: f.price
+      }));
+      
+      const mlResponse = await fetch(`${ML_SERVICE_URL}/predict`, {
         method: 'POST',
-        body: JSON.stringify({ 
-          features: enhancedFeatures,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          features: coreFeatures,
           include_probabilities: true
-        })
-      })
-      const mlRes = await getMLPredictions(mlReq)
-      mlData = await mlRes.json()
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
+      
+      if (!mlResponse.ok) {
+        throw new Error(`ML service returned ${mlResponse.status}`)
+      }
+      
+      mlData = await mlResponse.json()
       
       if (!mlData.success || !mlData.signals) {
         throw new Error('ML service did not return valid signals')
       }
       
       console.log(`✅ Got ML predictions for ${mlData.signals.length} symbols`)
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to get ML predictions:', error)
-      throw new Error('ML service unavailable')
+      throw new Error(`ML service unavailable: ${error.message}`)
     }
 
     // Enhance signals with news sentiment and FRED data
