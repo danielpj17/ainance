@@ -9,16 +9,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     
-    // Get current user
+    // Get current user (optional for test signals - allow unauthenticated testing)
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    const userId = user?.id || '00000000-0000-0000-0000-000000000000' // Use placeholder if not authenticated
+    
+    if (userError) {
+      console.warn('⚠️  Auth warning in test signals:', userError)
     }
 
     const body = await req.json()
     const { symbols = ['AAPL', 'MSFT', 'TSLA', 'SPY'] } = body
 
     console.log('🧪 Generating test signals with real ML pipeline...')
+    console.log(`📋 Symbols: ${symbols.join(', ')}`)
 
     // Check market status
     const marketStatus = getMarketStatus()
@@ -137,20 +140,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     })
 
-    // Store test signals in bot logs
-    await supabase
-      .from('bot_logs')
-      .insert({
-        user_id: user.id,
-        action: 'test_signals',
-        message: `Generated ${testSignals.length} test signals using real ML pipeline`,
-        data: {
-          symbols,
-          signals: testSignals,
-          market_status: marketStatus.message,
-          data_timestamp: formattedTimestamp
-        }
-      })
+    // Store test signals in bot logs (only if user is authenticated)
+    if (user) {
+      try {
+        await supabase
+          .from('bot_logs')
+          .insert({
+            user_id: userId,
+            action: 'test_signals',
+            message: `Generated ${testSignals.length} test signals using real ML pipeline`,
+            data: {
+              symbols,
+              signals: testSignals,
+              market_status: marketStatus.message,
+              data_timestamp: formattedTimestamp
+            }
+          })
+      } catch (logError) {
+        console.warn('⚠️  Could not log to database:', logError)
+      }
+    }
 
     console.log(`✅ Generated ${testSignals.length} test signals`)
 
@@ -162,11 +171,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       market_open: marketStatus.open
     })
 
-  } catch (error) {
-    console.error('Error generating test signals:', error)
+  } catch (error: any) {
+    console.error('❌ Error generating test signals:', error)
+    
+    // Provide detailed error message
+    let errorMessage = 'Failed to generate test signals'
+    
+    if (error.message) {
+      errorMessage = error.message
+    }
+    
+    // Log full error for debugging
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
+    
     return NextResponse.json({ 
       success: false, 
-      error: 'Failed to generate test signals' 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     }, { status: 500 })
   }
 }
