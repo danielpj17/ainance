@@ -265,7 +265,7 @@ export default function PaperTradingPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
             <DollarSign className="h-5 w-5 text-purple-500" />
@@ -281,7 +281,7 @@ export default function PaperTradingPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Cash Balance</CardTitle>
             <Wallet className="h-5 w-5 text-blue-500" />
@@ -294,7 +294,7 @@ export default function PaperTradingPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Buying Power</CardTitle>
             <TrendingUp className="h-5 w-5 text-blue-500" />
@@ -307,7 +307,7 @@ export default function PaperTradingPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Position Value</CardTitle>
             <Activity className="h-5 w-5 text-yellow-500" />
@@ -328,7 +328,7 @@ export default function PaperTradingPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Portfolio Chart */}
-        <Card className="lg:col-span-2 bg-[#1a1d2e] border-gray-800">
+        <Card className="lg:col-span-2 glass-card">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -424,7 +424,7 @@ export default function PaperTradingPage() {
         </Card>
 
         {/* Recent Trades Widget */}
-        <Card className="bg-[#1a1d2e] border-gray-800">
+        <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">Recent Trades</CardTitle>
             <CardDescription className="text-gray-400">Latest trading activity</CardDescription>
