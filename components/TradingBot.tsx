@@ -300,7 +300,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
           </div>
 
           {/* Bot Configuration */}
-          <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+          <div className="p-4 rounded-lg bg-blue-500/10 backdrop-blur-sm border border-blue-500/20">
             <h4 className="font-medium mb-2 text-white">Bot Configuration</h4>
             <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
               <div>Symbols: {config.symbols.join(', ')}</div>
@@ -374,7 +374,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
           <CardContent>
             <div className="space-y-3">
               {botStatus.currentSignals.map((signal, index) => (
-                <div key={index} className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-colors">
+                <div key={index} className="p-4 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-blue-500/20 hover:border-purple-500 transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <Badge 
@@ -395,7 +395,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
                       <div className="text-sm text-gray-400">Confidence</div>
                     </div>
                   </div>
-                  <div className="text-sm text-gray-300 bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                  <div className="text-sm text-gray-300 bg-blue-500/10 backdrop-blur-sm p-2 rounded border border-blue-500/20">
                     <strong className="text-white">Reasoning:</strong> {signal.reasoning}
                   </div>
                   

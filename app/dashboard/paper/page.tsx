@@ -433,7 +433,7 @@ export default function PaperTradingPage() {
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {trades.length > 0 ? (
                 trades.slice(0, 10).map((trade) => (
-                  <div key={trade.id} className="p-3 bg-[#252838] rounded-lg">
+                  <div key={trade.id} className="p-3 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-blue-500/20">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <Badge 

@@ -320,7 +320,7 @@ export default function TestMLPage() {
                         <span>Confidence</span>
                         <span className="font-bold">{(pred.confidence * 100).toFixed(1)}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-blue-500/20 rounded-full h-2 backdrop-blur-sm">
                         <div
                           className="bg-blue-500 h-2 rounded-full"
                           style={{ width: `${pred.confidence * 100}%` }}
@@ -352,7 +352,7 @@ export default function TestMLPage() {
                         <strong className="text-sm">Enhanced Metrics:</strong>
                         <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
                           {pred.news_sentiment !== undefined && (
-                            <div className="text-center p-2 rounded bg-muted">
+                            <div className="text-center p-2 rounded bg-blue-500/10 backdrop-blur-sm border border-blue-500/20">
                               <div className={`font-bold ${pred.news_sentiment > 0 ? 'text-green-500' : pred.news_sentiment < 0 ? 'text-red-500' : 'text-gray-500'}`}>
                                 {pred.news_sentiment > 0 ? '📈' : pred.news_sentiment < 0 ? '📉' : '➡️'} {(pred.news_sentiment * 100).toFixed(1)}%
                               </div>
@@ -360,7 +360,7 @@ export default function TestMLPage() {
                             </div>
                           )}
                           {pred.market_risk !== undefined && (
-                            <div className="text-center p-2 rounded bg-muted">
+                            <div className="text-center p-2 rounded bg-blue-500/10 backdrop-blur-sm border border-blue-500/20">
                               <div className={`font-bold ${pred.market_risk < 0.3 ? 'text-green-500' : pred.market_risk < 0.6 ? 'text-yellow-500' : 'text-red-500'}`}>
                                 {(pred.market_risk * 100).toFixed(0)}%
                               </div>
@@ -368,7 +368,7 @@ export default function TestMLPage() {
                             </div>
                           )}
                           {pred.vix !== undefined && (
-                            <div className="text-center p-2 rounded bg-muted">
+                            <div className="text-center p-2 rounded bg-blue-500/10 backdrop-blur-sm border border-blue-500/20">
                               <div className={`font-bold ${pred.vix < 20 ? 'text-green-500' : pred.vix < 30 ? 'text-yellow-500' : 'text-red-500'}`}>
                                 {pred.vix.toFixed(1)}
                               </div>
