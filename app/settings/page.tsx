@@ -25,7 +25,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="api-keys" className="space-y-6">
-          <TabsList className="bg-[#1a1d2e] border border-gray-800">
+          <TabsList className="glass-card">
             <TabsTrigger value="api-keys" className="flex items-center gap-2">
               <Key className="h-4 w-4" />
               API Keys
@@ -49,7 +49,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="model" className="space-y-6">
-            <Card>
+            <Card className="glass-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Brain className="h-5 w-5 text-purple-500" />
