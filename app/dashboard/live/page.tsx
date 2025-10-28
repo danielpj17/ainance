@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, AlertTriangle, Shield } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 

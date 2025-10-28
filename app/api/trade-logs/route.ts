@@ -225,16 +225,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         completedTrades = completedData
       }
 
-      // Also check legacy trades table for closed positions
+      // Also check legacy trades table for completed trades
       try {
         const { data: legacyTrades, error: legacyError } = await supabase
           .from('trades')
           .select('*')
           .eq('user_id', userId)
           .order('trade_timestamp', { ascending: false })
-          .limit(50)
+          .limit(100)
 
-        if (!legacyError && legacyTrades) {
+        if (!legacyError && legacyTrades && legacyTrades.length > 0) {
+          console.log(`Found ${legacyTrades.length} legacy trades to process`)
+          
           // Group trades by symbol to find buy/sell pairs
           const tradesBySymbol = new Map<string, any[]>()
           
@@ -253,6 +255,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             const sells = trades.filter(t => t.action === 'sell').sort((a, b) => 
               new Date(a.trade_timestamp).getTime() - new Date(b.trade_timestamp).getTime()
             )
+
+            console.log(`Processing ${symbol}: ${buys.length} buys, ${sells.length} sells`)
 
             const pairsCount = Math.min(buys.length, sells.length)
             
@@ -298,6 +302,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               }
             }
           }
+          
+          console.log(`Processed legacy trades: ${completedTrades.length} completed trades found`)
+          
+          // If no completed pairs found, show individual trades as "completed" for display purposes
+          if (completedTrades.length === 0 && legacyTrades.length > 0) {
+            console.log('No completed pairs found, showing individual trades')
+            for (const trade of legacyTrades.slice(0, 20)) { // Limit to 20 most recent
+              completedTrades.push({
+                id: trade.id,
+                symbol: trade.symbol,
+                qty: trade.qty,
+                buy_price: trade.action === 'buy' ? trade.price : 0,
+                buy_timestamp: trade.action === 'buy' ? trade.trade_timestamp : trade.created_at,
+                sell_price: trade.action === 'sell' ? trade.price : 0,
+                sell_timestamp: trade.action === 'sell' ? trade.trade_timestamp : trade.created_at,
+                profit_loss: 0, // Can't calculate without pair
+                profit_loss_percent: 0,
+                holding_duration: '0:0:0',
+                buy_decision_metrics: {
+                  confidence: trade.confidence || 0,
+                  reasoning: trade.reasoning || `Legacy ${trade.action} trade`
+                },
+                sell_decision_metrics: {
+                  confidence: trade.confidence || 0,
+                  reasoning: trade.reasoning || `Legacy ${trade.action} trade`
+                },
+                strategy: trade.strategy,
+                account_type: trade.account_type,
+                trade_pair_id: crypto.randomUUID()
+              })
+            }
+          }
+        } else {
+          console.log('No legacy trades found or error:', legacyError)
         }
       } catch (error) {
         console.error('Error fetching legacy trades:', error)
