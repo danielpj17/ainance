@@ -16,6 +16,8 @@ export interface BotStatus {
   activePositions: number
   currentSignals: TradingSignal[]
   error?: string
+  marketOpen?: boolean
+  nextMarketOpen?: string
 }
 
 export interface BotConfig {
@@ -34,6 +36,64 @@ let botState: {
 } = {
   intervalId: null,
   userId: null
+}
+
+// Market hours utility function
+function isMarketOpen(): boolean {
+  const now = new Date()
+  const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}))
+  const day = et.getDay()
+  const hours = et.getHours()
+  const minutes = et.getMinutes()
+  
+  // Market closed on weekends
+  if (day === 0 || day === 6) return false
+  
+  // Market open 9:30 AM - 4:00 PM ET
+  const currentMinutes = hours * 60 + minutes
+  const marketOpen = 9 * 60 + 30 // 9:30 AM
+  const marketClose = 16 * 60 // 4:00 PM
+  
+  return currentMinutes >= marketOpen && currentMinutes < marketClose
+}
+
+// Get next market open time
+function getNextMarketOpen(): Date {
+  const now = new Date()
+  const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}))
+  const day = et.getDay()
+  const hours = et.getHours()
+  const minutes = et.getMinutes()
+  
+  // If it's weekend, next open is Monday 9:30 AM ET
+  if (day === 0) { // Sunday
+    const nextMonday = new Date(et)
+    nextMonday.setDate(et.getDate() + 1)
+    nextMonday.setHours(9, 30, 0, 0)
+    return nextMonday
+  } else if (day === 6) { // Saturday
+    const nextMonday = new Date(et)
+    nextMonday.setDate(et.getDate() + 2)
+    nextMonday.setHours(9, 30, 0, 0)
+    return nextMonday
+  }
+  
+  // If it's a weekday
+  const currentMinutes = hours * 60 + minutes
+  const marketOpen = 9 * 60 + 30 // 9:30 AM
+  
+  if (currentMinutes < marketOpen) {
+    // Market opens today at 9:30 AM
+    const todayOpen = new Date(et)
+    todayOpen.setHours(9, 30, 0, 0)
+    return todayOpen
+  } else {
+    // Market opens tomorrow at 9:30 AM
+    const tomorrowOpen = new Date(et)
+    tomorrowOpen.setDate(et.getDate() + 1)
+    tomorrowOpen.setHours(9, 30, 0, 0)
+    return tomorrowOpen
+  }
 }
 
 // POST - Start/Stop trading bot
@@ -216,10 +276,27 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
       })
     }
 
-    // Start the trading loop interval
+    // Start the trading loop interval with market hours awareness
     const intervalId = setInterval(async () => {
       try {
+        // Check if market is open for live trading
+        if (config.accountType === 'live' && !isMarketOpen()) {
+          console.log('⏸️  Market is closed, bot running in standby mode')
+          
+          // Update bot state to show it's running but market is closed
+          await supabase.rpc('update_bot_state', {
+            user_uuid: userId,
+            is_running_param: true,
+            config_param: config,
+            error_param: null
+          })
+          return
+        }
+        
+        // Execute trading loop
         await executeTradingLoop(supabase, userId, config, keys)
+        
+        // Update bot state after each execution
         await supabase.rpc('update_bot_state', {
           user_uuid: userId,
           is_running_param: true,
@@ -359,11 +436,18 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     await alpacaClient.initialize()
     console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
-    // Check if market is open (skip if closed for live trading)
+    // Check if market is open (skip trading if closed, but continue running)
     if (!alpacaKeys.paper) {
       const marketOpen = await alpacaClient.isMarketOpen()
       if (!marketOpen) {
-        console.log('⏸️  Market is closed, skipping trading loop')
+        console.log('⏸️  Market is closed, skipping trading execution but continuing bot operation')
+        // Update bot state to show it's running but market is closed
+        await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: null
+        })
         return
       }
     }
@@ -815,14 +899,8 @@ async function executeTradeSignal(
     
     // For SELL orders, no buying power check needed (we're closing a position)
 
-    // Check if market is open (for live trading)
-    if (!alpacaClient.getConfig().paper) {
-      const marketOpen = await alpacaClient.isMarketOpen()
-      if (!marketOpen) {
-        console.log(`Market is closed, skipping trade for ${signal.symbol}`)
-        return
-      }
-    }
+    // Market hours check is handled at the main loop level
+    // Individual trades will only be executed when market is open
 
     // Place the order
     let order
@@ -1012,13 +1090,19 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       }
     }
 
+    // Add market hours information
+    const marketOpen = isMarketOpen()
+    const nextMarketOpen = getNextMarketOpen()
+    
     return {
       isRunning: dbBotState.is_running,
       lastRun: dbBotState.last_run || null,
       totalTrades: trades?.length || 0,
       activePositions: positions?.length || 0,
       currentSignals,
-      error: dbBotState.error || undefined
+      error: dbBotState.error || undefined,
+      marketOpen,
+      nextMarketOpen: nextMarketOpen.toISOString()
     }
 
   } catch (error) {
@@ -1029,7 +1113,9 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       totalTrades: 0,
       activePositions: 0,
       currentSignals: [],
-      error: 'Failed to get bot status'
+      error: 'Failed to get bot status',
+      marketOpen: false,
+      nextMarketOpen: getNextMarketOpen().toISOString()
     }
   }
 }

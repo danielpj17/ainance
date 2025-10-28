@@ -32,12 +32,31 @@ interface PortfolioSummary {
   active_strategy: string
 }
 
+interface CurrentPosition {
+  id: bigint
+  symbol: string
+  qty: number
+  buy_price: number
+  buy_timestamp: string
+  current_price: number
+  current_value: number
+  unrealized_pl: number
+  unrealized_pl_percent: number
+  holding_duration: string
+  buy_decision_metrics: any
+  strategy: string
+  account_type: string
+  trade_pair_id: string
+}
+
 export default function LiveTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null)
   const [hasApiKeys, setHasApiKeys] = useState(false)
+  const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
+  const [positionsLoading, setPositionsLoading] = useState(false)
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -60,8 +79,14 @@ export default function LiveTradingPage() {
       )
       .subscribe()
 
+    // Refresh positions every 30 seconds
+    const positionsInterval = setInterval(() => {
+      loadCurrentPositions()
+    }, 30000)
+
     return () => {
       tradesChannel?.unsubscribe()
+      clearInterval(positionsInterval)
     }
   }, [])
 
@@ -116,11 +141,41 @@ export default function LiveTradingPage() {
         setTrades(tradesData || [])
         setPortfolioSummary(summaryData?.[0] || null)
       }
+
+      // Load current positions
+      await loadCurrentPositions()
     } catch (error) {
       console.error('Error loading data:', error)
       setMessage({ type: 'error', text: 'Failed to load live trading data' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCurrentPositions = async () => {
+    try {
+      setPositionsLoading(true)
+      const sb = supabaseRef.current
+      if (!sb) return
+      
+      const { data: { session } } = await sb.auth.getSession()
+      const response = await fetch('/api/trade-logs?view=current', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        // Filter for live positions only
+        const livePositions = (data.data.currentTrades || []).filter((pos: CurrentPosition) => 
+          pos.account_type === 'live'
+        )
+        setCurrentPositions(livePositions)
+      }
+    } catch (error) {
+      console.error('Error loading current positions:', error)
+    } finally {
+      setPositionsLoading(false)
     }
   }
 
@@ -236,6 +291,92 @@ export default function LiveTradingPage() {
           </Card>
         </div>
       )}
+
+      {/* Current Positions */}
+      <div className="mb-8">
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-white">Current Live Positions</CardTitle>
+            <CardDescription className="text-gray-400">
+              Active live trading positions with real-time P&L
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {positionsLoading ? (
+              <div className="text-center py-8 text-gray-400">
+                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                Loading positions...
+              </div>
+            ) : currentPositions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <p>No current live positions</p>
+                <p className="text-sm mt-1">Start the trading bot to see positions here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {currentPositions.map((position) => (
+                  <div
+                    key={position.id.toString()}
+                    className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-red-500 transition-all"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl font-bold text-white">{position.symbol}</div>
+                        <Badge className="bg-red-600">LIVE</Badge>
+                        <Badge variant="outline" className="border-gray-600 text-gray-400">
+                          {position.qty} shares
+                        </Badge>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {formatCurrency(position.unrealized_pl)}
+                        </div>
+                        <div className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="text-gray-500 mb-1">Entry Price</div>
+                        <div className="font-semibold text-white">{formatCurrency(position.buy_price)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 mb-1">Current Price</div>
+                        <div className="font-semibold text-white">{formatCurrency(position.current_price)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 mb-1">Position Value</div>
+                        <div className="font-semibold text-white">{formatCurrency(position.current_value)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 mb-1 flex items-center gap-1">
+                          <Activity className="h-3 w-3" />
+                          Holding Time
+                        </div>
+                        <div className="font-semibold text-white">{position.holding_duration}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-gray-700">
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <div>
+                          Bought: {new Date(position.buy_timestamp).toLocaleString()}
+                        </div>
+                        <div className="text-red-400">
+                          Strategy: {position.strategy}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Trading Bot */}
       {hasApiKeys && <TradingBot mode="live" />}
