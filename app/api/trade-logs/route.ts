@@ -227,6 +227,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       // Also check legacy trades table for completed trades
       try {
+        // First check if there are any SELL trades at all
+        const { data: sellTrades, error: sellError } = await supabase
+          .from('trades')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('action', 'sell')
+          .order('trade_timestamp', { ascending: false })
+          .limit(10)
+
+        console.log(`Found ${sellTrades?.length || 0} SELL trades in legacy table`)
+
         const { data: legacyTrades, error: legacyError } = await supabase
           .from('trades')
           .select('*')
@@ -308,30 +319,62 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           // If no completed pairs found, show individual trades as "completed" for display purposes
           if (completedTrades.length === 0 && legacyTrades.length > 0) {
             console.log('No completed pairs found, showing individual trades')
-            for (const trade of legacyTrades.slice(0, 20)) { // Limit to 20 most recent
-              completedTrades.push({
-                id: trade.id,
-                symbol: trade.symbol,
-                qty: trade.qty,
-                buy_price: trade.action === 'buy' ? trade.price : 0,
-                buy_timestamp: trade.action === 'buy' ? trade.trade_timestamp : trade.created_at,
-                sell_price: trade.action === 'sell' ? trade.price : 0,
-                sell_timestamp: trade.action === 'sell' ? trade.trade_timestamp : trade.created_at,
-                profit_loss: 0, // Can't calculate without pair
-                profit_loss_percent: 0,
-                holding_duration: '0:0:0',
-                buy_decision_metrics: {
-                  confidence: trade.confidence || 0,
-                  reasoning: trade.reasoning || `Legacy ${trade.action} trade`
-                },
-                sell_decision_metrics: {
-                  confidence: trade.confidence || 0,
-                  reasoning: trade.reasoning || `Legacy ${trade.action} trade`
-                },
-                strategy: trade.strategy,
-                account_type: trade.account_type,
-                trade_pair_id: crypto.randomUUID()
-              })
+            
+            // If there are no SELL trades at all, treat all BUY trades as "completed" (sold at current price)
+            if (!sellTrades || sellTrades.length === 0) {
+              console.log('No SELL trades found - treating all BUY trades as completed')
+              for (const trade of legacyTrades.filter(t => t.action === 'buy').slice(0, 20)) {
+                completedTrades.push({
+                  id: trade.id,
+                  symbol: trade.symbol,
+                  qty: trade.qty,
+                  buy_price: trade.price,
+                  buy_timestamp: trade.trade_timestamp,
+                  sell_price: trade.price, // Assume sold at same price for now
+                  sell_timestamp: trade.trade_timestamp,
+                  profit_loss: 0, // No profit/loss since we don't have actual sell price
+                  profit_loss_percent: 0,
+                  holding_duration: '0:0:0',
+                  buy_decision_metrics: {
+                    confidence: trade.confidence || 0,
+                    reasoning: trade.reasoning || 'Legacy buy trade (no sell recorded)'
+                  },
+                  sell_decision_metrics: {
+                    confidence: trade.confidence || 0,
+                    reasoning: 'No sell trade recorded in database'
+                  },
+                  strategy: trade.strategy,
+                  account_type: trade.account_type,
+                  trade_pair_id: crypto.randomUUID()
+                })
+              }
+            } else {
+              // Show individual trades as completed
+              for (const trade of legacyTrades.slice(0, 20)) {
+                completedTrades.push({
+                  id: trade.id,
+                  symbol: trade.symbol,
+                  qty: trade.qty,
+                  buy_price: trade.action === 'buy' ? trade.price : 0,
+                  buy_timestamp: trade.action === 'buy' ? trade.trade_timestamp : trade.created_at,
+                  sell_price: trade.action === 'sell' ? trade.price : 0,
+                  sell_timestamp: trade.action === 'sell' ? trade.trade_timestamp : trade.created_at,
+                  profit_loss: 0, // Can't calculate without pair
+                  profit_loss_percent: 0,
+                  holding_duration: '0:0:0',
+                  buy_decision_metrics: {
+                    confidence: trade.confidence || 0,
+                    reasoning: trade.reasoning || `Legacy ${trade.action} trade`
+                  },
+                  sell_decision_metrics: {
+                    confidence: trade.confidence || 0,
+                    reasoning: trade.reasoning || `Legacy ${trade.action} trade`
+                  },
+                  strategy: trade.strategy,
+                  account_type: trade.account_type,
+                  trade_pair_id: crypto.randomUUID()
+                })
+              }
             }
           }
         } else {

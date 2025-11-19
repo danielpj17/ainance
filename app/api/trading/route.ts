@@ -18,6 +18,7 @@ export interface BotStatus {
   error?: string
   marketOpen?: boolean
   nextMarketOpen?: string
+  alwaysOn?: boolean
 }
 
 export interface BotConfig {
@@ -39,7 +40,7 @@ let botState: {
 }
 
 // Market hours utility function
-function isMarketOpen(): boolean {
+export function isMarketOpen(): boolean {
   const now = new Date()
   const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}))
   const day = et.getDay()
@@ -96,6 +97,22 @@ function getNextMarketOpen(): Date {
   }
 }
 
+// Check if current time is in the last 30 minutes of trading (3:30 PM - 4:00 PM ET)
+function isInLast30Minutes(): boolean {
+  if (!isMarketOpen()) return false // Market must be open
+  
+  const now = new Date()
+  const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}))
+  const hours = et.getHours()
+  const minutes = et.getMinutes()
+  
+  const currentMinutes = hours * 60 + minutes
+  const last30Start = 15 * 60 + 30 // 3:30 PM
+  const marketClose = 16 * 60 // 4:00 PM
+  
+  return currentMinutes >= last30Start && currentMinutes < marketClose
+}
+
 // POST - Start/Stop trading bot
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
@@ -114,16 +131,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const body = await req.json()
-    const { action, config }: { action: 'start' | 'stop', config?: BotConfig } = body
+    const { action, config, alwaysOn }: { action: 'start' | 'stop' | 'toggle-always-on', config?: BotConfig, alwaysOn?: boolean } = body
 
     if (action === 'start') {
       return await startBot(supabase, userId, config!)
     } else if (action === 'stop') {
       return await stopBot(supabase, userId)
+    } else if (action === 'toggle-always-on') {
+      return await toggleAlwaysOn(supabase, userId, alwaysOn!)
     } else {
       return NextResponse.json({ 
         success: false, 
-        error: 'Invalid action. Use "start" or "stop"' 
+        error: 'Invalid action. Use "start", "stop", or "toggle-always-on"' 
       }, { status: 400 })
     }
 
@@ -170,7 +189,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 // Start the trading bot
-async function startBot(supabase: any, userId: string, config: BotConfig): Promise<NextResponse> {
+export async function startBot(supabase: any, userId: string, config: BotConfig): Promise<NextResponse> {
   try {
     // Stop existing bot if running
     if (botState.intervalId) {
@@ -244,12 +263,19 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
       }
     }
 
+    // Get current always_on setting (don't change it when starting)
+    const { data: currentState } = await supabase.rpc('get_bot_state', {
+      user_uuid: userId
+    })
+    const currentAlwaysOn = currentState?.[0]?.always_on || false
+
     // Store bot state in database
     await supabase.rpc('update_bot_state', {
       user_uuid: userId,
       is_running_param: true,
       config_param: config,
-      error_param: null
+      error_param: null,
+      always_on_param: currentAlwaysOn
     })
 
     // Store bot user ID
@@ -279,8 +305,8 @@ async function startBot(supabase: any, userId: string, config: BotConfig): Promi
     // Start the trading loop interval with market hours awareness
     const intervalId = setInterval(async () => {
       try {
-        // Check if market is open for live trading
-        if (config.accountType === 'live' && !isMarketOpen()) {
+        // Check if market is open (applies to both paper and live trading)
+        if (!isMarketOpen()) {
           console.log('⏸️  Market is closed, bot running in standby mode')
           
           // Update bot state to show it's running but market is closed
@@ -436,20 +462,17 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     await alpacaClient.initialize()
     console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
-    // Check if market is open (skip trading if closed, but continue running)
-    if (!alpacaKeys.paper) {
-      const marketOpen = await alpacaClient.isMarketOpen()
-      if (!marketOpen) {
-        console.log('⏸️  Market is closed, skipping trading execution but continuing bot operation')
-        // Update bot state to show it's running but market is closed
-        await supabase.rpc('update_bot_state', {
-          user_uuid: userId,
-          is_running_param: true,
-          config_param: config,
-          error_param: null
-        })
-        return
-      }
+    // Check if market is open (applies to both paper and live trading)
+    if (!isMarketOpen()) {
+      console.log('⏸️  Market is closed, skipping trading execution but continuing bot operation')
+      // Update bot state to show it's running but market is closed
+      await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: true,
+        config_param: config,
+        error_param: null
+      })
+      return
     }
 
     // STEP 1: Get FRED Economic Indicators
@@ -467,7 +490,7 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
         // Adjust confidence threshold based on market risk
         minConfidence = 0.55 + (marketRisk * 0.15) // Higher risk = higher threshold (0.55-0.70)
         
-        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Min Confidence: ${(minConfidence * 100).toFixed(0)}%`)
+        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Min Confidence Threshold: ${(minConfidence * 100).toFixed(1)}%`)
       } else {
         console.log('⚠️  FRED not initialized, using default risk parameters')
       }
@@ -663,7 +686,37 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     const currentHoldings = positions.map((p: any) => p.symbol)
     console.log(`📌 Currently holding ${currentHoldings.length} positions: ${currentHoldings.join(', ')}`)
 
+    // Check if we're in the last 30 minutes of trading
+    const inLast30Minutes = isInLast30Minutes()
+    if (inLast30Minutes) {
+      console.log('⏰ Last 30 minutes of trading detected - preventing new trades (existing positions will remain open)')
+      
+      // Log that we're in the closing window
+      await supabase
+        .from('bot_logs')
+        .insert({
+          user_id: userId,
+          action: 'execute',
+          message: 'Trading loop executed during last 30 minutes - no new trades allowed, existing positions remain open',
+          data: {
+            in_last_30_minutes: true,
+            existing_positions: positions.length
+          }
+        })
+      
+      // Continue processing - we'll filter out buy signals but allow sell signals to execute
+    }
+
     // STEP 8: Process ML Signals - Separate BUY and SELL
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('📊 DIAGNOSTICS: Signal Processing Analysis')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`📈 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`)
+    console.log(`⏰ In Last 30 Minutes: ${isInLast30Minutes() ? 'YES' : 'NO'}`)
+    console.log(`🎯 Min Confidence Threshold: ${(minConfidence * 100).toFixed(1)}%`)
+    console.log(`📊 Market Risk Level: ${(marketRisk * 100).toFixed(1)}%`)
+    console.log(`💼 Current Positions: ${currentHoldings.length}`)
+    
     const allSignals = mlData.signals.map((s: any) => {
       const sentiment = sentimentData[s.symbol]
       const sentimentBoost = sentiment ? sentiment.score * 0.15 : 0
@@ -683,18 +736,59 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       }
     })
 
+    console.log(`📥 Total ML Signals Received: ${allSignals.length}`)
+    
+    // Count signals by action
+    const buyCount = allSignals.filter((s: any) => s.action === 'buy').length
+    const sellCount = allSignals.filter((s: any) => s.action === 'sell').length
+    const holdCount = allSignals.filter((s: any) => s.action === 'hold').length
+    console.log(`   - BUY: ${buyCount} | SELL: ${sellCount} | HOLD: ${holdCount}`)
+    
+    // Count signals by confidence
+    const highConfidence = allSignals.filter((s: any) => s.adjusted_confidence >= minConfidence).length
+    const lowConfidence = allSignals.filter((s: any) => s.adjusted_confidence < minConfidence).length
+    console.log(`   - High Confidence (≥${(minConfidence * 100).toFixed(1)}%): ${highConfidence}`)
+    console.log(`   - Low Confidence (<${(minConfidence * 100).toFixed(1)}%): ${lowConfidence}`)
+    
+    // Count signals by position status
+    const heldSignals = allSignals.filter((s: any) => s.is_held).length
+    const notHeldSignals = allSignals.filter((s: any) => !s.is_held).length
+    console.log(`   - For Held Positions: ${heldSignals} | For New Positions: ${notHeldSignals}`)
+
     // SELL signals: Only for positions we currently hold
-    const sellSignals = allSignals
-      .filter((s: any) => s.action === 'sell' && s.is_held && s.adjusted_confidence >= minConfidence)
+    const sellSignalsBeforeFilter = allSignals.filter((s: any) => s.action === 'sell' && s.is_held)
+    const sellSignals = sellSignalsBeforeFilter
+      .filter((s: any) => s.adjusted_confidence >= minConfidence)
       .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
+    
+    const sellFilteredByConfidence = sellSignalsBeforeFilter.length - sellSignals.length
+    if (sellFilteredByConfidence > 0) {
+      console.log(`⚠️  SELL signals filtered out (low confidence): ${sellFilteredByConfidence}`)
+    }
 
     // BUY signals: Only for positions we don't hold
-    const buySignals = allSignals
-      .filter((s: any) => s.action === 'buy' && !s.is_held && s.adjusted_confidence >= minConfidence)
+    const buySignalsBeforeFilter = allSignals.filter((s: any) => s.action === 'buy' && !s.is_held)
+    let buySignals = buySignalsBeforeFilter
+      .filter((s: any) => s.adjusted_confidence >= minConfidence)
       .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
+    
+    const buyFilteredByConfidence = buySignalsBeforeFilter.length - buySignals.length
+    if (buyFilteredByConfidence > 0) {
+      console.log(`⚠️  BUY signals filtered out (low confidence): ${buyFilteredByConfidence}`)
+    }
+    
+    // Filter out buy signals in last 30 minutes (prevent new positions, but allow closing existing ones)
+    if (isInLast30Minutes()) {
+      const buySignalsBeforeTimeFilter = buySignals.length
+      buySignals = []
+      console.log(`⚠️  Last 30 minutes detected - filtered out ${buySignalsBeforeTimeFilter} BUY signal(s) to prevent new positions`)
+      console.log('   Existing positions can still be closed via SELL signals')
+    }
 
-    console.log(`🎯 Generated ${sellSignals.length} SELL signals (for existing positions)`)
-    console.log(`🎯 Generated ${buySignals.length} BUY signals (for new positions)`)
+    console.log(`✅ Final Signal Counts:`)
+    console.log(`   - SELL signals (ready to execute): ${sellSignals.length}`)
+    console.log(`   - BUY signals (ready to execute): ${buySignals.length}`)
+    console.log('═══════════════════════════════════════════════════════════')
     
     // Combine: Process SELLs first (free up capital), then BUYs
     let signals = [...sellSignals, ...buySignals]
@@ -726,13 +820,26 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
     console.log(`💰 ALLOCATING CAPITAL FOR BUY SIGNALS: ${buySignals.length} candidates`)
     console.log('═══════════════════════════════════════════════════════════')
     
+    console.log(`💰 Available Buying Power: $${availableCash.toFixed(2)}`)
     const allocatedBuySignals = allocateCapital(buySignals, availableCash, marketRisk)
+    
+    if (buySignals.length > 0 && allocatedBuySignals.length < buySignals.length) {
+      const skipped = buySignals.length - allocatedBuySignals.length
+      console.log(`⚠️  ${skipped} BUY signal(s) skipped due to capital allocation limits`)
+    }
     
     // Combine all signals: SELLs (already configured) + allocated BUYs
     signals = [...sellSignals, ...allocatedBuySignals]
 
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`🎯 FINAL TRADE PLAN: ${signals.length} total (${sellSignals.length} sells, ${allocatedBuySignals.length} buys)`)
+    if (signals.length === 0) {
+      console.log('⚠️  NO TRADES TO EXECUTE - Reasons may include:')
+      console.log('   - No signals met confidence threshold')
+      console.log('   - No positions to sell')
+      console.log('   - Insufficient capital for buy signals')
+      console.log('   - Market conditions filtered out all signals')
+    }
     console.log('═══════════════════════════════════════════════════════════')
 
     signals.forEach((signal: any, i: number) => {
@@ -777,23 +884,48 @@ async function executeTradingLoop(supabase: any, userId: string, config: BotConf
       }
     }
 
-    // Log the trading loop execution
+    // Log the trading loop execution with diagnostics
+    const executedCount = signals.length
+    
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('📊 TRADING LOOP SUMMARY')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`✅ Signals to Execute: ${executedCount}`)
+    console.log(`📈 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`)
+    console.log(`🎯 Confidence Threshold: ${(minConfidence * 100).toFixed(1)}%`)
+    console.log(`💼 Positions Before: ${currentHoldings.length}`)
+    console.log('═══════════════════════════════════════════════════════════')
+    
     await supabase
       .from('bot_logs')
       .insert({
         user_id: userId,
         action: 'execute',
-        message: `Trading loop executed. Generated ${signals.length} signals`,
+        message: `Trading loop executed. Generated ${signals.length} signals for execution`,
         data: {
           symbols: scalpingStocks,
           signals: signals.map((s: any) => ({
             symbol: s.symbol,
             action: s.action,
             confidence: s.confidence,
+            adjusted_confidence: s.adjusted_confidence,
             price: s.price,
             reasoning: s.reasoning,
             timestamp: s.timestamp
-          }))
+          })),
+          diagnostics: {
+            min_confidence_threshold: minConfidence,
+            market_risk: marketRisk,
+            total_ml_signals: allSignals.length,
+            buy_signals_before_filter: buySignalsBeforeFilter.length,
+            sell_signals_before_filter: sellSignalsBeforeFilter.length,
+            final_buy_signals: buySignals.length,
+            final_sell_signals: sellSignals.length,
+            allocated_buy_signals: allocatedBuySignals.length,
+            executed_signals: executedCount,
+            market_open: isMarketOpen(),
+            in_last_30_minutes: isInLast30Minutes()
+          }
         }
       })
 
@@ -853,6 +985,105 @@ function allocateCapital(signals: any[], availableCash: number, marketRisk: numb
   console.log(`   ✅ Allocated $${totalAllocated.toFixed(2)} (${((totalAllocated / availableCash) * 100).toFixed(1)}%) across ${allocatedSignals.length} positions`)
   
   return allocatedSignals
+}
+
+// Close all open positions (used during last 30 minutes of trading)
+async function closeAllPositions(
+  supabase: any,
+  userId: string,
+  alpacaClient: any,
+  config: BotConfig
+): Promise<void> {
+  try {
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('🔚 CLOSING ALL POSITIONS (Last 30 minutes of trading)')
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    // Get all current positions
+    const positions = await alpacaClient.getPositions()
+    
+    if (!positions || positions.length === 0) {
+      console.log('✅ No open positions to close')
+      return
+    }
+    
+    console.log(`📊 Found ${positions.length} open position(s) to close`)
+    
+    // Close each position
+    for (const position of positions) {
+      try {
+        const symbol = position.symbol
+        const qty = Math.abs(parseInt(position.qty))
+        const currentPrice = parseFloat(position.current_price || position.market_value / qty)
+        
+        console.log(`📉 Closing position: ${symbol} - ${qty} shares @ ~$${currentPrice.toFixed(2)}`)
+        
+        // Place market sell order to close position
+        const order = await alpacaClient.placeMarketOrder(
+          symbol,
+          qty,
+          'sell',
+          'day'
+        )
+        
+        console.log(`✅ Close order placed for ${symbol}: Order ID ${order.id}, Status: ${order.status}`)
+        
+        // Log the trade
+        const { error: tradeError } = await supabase
+          .from('trades')
+          .insert({
+            user_id: userId,
+            symbol: symbol,
+            action: 'sell',
+            qty: qty,
+            price: currentPrice,
+            trade_timestamp: new Date().toISOString(),
+            strategy: config.strategy,
+            account_type: config.accountType,
+            alpaca_order_id: order.id,
+            order_status: order.status,
+            confidence: 1.0, // Force close, so confidence is 100%
+            reasoning: 'Position closed due to market close window (last 30 minutes)'
+          })
+        
+        if (tradeError) {
+          console.error(`Error logging close trade for ${symbol}:`, tradeError)
+        }
+        
+        // Update trade_logs
+        const { error: closeError } = await supabase.rpc('close_trade_position', {
+          user_uuid: userId,
+          symbol_param: symbol,
+          sell_qty: qty,
+          sell_price_param: currentPrice,
+          sell_metrics: {
+            confidence: 1.0,
+            reasoning: 'Position closed due to market close window (last 30 minutes)',
+            timestamp: new Date().toISOString(),
+            alpaca_order_id: order.id,
+            order_status: order.status
+          }
+        })
+        
+        if (closeError) {
+          console.error(`Error closing trade in trade_logs for ${symbol}:`, closeError)
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+      } catch (error) {
+        console.error(`Error closing position ${position.symbol}:`, error)
+        // Continue with other positions even if one fails
+      }
+    }
+    
+    console.log(`✅ Finished closing ${positions.length} position(s)`)
+    
+  } catch (error) {
+    console.error('Error in closeAllPositions:', error)
+    throw error
+  }
 }
 
 // Execute a trade signal
@@ -1018,7 +1249,8 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       is_running: false,
       config: null,
       last_run: null,
-      error: null
+      error: null,
+      always_on: false
     }
 
     // Get recent trades count
@@ -1102,7 +1334,8 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       currentSignals,
       error: dbBotState.error || undefined,
       marketOpen,
-      nextMarketOpen: nextMarketOpen.toISOString()
+      nextMarketOpen: nextMarketOpen.toISOString(),
+      alwaysOn: dbBotState.always_on || false
     }
 
   } catch (error) {
@@ -1115,7 +1348,67 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       currentSignals: [],
       error: 'Failed to get bot status',
       marketOpen: false,
-      nextMarketOpen: getNextMarketOpen().toISOString()
+      nextMarketOpen: getNextMarketOpen().toISOString(),
+      alwaysOn: false
     }
+  }
+}
+
+// Toggle always-on mode
+async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean): Promise<NextResponse> {
+  try {
+    // Update always_on in database
+    const { error } = await supabase.rpc('toggle_always_on', {
+      user_uuid: userId,
+      always_on_param: alwaysOn
+    })
+
+    if (error) {
+      console.error('Error toggling always-on:', error)
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Failed to toggle always-on mode' 
+      }, { status: 500 })
+    }
+
+    // If enabling always-on and market is open, try to start the bot if it has a config
+    if (alwaysOn && isMarketOpen()) {
+      const { data: botStateData } = await supabase.rpc('get_bot_state', {
+        user_uuid: userId
+      })
+
+      const dbBotState = botStateData?.[0]
+      if (dbBotState?.config && !botState.intervalId) {
+        console.log('🔄 Always-on enabled and market is open - attempting to start bot...')
+        try {
+          await startBot(supabase, userId, dbBotState.config as BotConfig)
+        } catch (error) {
+          console.error('Error auto-starting bot:', error)
+          // Don't fail the toggle if auto-start fails
+        }
+      }
+    }
+
+    // Log the toggle
+    await supabase
+      .from('bot_logs')
+      .insert({
+        user_id: userId,
+        action: alwaysOn ? 'always_on_enabled' : 'always_on_disabled',
+        message: `Always-on mode ${alwaysOn ? 'enabled' : 'disabled'}`
+      })
+
+    return NextResponse.json({
+      success: true,
+      message: `Always-on mode ${alwaysOn ? 'enabled' : 'disabled'}`,
+      alwaysOn
+    })
+
+  } catch (error) {
+    console.error('Error in toggleAlwaysOn:', error)
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to toggle always-on mode' 
+    }, { status: 500 })
   }
 }
