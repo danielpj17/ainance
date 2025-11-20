@@ -438,7 +438,15 @@ export default function TradingBot({ mode }: TradingBotProps) {
             <div className="text-xs text-yellow-300 bg-yellow-950 border border-yellow-800 p-2 rounded">
               <strong>⏰ Market Closed:</strong> Bot is running in standby mode. 
               {botStatus?.nextMarketOpen && (
-                <span> Next market open: {new Date(botStatus.nextMarketOpen).toLocaleString()}</span>
+                <span> Next market open: {new Date(botStatus.nextMarketOpen).toLocaleString('en-US', { 
+                  timeZone: 'America/New_York',
+                  month: 'numeric',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                })} ET</span>
               )}
               {mode === 'paper' && ' Use "Test Signals" to see how the bot works with last available data.'}
             </div>

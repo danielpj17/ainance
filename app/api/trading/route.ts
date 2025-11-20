@@ -58,43 +58,52 @@ export function isMarketOpen(): boolean {
   return currentMinutes >= marketOpen && currentMinutes < marketClose
 }
 
-// Get next market open time
+// Get next market open time (returns Date object - will be formatted in ET in the UI)
 function getNextMarketOpen(): Date {
   const now = new Date()
-  const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}))
-  const day = et.getDay()
-  const hours = et.getHours()
-  const minutes = et.getMinutes()
   
-  // If it's weekend, next open is Monday 9:30 AM ET
-  if (day === 0) { // Sunday
-    const nextMonday = new Date(et)
-    nextMonday.setDate(et.getDate() + 1)
-    nextMonday.setHours(9, 30, 0, 0)
-    return nextMonday
-  } else if (day === 6) { // Saturday
-    const nextMonday = new Date(et)
-    nextMonday.setDate(et.getDate() + 2)
-    nextMonday.setHours(9, 30, 0, 0)
-    return nextMonday
-  }
+  // Get current time in ET
+  const etFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
   
-  // If it's a weekday
-  const currentMinutes = hours * 60 + minutes
-  const marketOpen = 9 * 60 + 30 // 9:30 AM
+  const parts = etFormatter.formatToParts(now)
+  const etYear = parseInt(parts.find(p => p.type === 'year')!.value)
+  const etMonth = parseInt(parts.find(p => p.type === 'month')!.value) - 1
+  const etDay = parseInt(parts.find(p => p.type === 'day')!.value)
+  const etHour = parseInt(parts.find(p => p.type === 'hour')!.value)
+  const etMinute = parseInt(parts.find(p => p.type === 'minute')!.value)
   
-  if (currentMinutes < marketOpen) {
-    // Market opens today at 9:30 AM
-    const todayOpen = new Date(et)
-    todayOpen.setHours(9, 30, 0, 0)
-    return todayOpen
-  } else {
-    // Market opens tomorrow at 9:30 AM
-    const tomorrowOpen = new Date(et)
-    tomorrowOpen.setDate(et.getDate() + 1)
-    tomorrowOpen.setHours(9, 30, 0, 0)
-    return tomorrowOpen
-  }
+  // Calculate day of week in ET
+  const etDate = new Date(etYear, etMonth, etDay)
+  const day = etDate.getDay()
+  const currentMinutes = etHour * 60 + etMinute
+  const marketOpen = 9 * 60 + 30 // 9:30 AM ET
+  
+  // Calculate days to add
+  let daysToAdd = 0
+  if (day === 0) daysToAdd = 1 // Sunday -> Monday
+  else if (day === 6) daysToAdd = 2 // Saturday -> Monday  
+  else if (currentMinutes >= marketOpen) daysToAdd = 1 // After market close -> tomorrow
+  
+  // Create date string for 9:30 AM ET on target day
+  // Format: YYYY-MM-DDTHH:mm:ss (we'll interpret this as ET time)
+  const targetDay = etDay + daysToAdd
+  const targetMonth = etMonth + 1
+  
+  // Create a date that represents 9:30 AM ET
+  // We'll create it as if it's 9:30 AM in ET, then the display will format it correctly
+  // The trick: create date string with ET timezone offset
+  // ET is UTC-5 (EST) or UTC-4 (EDT) - we'll use -05:00 as default
+  const dateStr = `${etYear}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}T09:30:00-05:00`
+  
+  return new Date(dateStr)
 }
 
 // Check if current time is in the last 30 minutes of trading (3:30 PM - 4:00 PM ET)
