@@ -171,14 +171,52 @@ export default function TradingBot({ mode }: TradingBotProps) {
       const data = await response.json()
       
       if (data.success) {
-        setBotStatus(data.status)
-        setError(null)
+        // Only update if we got valid status data
+        if (data.status) {
+          console.log('📊 Bot status fetched:', { 
+            isRunning: data.status.isRunning, 
+            alwaysOn: data.status.alwaysOn,
+            lastRun: data.status.lastRun,
+            error: data.status.error 
+          })
+          // If bot was just started and status shows it's not running, 
+          // it might be a timing issue - don't overwrite optimistic update immediately
+          const wasJustStarted = botStatus?.isRunning && !data.status.isRunning
+          // If always-on was just toggled, don't overwrite immediately
+          const alwaysOnChanged = botStatus?.alwaysOn !== data.status.alwaysOn
+          
+          if (wasJustStarted) {
+            console.log('⚠️  Status shows bot not running, but it was just started - might be timing issue')
+            // Wait a bit longer before updating
+            setTimeout(() => {
+              setBotStatus(data.status)
+            }, 1000)
+          } else if (alwaysOnChanged && Math.abs((botStatus?.alwaysOn ? 1 : 0) - (data.status.alwaysOn ? 1 : 0)) === 1) {
+            // Always-on was just toggled (changed by 1), wait a bit to ensure database is updated
+            console.log('⚠️  Always-on status changed, waiting before updating:', {
+              prev: botStatus?.alwaysOn,
+              new: data.status.alwaysOn
+            })
+            setTimeout(() => {
+              setBotStatus(data.status)
+            }, 1500)
+          } else {
+            setBotStatus(data.status)
+          }
+          setError(null)
+        }
       } else {
-        setError(data.error)
+        // Don't overwrite error state if we're just polling
+        if (data.error && !botStatus?.isRunning) {
+          setError(data.error)
+        }
       }
     } catch (error) {
       console.error('Error fetching bot status:', error)
-      setError('Failed to fetch bot status')
+      // Don't set error on fetch failure during polling - it's not critical
+      if (!botStatus?.isRunning) {
+        setError('Failed to fetch bot status')
+      }
     }
   }
 
@@ -238,11 +276,14 @@ export default function TradingBot({ mode }: TradingBotProps) {
       
       if (data.success) {
         console.log('✅ Bot start successful, updating state...')
+        // Update state optimistically
         setBotStatus(prev => prev ? { ...prev, isRunning: true, error: undefined } : null)
-        // Refresh status after a short delay to ensure database is updated
+        // Refresh status after a longer delay to ensure database is fully updated
+        // Also give the serverless function time to complete the database write
         setTimeout(async () => {
+          console.log('🔄 Refreshing bot status after start...')
           await fetchBotStatus()
-        }, 500)
+        }, 2000) // Increased to 2 seconds to allow database write to complete
       } else {
         const errorMsg = data.error || 'Failed to start trading bot'
         console.error('❌ Bot start failed:', errorMsg)
@@ -345,15 +386,28 @@ export default function TradingBot({ mode }: TradingBotProps) {
       }
       
       if (data.success) {
+        console.log('✅ Always-on toggle successful:', { 
+          requested: newAlwaysOn, 
+          returned: data.alwaysOn,
+          message: data.message 
+        })
         // Update state immediately with the new value from the response
         const updatedAlwaysOn = data.alwaysOn !== undefined ? data.alwaysOn : newAlwaysOn
-        setBotStatus(prev => prev ? { ...prev, alwaysOn: updatedAlwaysOn } : null)
-        // Refresh status after a short delay to ensure database is updated
+        console.log('🔄 Updating state with alwaysOn:', updatedAlwaysOn)
+        setBotStatus(prev => {
+          const updated = prev ? { ...prev, alwaysOn: updatedAlwaysOn } : null
+          console.log('📊 State updated:', { prev: prev?.alwaysOn, new: updated?.alwaysOn })
+          return updated
+        })
+        // Refresh status after a delay to ensure database is updated
         setTimeout(() => {
+          console.log('🔄 Refreshing bot status after toggle...')
           fetchBotStatus()
-        }, 500)
+        }, 2000) // Increased to 2 seconds to allow database write to complete
       } else {
-        setError(data.error || 'Failed to toggle always-on mode')
+        const errorMsg = data.error || 'Failed to toggle always-on mode'
+        console.error('❌ Always-on toggle failed:', errorMsg)
+        setError(errorMsg)
       }
     } catch (error: any) {
       console.error('Error toggling always-on:', error)

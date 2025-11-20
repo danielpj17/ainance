@@ -1320,9 +1320,13 @@ async function executeTradeSignal(
 async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
   try {
     // Get bot state from database
-    const { data: botStateData } = await supabase.rpc('get_bot_state', {
+    const { data: botStateData, error: botStateError } = await supabase.rpc('get_bot_state', {
       user_uuid: userId
     })
+
+    if (botStateError) {
+      console.error('Error getting bot state:', botStateError)
+    }
 
     const dbBotState = botStateData?.[0] || {
       is_running: false,
@@ -1331,6 +1335,14 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
       error: null,
       always_on: false
     }
+
+    console.log('📊 getBotStatus:', { 
+      userId, 
+      is_running: dbBotState.is_running, 
+      hasConfig: !!dbBotState.config,
+      last_run: dbBotState.last_run,
+      error: dbBotState.error 
+    })
 
     // Get recent trades count
     const { data: trades, error: tradesError } = await supabase.rpc('get_user_trades', {
@@ -1551,10 +1563,22 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
       // Don't fail the toggle if logging fails
     }
 
+    // Verify the current state in database to ensure it was updated
+    const { data: verifyState } = await supabase.rpc('get_bot_state', {
+      user_uuid: userId
+    })
+    const verifiedAlwaysOn = verifyState?.[0]?.always_on ?? alwaysOn
+    
+    console.log('✅ Always-on toggle complete:', { 
+      requested: alwaysOn, 
+      verified: verifiedAlwaysOn,
+      userId 
+    })
+
     return NextResponse.json({
       success: true,
-      message: `Always-on mode ${alwaysOn ? 'enabled' : 'disabled'}`,
-      alwaysOn
+      message: `Always-on mode ${verifiedAlwaysOn ? 'enabled' : 'disabled'}`,
+      alwaysOn: verifiedAlwaysOn // Return the verified value from database
     })
 
   } catch (error) {
