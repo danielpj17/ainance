@@ -189,29 +189,68 @@ export default function TradingBot({ mode }: TradingBotProps) {
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
-      const response = await fetch('/api/trading', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
-          action: 'start',
-          config
-        })
-      })
       
-      const data = await response.json()
+      let response: Response
+      try {
+        response = await fetch('/api/trading', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({
+            action: 'start',
+            config
+          })
+        })
+      } catch (fetchError: any) {
+        console.error('Network error during fetch:', fetchError)
+        setError(`Network error: ${fetchError.message || 'Failed to connect to server. Please check your connection and try again.'}`)
+        setIsLoading(false)
+        return
+      }
+      
+      // Check if response is ok before parsing JSON
+      if (!response.ok) {
+        let errorMessage = `Server error: ${response.status} ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          // If we can't parse JSON, use the status text
+          errorMessage = `Server error: ${response.status} ${response.statusText}`
+        }
+        setError(errorMessage)
+        setIsLoading(false)
+        return
+      }
+      
+      let data
+      try {
+        data = await response.json()
+        console.log('Start bot response:', data)
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError)
+        setError('Invalid response from server. Please try again.')
+        setIsLoading(false)
+        return
+      }
       
       if (data.success) {
+        console.log('✅ Bot start successful, updating state...')
         setBotStatus(prev => prev ? { ...prev, isRunning: true, error: undefined } : null)
-        await fetchBotStatus() // Refresh status
+        // Refresh status after a short delay to ensure database is updated
+        setTimeout(async () => {
+          await fetchBotStatus()
+        }, 500)
       } else {
-        setError(data.error)
+        const errorMsg = data.error || 'Failed to start trading bot'
+        console.error('❌ Bot start failed:', errorMsg)
+        setError(errorMsg)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting bot:', error)
-      setError('Failed to start trading bot')
+      setError(error?.message || 'Failed to start trading bot. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -260,19 +299,50 @@ export default function TradingBot({ mode }: TradingBotProps) {
       const { data: { session } } = await supabase.auth.getSession()
       const newAlwaysOn = !botStatus?.alwaysOn
       
-      const response = await fetch('/api/trading', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
-          action: 'toggle-always-on',
-          alwaysOn: newAlwaysOn
+      let response: Response
+      try {
+        response = await fetch('/api/trading', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({
+            action: 'toggle-always-on',
+            alwaysOn: newAlwaysOn
+          })
         })
-      })
+      } catch (fetchError: any) {
+        console.error('Network error during fetch:', fetchError)
+        setError(`Network error: ${fetchError.message || 'Failed to connect to server. Please check your connection and try again.'}`)
+        setIsLoading(false)
+        return
+      }
       
-      const data = await response.json()
+      // Check if response is ok before parsing JSON
+      if (!response.ok) {
+        let errorMessage = `Server error: ${response.status} ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          // If we can't parse JSON, use the status text
+          errorMessage = `Server error: ${response.status} ${response.statusText}`
+        }
+        setError(errorMessage)
+        setIsLoading(false)
+        return
+      }
+      
+      let data
+      try {
+        data = await response.json()
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError)
+        setError('Invalid response from server. Please try again.')
+        setIsLoading(false)
+        return
+      }
       
       if (data.success) {
         // Update state immediately with the new value from the response
@@ -285,9 +355,9 @@ export default function TradingBot({ mode }: TradingBotProps) {
       } else {
         setError(data.error || 'Failed to toggle always-on mode')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error toggling always-on:', error)
-      setError('Failed to toggle always-on mode')
+      setError(error?.message || 'Failed to toggle always-on mode. Please try again.')
     } finally {
       setIsLoading(false)
     }

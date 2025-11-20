@@ -1,4 +1,6 @@
 export const runtime = 'nodejs'
+// Increase timeout for Vercel Pro plan (Hobby plan has 10s limit)
+export const maxDuration = 30
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
 import { tradingModel, TradingSignal, TradingSettings } from '@/lib/trading-model'
@@ -125,29 +127,80 @@ function isInLast30Minutes(): boolean {
 // POST - Start/Stop trading bot
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = await createServerClient(req, {})
+    let supabase
+    try {
+      supabase = createServerClient(req, {})
+      // Verify client was created successfully
+      if (!supabase) {
+        throw new Error('Supabase client is null or undefined')
+      }
+    } catch (supabaseError: any) {
+      console.error('❌ Error creating Supabase client:', supabaseError)
+      console.error('Environment check:', {
+        hasSupabaseUrl: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
+        hasServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+      })
+      return NextResponse.json({ 
+        success: false, 
+        error: `Server configuration error: ${supabaseError.message || 'Failed to initialize database connection. Please check your environment variables.'}` 
+      }, { status: 500 })
+    }
     
     // In demo mode, always use demo user ID
     let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    try {
+      if (isDemoMode()) {
+        userId = getDemoUserIdServer()
+      } else {
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        if (userError || !user) {
+          return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+        }
+        userId = user.id
       }
-      userId = user.id
+    } catch (authError: any) {
+      console.error('Error getting user:', authError)
+      return NextResponse.json({ 
+        success: false, 
+        error: `Authentication error: ${authError.message || 'Failed to authenticate'}` 
+      }, { status: 401 })
     }
 
-    const body = await req.json()
+    let body
+    try {
+      body = await req.json()
+    } catch (parseError: any) {
+      console.error('Error parsing request body:', parseError)
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid request body. Please check your request format.' 
+      }, { status: 400 })
+    }
+
     const { action, config, alwaysOn }: { action: 'start' | 'stop' | 'toggle-always-on', config?: BotConfig, alwaysOn?: boolean } = body
 
+    console.log('📥 POST /api/trading:', { action, hasConfig: !!config, configKeys: config ? Object.keys(config) : [] })
+
     if (action === 'start') {
-      return await startBot(supabase, userId, config!)
+      if (!config) {
+        console.error('❌ No config provided for start action')
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Configuration is required to start the bot' 
+        }, { status: 400 })
+      }
+      console.log('🚀 Starting bot with config:', { symbols: config.symbols, interval: config.interval })
+      return await startBot(supabase, userId, config)
     } else if (action === 'stop') {
       return await stopBot(supabase, userId)
     } else if (action === 'toggle-always-on') {
-      return await toggleAlwaysOn(supabase, userId, alwaysOn!)
+      if (alwaysOn === undefined) {
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Missing required parameter: alwaysOn' 
+        }, { status: 400 })
+      }
+      return await toggleAlwaysOn(supabase, userId, alwaysOn)
     } else {
       return NextResponse.json({ 
         success: false, 
@@ -155,11 +208,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }, { status: 400 })
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in POST /api/trading:', error)
     return NextResponse.json({ 
       success: false, 
-      error: 'Internal server error' 
+      error: `Internal server error: ${error.message || 'An unexpected error occurred'}` 
     }, { status: 500 })
   }
 }
@@ -200,13 +253,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 // Start the trading bot
 export async function startBot(supabase: any, userId: string, config: BotConfig): Promise<NextResponse> {
   try {
+    console.log('🚀 startBot called:', { userId, symbols: config?.symbols, interval: config?.interval })
+    
     // Stop existing bot if running
     if (botState.intervalId) {
+      console.log('⏹️  Stopping existing bot before starting new one')
       await stopBot(supabase, userId)
     }
 
     // Validate configuration
-    if (!config.symbols || config.symbols.length === 0) {
+    if (!config || !config.symbols || config.symbols.length === 0) {
+      console.error('❌ Invalid config:', { hasConfig: !!config, symbols: config?.symbols })
       return NextResponse.json({ 
         success: false, 
         error: 'No symbols specified for trading' 
@@ -400,7 +457,9 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     })
 
   } catch (error) {
-    console.error('Error starting bot:', error)
+    console.error('❌ Error starting bot:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error('Error details:', { message: errorMessage, stack: error instanceof Error ? error.stack : undefined })
     
     // Update database to reflect error
     try {
@@ -408,7 +467,7 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
         user_uuid: userId,
         is_running_param: false,
         config_param: null,
-        error_param: error instanceof Error ? error.message : 'Unknown error'
+        error_param: errorMessage
       })
     } catch (dbError) {
       console.error('Error updating bot state on failure:', dbError)
@@ -416,7 +475,7 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     
     return NextResponse.json({ 
       success: false, 
-      error: 'Failed to start trading bot' 
+      error: `Failed to start trading bot: ${errorMessage}` 
     }, { status: 500 })
   }
 }
@@ -1377,6 +1436,8 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
 // Toggle always-on mode
 async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean): Promise<NextResponse> {
   try {
+    console.log('🔄 toggleAlwaysOn called:', { userId, alwaysOn })
+    
     // Update always_on in database
     let { data, error } = await supabase.rpc('toggle_always_on', {
       user_uuid: userId,
@@ -1385,14 +1446,28 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
 
     // If RPC function doesn't exist or fails, try direct update as fallback
     if (error) {
-      console.warn('RPC toggle_always_on failed, trying direct update:', error.message)
+      console.warn('⚠️ RPC toggle_always_on failed, trying direct update:', {
+        error: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      })
       
       // Try direct update/insert as fallback
-      const { data: existingState } = await supabase
+      const { data: existingState, error: selectError } = await supabase
         .from('bot_state')
-        .select('user_id')
+        .select('user_id, always_on')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
+      
+      if (selectError && selectError.code !== 'PGRST116') {
+        // PGRST116 = no rows found, which is fine
+        console.error('Error checking existing state:', selectError)
+        return NextResponse.json({ 
+          success: false, 
+          error: `Failed to check bot state: ${selectError.message || 'Database query failed'}` 
+        }, { status: 500 })
+      }
       
       if (existingState) {
         // Update existing row
@@ -1402,12 +1477,13 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
           .eq('user_id', userId)
         
         if (updateError) {
-          console.error('Error updating always-on directly:', updateError)
+          console.error('❌ Error updating always-on directly:', updateError)
           return NextResponse.json({ 
             success: false, 
             error: `Failed to toggle always-on mode: ${updateError.message || 'Database update failed'}` 
           }, { status: 500 })
         }
+        console.log('✅ Always-on updated using direct update method')
       } else {
         // Insert new row
         const { error: insertError } = await supabase
@@ -1420,38 +1496,44 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
           })
         
         if (insertError) {
-          console.error('Error inserting always-on directly:', insertError)
+          console.error('❌ Error inserting always-on directly:', insertError)
           return NextResponse.json({ 
             success: false, 
             error: `Failed to toggle always-on mode: ${insertError.message || 'Database insert failed'}` 
           }, { status: 500 })
         }
+        console.log('✅ Always-on inserted using direct insert method')
       }
-      
-      // Success with fallback method
-      console.log('✅ Always-on toggled using direct update method')
     } else {
       // Verify the function executed successfully
       if (data === false) {
-        console.warn('toggle_always_on returned false')
+        console.warn('⚠️ toggle_always_on returned false')
+      } else {
+        console.log('✅ Always-on toggled using RPC function')
       }
     }
 
     // If enabling always-on and market is open, try to start the bot if it has a config
+    // Note: In serverless, we can't check botState.intervalId, so we check is_running instead
     if (alwaysOn && isMarketOpen()) {
-      const { data: botStateData } = await supabase.rpc('get_bot_state', {
-        user_uuid: userId
-      })
+      try {
+        const { data: botStateData } = await supabase.rpc('get_bot_state', {
+          user_uuid: userId
+        })
 
-      const dbBotState = botStateData?.[0]
-      if (dbBotState?.config && !botState.intervalId) {
-        console.log('🔄 Always-on enabled and market is open - attempting to start bot...')
-        try {
-          await startBot(supabase, userId, dbBotState.config as BotConfig)
-        } catch (error) {
-          console.error('Error auto-starting bot:', error)
-          // Don't fail the toggle if auto-start fails
+        const dbBotState = botStateData?.[0]
+        if (dbBotState?.config && !dbBotState.is_running) {
+          console.log('🔄 Always-on enabled and market is open - attempting to start bot...')
+          try {
+            await startBot(supabase, userId, dbBotState.config as BotConfig)
+          } catch (error) {
+            console.error('⚠️ Error auto-starting bot (non-critical):', error)
+            // Don't fail the toggle if auto-start fails
+          }
         }
+      } catch (error) {
+        console.warn('⚠️ Error checking bot state for auto-start (non-critical):', error)
+        // Don't fail the toggle if this check fails
       }
     }
 
