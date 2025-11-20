@@ -453,7 +453,7 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
 }
 
 // Execute the main trading loop
-async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
+export async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
   try {
     console.log('═══════════════════════════════════════════════════════════')
     console.log('🤖 STARTING ADVANCED SCALPING BOT CYCLE')

@@ -103,6 +103,36 @@ export default function TradingBot({ mode }: TradingBotProps) {
     // Set up polling for bot status
     const statusInterval = setInterval(fetchBotStatus, 5000) // Poll every 5 seconds
     
+    // Health check: ensures bot keeps running during market hours
+    const healthCheck = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        // Call health check API (this will restart bot if it stopped but should be running)
+        if (session?.access_token) {
+          const response = await fetch('/api/trading/health-check', {
+            headers: { Authorization: `Bearer ${session.access_token}` }
+          })
+          const data = await response.json()
+          
+          if (data.success && data.restarted) {
+            console.log('✅ Bot was restarted by health check')
+            // Refresh status after restart
+            setTimeout(fetchBotStatus, 1000)
+          }
+        }
+      } catch (error) {
+        // Silently fail - this is just a health check
+        console.log('Health check error (this is normal):', error)
+      }
+    }
+    
+    // Run health check every 60 seconds to ensure bot stays running
+    // This executes the trading loop directly, keeping the bot alive even if server restarts
+    // More frequent than 30 seconds to ensure continuous operation
+    const healthCheckInterval = setInterval(healthCheck, 60000) // Every 60 seconds
+    
     // Auto-start check: if always-on is enabled and market is open, try to start bot
     const autoStartCheck = async () => {
       try {
@@ -127,6 +157,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
     return () => {
       clearInterval(marketCheckInterval)
       clearInterval(statusInterval)
+      clearInterval(healthCheckInterval)
     }
   }, [])
 

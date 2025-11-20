@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/trading/auto-start",
-      "schedule": "*/5 * * * *"
+      "schedule": "30 14 * * 1-5"
     }
   ]
 }
