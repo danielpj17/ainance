@@ -10,11 +10,12 @@ The always-on bot system ensures your trading bot runs continuously during marke
 ## Components
 
 ### 1. Daily Cron Job (Vercel)
-- **Schedule**: Runs once per day at 9:30 AM ET (market open)
+- **Schedule**: Runs once per day at 13:30 UTC (9:30 AM EDT / 8:30 AM EST)
 - **Endpoint**: `/api/trading/auto-start`
 - **Purpose**: Starts all bots with always-on enabled when market opens
+- **Note**: Due to Vercel Hobby plan limitations, this runs once daily. For continuous operation during market hours, use the health check endpoint (see below).
 
-### 2. Health Check Endpoint
+### 2. Health Check Endpoint (CRITICAL for Always-On)
 - **Endpoint**: `/api/trading/health-check`
 - **Purpose**: Executes trading loop directly for always-on bots
 - **How it works**: 
@@ -22,15 +23,18 @@ The always-on bot system ensures your trading bot runs continuously during marke
   - Executes trading loop for each user
   - Updates last_run timestamp
   - Keeps the bot running continuously
+- **IMPORTANT**: This endpoint must be called frequently (every 2-5 minutes) during market hours to ensure bots keep running. The daily cron alone is not sufficient - if a bot stops during trading hours, it won't restart until the next day without the health check.
 
 ### 3. Client-Side Health Check
 - **Frequency**: Every 60 seconds (when page is open)
 - **Purpose**: Calls health check endpoint to keep bot running
 - **Limitation**: Only works when someone has the page open
 
-## Keeping Bot Running When Page is Closed
+## Keeping Bot Running When Page is Closed (REQUIRED)
 
-Since Vercel Hobby plan only allows daily cron jobs, you have two options:
+**CRITICAL**: The daily cron job only runs once per day at market open. If your bot stops during trading hours (due to server restart, error, etc.), it will NOT automatically restart until the next day's cron run. 
+
+**You MUST set up one of the following options to ensure continuous operation:**
 
 ### Option A: Use External Cron Service (Recommended)
 
@@ -50,8 +54,9 @@ Set up a free external cron service to call the health check endpoint every 2-5 
    - **Headers** (optional): `Authorization: Bearer YOUR_CRON_SECRET` (if you set CRON_SECRET env var)
 
 **Cron Schedule Examples:**
-- Every 2 minutes: `*/2 13-20 * * 1-5` (1:00 PM - 8:00 PM UTC = 9:00 AM - 4:00 PM ET, Mon-Fri)
-- Every 5 minutes: `*/5 13-20 * * 1-5`
+- Every 2 minutes during market hours: `*/2 13-20 * * 1-5` (1:00 PM - 8:00 PM UTC = 9:00 AM - 4:00 PM ET, Mon-Fri)
+- Every 5 minutes during market hours: `*/5 13-20 * * 1-5`
+- **Note**: 13:00 UTC = 9:00 AM EDT (summer) or 8:00 AM EST (winter). Adjust if needed for your timezone.
 
 ### Option B: Keep Browser Tab Open
 

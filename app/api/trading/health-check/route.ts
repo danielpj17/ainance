@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/utils/supabase/server'
 import { isMarketOpen, startBot, executeTradingLoop } from '../route'
 import { BotConfig } from '../route'
-import { isDemoMode, getDemoUserIdServer } from '@/lib/demo-user'
-import { getAlpacaKeys } from '@/lib/alpaca-client'
+import { isDemoMode } from '@/lib/demo-user'
+import { getDemoUserIdServer } from '@/utils/supabase/server'
 
 // Enhanced health check endpoint that:
 // 1. Checks if bots should be running
