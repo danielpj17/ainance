@@ -117,7 +117,7 @@ create or replace function toggle_always_on(
   user_uuid uuid,
   always_on_param boolean
 )
-returns void as $$
+returns boolean as $$
 begin
   update bot_state
   set always_on = always_on_param,
@@ -129,8 +129,14 @@ begin
     insert into bot_state (user_id, always_on, updated_at)
     values (user_uuid, always_on_param, now());
   end if;
+  
+  return true;
 end;
 $$ language plpgsql security definer;
+
+-- Grant execute permission to authenticated users
+grant execute on function toggle_always_on(uuid, boolean) to authenticated;
+grant execute on function toggle_always_on(uuid, boolean) to anon;
 
 -- Function to get all users with always_on enabled
 create or replace function get_always_on_users()

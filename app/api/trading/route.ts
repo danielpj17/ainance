@@ -311,64 +311,75 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       })
     }
 
-    // Start the trading loop interval with market hours awareness
-    const intervalId = setInterval(async () => {
-      try {
-        // Check if market is open (applies to both paper and live trading)
-        if (!isMarketOpen()) {
-          console.log('⏸️  Market is closed, bot running in standby mode')
+    // NOTE: In serverless environments (Vercel), setInterval doesn't persist after the function returns.
+    // The bot will continue running through the health check mechanism which calls executeTradingLoop.
+    // We still set the interval for local development or if the function stays warm, but it's not reliable in production.
+    // The health check endpoint (/api/trading/health-check) should be called every 2-5 minutes to keep the bot running.
+    
+    // Try to set interval for local development (may not work in serverless)
+    try {
+      const intervalId = setInterval(async () => {
+        try {
+          // Check if market is open (applies to both paper and live trading)
+          if (!isMarketOpen()) {
+            console.log('⏸️  Market is closed, bot running in standby mode')
+            
+            // Update bot state to show it's running but market is closed
+            await supabase.rpc('update_bot_state', {
+              user_uuid: userId,
+              is_running_param: true,
+              config_param: config,
+              error_param: null
+            })
+            return
+          }
           
-          // Update bot state to show it's running but market is closed
+          // Execute trading loop
+          await executeTradingLoop(supabase, userId, config, keys)
+          
+          // Update bot state after each execution
           await supabase.rpc('update_bot_state', {
             user_uuid: userId,
             is_running_param: true,
             config_param: config,
             error_param: null
           })
-          return
+        } catch (error) {
+          console.error('Trading loop error:', error)
+          
+          let errorMessage: string
+          if (error instanceof Error) {
+            errorMessage = error.message
+          } else if (typeof error === 'object' && error !== null) {
+            errorMessage = JSON.stringify(error, null, 2)
+          } else {
+            errorMessage = String(error)
+          }
+          
+          console.error('Error details:', {
+            message: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined,
+            name: error instanceof Error ? error.name : undefined,
+            type: typeof error,
+            fullError: error
+          })
+          
+          // Update bot state with error
+          await supabase.rpc('update_bot_state', {
+            user_uuid: userId,
+            is_running_param: true,
+            config_param: config,
+            error_param: errorMessage
+          })
         }
-        
-        // Execute trading loop
-        await executeTradingLoop(supabase, userId, config, keys)
-        
-        // Update bot state after each execution
-        await supabase.rpc('update_bot_state', {
-          user_uuid: userId,
-          is_running_param: true,
-          config_param: config,
-          error_param: null
-        })
-      } catch (error) {
-        console.error('Trading loop error:', error)
-        
-        let errorMessage: string
-        if (error instanceof Error) {
-          errorMessage = error.message
-        } else if (typeof error === 'object' && error !== null) {
-          errorMessage = JSON.stringify(error, null, 2)
-        } else {
-          errorMessage = String(error)
-        }
-        
-        console.error('Error details:', {
-          message: errorMessage,
-          stack: error instanceof Error ? error.stack : undefined,
-          name: error instanceof Error ? error.name : undefined,
-          type: typeof error,
-          fullError: error
-        })
-        
-        // Update bot state with error
-        await supabase.rpc('update_bot_state', {
-          user_uuid: userId,
-          is_running_param: true,
-          config_param: config,
-          error_param: errorMessage
-        })
-      }
-    }, config.interval * 1000)
+      }, config.interval * 1000)
 
-    botState.intervalId = intervalId
+      botState.intervalId = intervalId
+      console.log('✅ Interval set (may not persist in serverless - bot relies on health check)')
+    } catch (error) {
+      console.warn('⚠️  Could not set interval (this is normal in serverless):', error)
+      // Bot will still work through health check mechanism
+    }
 
     // Log bot start
     await supabase
@@ -1367,17 +1378,63 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
 async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean): Promise<NextResponse> {
   try {
     // Update always_on in database
-    const { error } = await supabase.rpc('toggle_always_on', {
+    let { data, error } = await supabase.rpc('toggle_always_on', {
       user_uuid: userId,
       always_on_param: alwaysOn
     })
 
+    // If RPC function doesn't exist or fails, try direct update as fallback
     if (error) {
-      console.error('Error toggling always-on:', error)
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Failed to toggle always-on mode' 
-      }, { status: 500 })
+      console.warn('RPC toggle_always_on failed, trying direct update:', error.message)
+      
+      // Try direct update/insert as fallback
+      const { data: existingState } = await supabase
+        .from('bot_state')
+        .select('user_id')
+        .eq('user_id', userId)
+        .single()
+      
+      if (existingState) {
+        // Update existing row
+        const { error: updateError } = await supabase
+          .from('bot_state')
+          .update({ always_on: alwaysOn, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+        
+        if (updateError) {
+          console.error('Error updating always-on directly:', updateError)
+          return NextResponse.json({ 
+            success: false, 
+            error: `Failed to toggle always-on mode: ${updateError.message || 'Database update failed'}` 
+          }, { status: 500 })
+        }
+      } else {
+        // Insert new row
+        const { error: insertError } = await supabase
+          .from('bot_state')
+          .insert({ 
+            user_id: userId, 
+            always_on: alwaysOn, 
+            is_running: false,
+            updated_at: new Date().toISOString() 
+          })
+        
+        if (insertError) {
+          console.error('Error inserting always-on directly:', insertError)
+          return NextResponse.json({ 
+            success: false, 
+            error: `Failed to toggle always-on mode: ${insertError.message || 'Database insert failed'}` 
+          }, { status: 500 })
+        }
+      }
+      
+      // Success with fallback method
+      console.log('✅ Always-on toggled using direct update method')
+    } else {
+      // Verify the function executed successfully
+      if (data === false) {
+        console.warn('toggle_always_on returned false')
+      }
     }
 
     // If enabling always-on and market is open, try to start the bot if it has a config
@@ -1398,14 +1455,19 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
       }
     }
 
-    // Log the toggle
-    await supabase
-      .from('bot_logs')
-      .insert({
-        user_id: userId,
-        action: alwaysOn ? 'always_on_enabled' : 'always_on_disabled',
-        message: `Always-on mode ${alwaysOn ? 'enabled' : 'disabled'}`
-      })
+    // Log the toggle (don't fail if this fails)
+    try {
+      await supabase
+        .from('bot_logs')
+        .insert({
+          user_id: userId,
+          action: alwaysOn ? 'always_on_enabled' : 'always_on_disabled',
+          message: `Always-on mode ${alwaysOn ? 'enabled' : 'disabled'}`
+        })
+    } catch (logError) {
+      console.warn('Failed to log always-on toggle (non-critical):', logError)
+      // Don't fail the toggle if logging fails
+    }
 
     return NextResponse.json({
       success: true,

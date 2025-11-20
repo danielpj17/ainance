@@ -43,21 +43,49 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // This works for all always-on users, not just the current user
     const { data: alwaysOnUsers, error: fetchError } = await supabase.rpc('get_always_on_users')
 
+    // Also get all users with is_running = true (manually started bots)
+    // This ensures manually started bots continue running even if not always-on
+    const { data: runningBots, error: runningBotsError } = await supabase
+      .from('bot_state')
+      .select('user_id, config, always_on, is_running')
+      .eq('is_running', true)
+
     if (fetchError) {
       console.error('Error fetching always-on users:', fetchError)
-      // Fall back to checking current user if RPC fails
-      return await checkAndRunCurrentUser(supabase, req)
     }
 
-    if (!alwaysOnUsers || alwaysOnUsers.length === 0) {
-      // No always-on users, but check current user anyway
+    // Combine always-on users and manually started bots
+    const allActiveBots = new Map<string, any>()
+    
+    // Add always-on users
+    if (alwaysOnUsers && alwaysOnUsers.length > 0) {
+      alwaysOnUsers.forEach((user: any) => {
+        allActiveBots.set(user.user_id, user)
+      })
+    }
+    
+    // Add manually started bots (is_running = true)
+    if (runningBots && runningBots.length > 0) {
+      runningBots.forEach((bot: any) => {
+        if (!allActiveBots.has(bot.user_id)) {
+          allActiveBots.set(bot.user_id, {
+            user_id: bot.user_id,
+            config: bot.config,
+            always_on: bot.always_on || false
+          })
+        }
+      })
+    }
+
+    if (allActiveBots.size === 0) {
+      // No active bots, but check current user anyway
       return await checkAndRunCurrentUser(supabase, req)
     }
 
     const results = []
     
-    // Process each always-on user
-    for (const user of alwaysOnUsers) {
+    // Process each active bot (always-on or manually started)
+    for (const user of Array.from(allActiveBots.values())) {
       try {
         const userId = user.user_id
         const config = user.config as BotConfig
@@ -119,10 +147,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       success: true,
-      message: `Health check completed for ${alwaysOnUsers.length} always-on user(s)`,
+      message: `Health check completed for ${allActiveBots.size} active bot(s)`,
       results,
       executed: results.filter(r => r.success).length,
-      total: alwaysOnUsers.length
+      total: allActiveBots.size
     })
 
   } catch (error) {
