@@ -335,14 +335,21 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     })
     const currentAlwaysOn = currentState?.[0]?.always_on || false
 
-    // Store bot state in database
-    await supabase.rpc('update_bot_state', {
+    // Store bot state in database - ensure it completes
+    const { error: updateError } = await supabase.rpc('update_bot_state', {
       user_uuid: userId,
       is_running_param: true,
       config_param: config,
       error_param: null,
       always_on_param: currentAlwaysOn
     })
+    
+    if (updateError) {
+      console.error('❌ Error updating bot state to running:', updateError)
+      throw new Error(`Failed to update bot state: ${updateError.message}`)
+    }
+    
+    console.log('✅ Bot state updated in database: is_running=true')
 
     // Store bot user ID
     botState.userId = userId
@@ -351,21 +358,29 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     console.log('🚀 Running initial trading loop immediately...')
     try {
       await executeTradingLoop(supabase, userId, config, keys)
-      await supabase.rpc('update_bot_state', {
+      // Update last_run timestamp after successful execution
+      const { error: updateError } = await supabase.rpc('update_bot_state', {
         user_uuid: userId,
         is_running_param: true,
         config_param: config,
         error_param: null
       })
+      if (updateError) {
+        console.error('⚠️ Error updating last_run:', updateError)
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       console.error('Initial trading loop error:', errorMessage)
-      await supabase.rpc('update_bot_state', {
+      // Still mark as running, but with error
+      const { error: updateError } = await supabase.rpc('update_bot_state', {
         user_uuid: userId,
         is_running_param: true,
         config_param: config,
         error_param: errorMessage
       })
+      if (updateError) {
+        console.error('⚠️ Error updating bot state with error:', updateError)
+      }
     }
 
     // NOTE: In serverless environments (Vercel), setInterval doesn't persist after the function returns.
@@ -448,7 +463,22 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
         config: config
       })
 
-    console.log(`Trading bot started for user ${userId} with symbols: ${config.symbols.join(', ')}`)
+    // Verify the state was saved correctly before returning
+    const { data: verifyState, error: verifyError } = await supabase.rpc('get_bot_state', {
+      user_uuid: userId
+    })
+    
+    if (verifyError) {
+      console.error('⚠️ Error verifying bot state:', verifyError)
+    } else {
+      const verifiedRunning = verifyState?.[0]?.is_running
+      console.log(`✅ Trading bot started for user ${userId} with symbols: ${config.symbols.join(', ')}`)
+      console.log(`📊 Verified database state: is_running=${verifiedRunning}`)
+      
+      if (!verifiedRunning) {
+        console.error('❌ WARNING: Bot state shows is_running=false after start!')
+      }
+    }
 
     return NextResponse.json({
       success: true,
