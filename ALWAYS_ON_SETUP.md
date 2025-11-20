@@ -41,22 +41,31 @@ The always-on bot system ensures your trading bot runs continuously during marke
 Set up a free external cron service to call the health check endpoint every 2-5 minutes during market hours:
 
 **Recommended Services:**
-- [Cron-job.org](https://cron-job.org) (free)
+- [Cron-job.org](https://cron-job.org) (free) ✅ **Currently configured**
 - [EasyCron](https://www.easycron.com) (free tier)
 - [UptimeRobot](https://uptimerobot.com) (free)
 
-**Setup:**
-1. Create account on cron service
-2. Add new cron job:
+**Current Setup (cron-job.org):**
+- **URL**: `https://your-app.vercel.app/api/trading/health-check`
+- **Method**: GET
+- **Schedule**: Every weekday, every 2 minutes from 7:00 AM to 3:00 PM MDT
+- **Coverage**: 
+  - Starts before market opens (returns early until 9:30 AM ET)
+  - Covers full trading day (9:30 AM - 4:00 PM ET) in both summer and winter
+  - Continues slightly after market close (harmless, will just return early)
+
+**Setup Instructions:**
+1. Create account on cron-job.org
+2. Add new cron job with custom timeline:
    - **URL**: `https://your-app.vercel.app/api/trading/health-check`
    - **Method**: GET
-   - **Schedule**: Every 2-5 minutes during market hours (9:30 AM - 4:00 PM ET, Mon-Fri)
+   - **Schedule**: Custom - Every weekday, every 2 minutes from 7:00 AM to 3:00 PM MDT
    - **Headers** (optional): `Authorization: Bearer YOUR_CRON_SECRET` (if you set CRON_SECRET env var)
 
-**Cron Schedule Examples:**
+**Alternative Cron Schedule Examples (if using standard cron syntax):**
 - Every 2 minutes during market hours: `*/2 13-20 * * 1-5` (1:00 PM - 8:00 PM UTC = 9:00 AM - 4:00 PM ET, Mon-Fri)
 - Every 5 minutes during market hours: `*/5 13-20 * * 1-5`
-- **Note**: 13:00 UTC = 9:00 AM EDT (summer) or 8:00 AM EST (winter). Adjust if needed for your timezone.
+- **Note**: Times vary by timezone. MDT (Mountain Daylight Time) is UTC-6, so 7 AM MDT = 1 PM UTC = 9 AM EDT.
 
 ### Option B: Keep Browser Tab Open
 

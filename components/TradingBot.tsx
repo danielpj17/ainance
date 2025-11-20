@@ -275,10 +275,15 @@ export default function TradingBot({ mode }: TradingBotProps) {
       const data = await response.json()
       
       if (data.success) {
-        setBotStatus(prev => prev ? { ...prev, alwaysOn: newAlwaysOn } : null)
-        await fetchBotStatus() // Refresh status
+        // Update state immediately with the new value from the response
+        const updatedAlwaysOn = data.alwaysOn !== undefined ? data.alwaysOn : newAlwaysOn
+        setBotStatus(prev => prev ? { ...prev, alwaysOn: updatedAlwaysOn } : null)
+        // Refresh status after a short delay to ensure database is updated
+        setTimeout(() => {
+          fetchBotStatus()
+        }, 500)
       } else {
-        setError(data.error)
+        setError(data.error || 'Failed to toggle always-on mode')
       }
     } catch (error) {
       console.error('Error toggling always-on:', error)
