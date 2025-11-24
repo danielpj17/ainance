@@ -508,23 +508,57 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
   } catch (error) {
     console.error('❌ Error starting bot:', error)
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('Error details:', { message: errorMessage, stack: error instanceof Error ? error.stack : undefined })
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('Error details:', { 
+      message: errorMessage, 
+      stack: errorStack,
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+      fullError: error
+    })
     
-    // Update database to reflect error
+    // Update database to reflect error (with retry logic)
     try {
-      await supabase.rpc('update_bot_state', {
-        user_uuid: userId,
-        is_running_param: false,
-        config_param: null,
-        error_param: errorMessage
-      })
+      let dbUpdateError = null
+      const maxRetries = 2
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const result = await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: false,
+          config_param: null,
+          error_param: errorMessage
+        })
+        
+        dbUpdateError = result.error
+        
+        if (!dbUpdateError) {
+          break // Success
+        }
+        
+        if (dbUpdateError?.message?.includes('fetch failed') && attempt < maxRetries) {
+          console.warn(`⚠️ Retry ${attempt}/${maxRetries} for update_bot_state on error`)
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+          continue
+        }
+        
+        break
+      }
+      
+      if (dbUpdateError) {
+        console.error('Error updating bot state on failure:', dbUpdateError)
+      }
     } catch (dbError) {
-      console.error('Error updating bot state on failure:', dbError)
+      console.error('Error updating bot state on failure (catch block):', dbError)
     }
+    
+    // Return detailed error for debugging, but sanitize sensitive info
+    const sanitizedError = errorMessage.includes('fetch failed') 
+      ? 'Database connection failed. Please check your Supabase configuration.'
+      : errorMessage
     
     return NextResponse.json({ 
       success: false, 
-      error: `Failed to start trading bot: ${errorMessage}` 
+      error: `Failed to start trading bot: ${sanitizedError}` 
     }, { status: 500 })
   }
 }

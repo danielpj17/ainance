@@ -17,25 +17,12 @@ export const createClient = () => {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set')
   }
 
-  // Configure for serverless environments with better timeout and retry settings
+  // Configure for serverless environments
+  // Note: Using default fetch with timeout handled by Vercel's function timeout
   return createSupabaseClient(url, serviceRole, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
-    },
-    global: {
-      fetch: (url, options = {}) => {
-        // Add timeout for serverless environments
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
-        
-        return fetch(url, {
-          ...options,
-          signal: controller.signal,
-        }).finally(() => {
-          clearTimeout(timeoutId)
-        })
-      },
     },
   })
 }
