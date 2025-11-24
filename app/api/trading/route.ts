@@ -850,11 +850,18 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         throw new Error('No technical indicators available')
       }
       
-      console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols`)
+      console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols (requested ${scalpingStocks.length})`)
       
       // Log any partial failures
       if (indicatorsData.errors && indicatorsData.errors.length > 0) {
-        console.warn(`⚠️  Some symbols failed: ${indicatorsData.errors.join(', ')}`)
+        console.warn(`⚠️  ${indicatorsData.errors.length} symbols failed to get indicators: ${indicatorsData.errors.join(', ')}`)
+      }
+      
+      // Warn if we got fewer indicators than requested symbols
+      if (indicatorsData.indicators.length < scalpingStocks.length) {
+        const indicatorSymbols = new Set(indicatorsData.indicators.map((ind: any) => ind.symbol))
+        const missingSymbols = scalpingStocks.filter(s => !indicatorSymbols.has(s))
+        console.warn(`⚠️  Missing indicators for ${missingSymbols.length} symbols: ${missingSymbols.slice(0, 10).join(', ')}${missingSymbols.length > 10 ? ` ... and ${missingSymbols.length - 10} more` : ''}`)
       }
     } catch (error: any) {
       console.error('❌ Failed to get technical indicators:', error)
@@ -914,6 +921,8 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       price: f.price
     }))
     
+    console.log(`📤 Sending ${coreFeatures.length} features to ML service (from ${enhancedFeatures.length} indicators)`)
+    
     // Retry logic for ML service (handles cold starts)
     const maxRetries = 2
     let lastError: any
@@ -935,21 +944,51 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         })
         
         if (!mlResponse.ok) {
-          throw new Error(`ML service returned ${mlResponse.status}`)
+          const errorText = await mlResponse.text().catch(() => 'No error details')
+          console.error(`❌ ML service HTTP error ${mlResponse.status}:`, errorText)
+          throw new Error(`ML service returned ${mlResponse.status}: ${errorText.substring(0, 200)}`)
         }
         
         mlData = await mlResponse.json()
         
-        if (!mlData.success || !mlData.signals) {
-          throw new Error('ML service did not return valid signals')
+        if (!mlData.success) {
+          console.error('❌ ML service returned error:', mlData.error || 'Unknown error')
+          throw new Error(`ML service error: ${mlData.error || 'Unknown error'}`)
         }
         
-        console.log(`✅ ML predictions received for ${mlData.signals.length} symbols (attempt ${attempt})`)
+        if (!mlData.signals || !Array.isArray(mlData.signals)) {
+          console.error('❌ ML service returned invalid signals:', { 
+            hasSignals: !!mlData.signals, 
+            isArray: Array.isArray(mlData.signals),
+            signalsType: typeof mlData.signals,
+            signalsLength: mlData.signals?.length
+          })
+          throw new Error('ML service did not return valid signals array')
+        }
+        
+        console.log(`✅ ML predictions received: ${mlData.signals.length} signals for ${coreFeatures.length} features (attempt ${attempt})`)
+        
+        // Warn if we got fewer signals than features
+        if (mlData.signals.length < coreFeatures.length) {
+          console.warn(`⚠️  ML service returned ${mlData.signals.length} signals but we sent ${coreFeatures.length} features (${coreFeatures.length - mlData.signals.length} missing)`)
+          const returnedSymbols = new Set(mlData.signals.map((s: any) => s.symbol))
+          const missingSymbols = coreFeatures.filter((f: any) => !returnedSymbols.has(f.symbol))
+          if (missingSymbols.length > 0) {
+            console.warn(`⚠️  Missing signals for: ${missingSymbols.slice(0, 10).map((f: any) => f.symbol).join(', ')}${missingSymbols.length > 10 ? ` ... and ${missingSymbols.length - 10} more` : ''}`)
+          }
+        }
+        
         break // Success, exit retry loop
         
       } catch (error: any) {
         lastError = error
-        console.error(`❌ ML service attempt ${attempt} failed:`, error.message)
+        const errorName = error.name || 'Unknown'
+        const errorMessage = error.message || String(error)
+        console.error(`❌ ML service attempt ${attempt} failed [${errorName}]:`, errorMessage)
+        
+        if (error.name === 'TimeoutError' || error.message?.includes('timeout')) {
+          console.error(`⏱️  ML service timed out after 30 seconds - this may indicate the service is overloaded or processing too many symbols`)
+        }
         
         if (attempt < maxRetries) {
           console.log(`⏳ Waiting 3 seconds before retry...`)
