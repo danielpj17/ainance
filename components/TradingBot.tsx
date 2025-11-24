@@ -96,7 +96,10 @@ export default function TradingBot({ mode }: TradingBotProps) {
 
   // Fetch diagnostics
   const fetchDiagnostics = async () => {
-    if (!botStatus?.isRunning) return
+    if (!botStatus?.isRunning) {
+      console.log('📊 Diagnostics: Bot not running, skipping fetch')
+      return
+    }
     
     setDiagnosticsLoading(true)
     try {
@@ -105,13 +108,31 @@ export default function TradingBot({ mode }: TradingBotProps) {
       const response = await fetch('/api/trading/diagnostics', {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
+      
+      if (!response.ok) {
+        console.error('❌ Diagnostics API error:', response.status, response.statusText)
+        const errorText = await response.text()
+        console.error('Error response:', errorText)
+        return
+      }
+      
       const data = await response.json()
+      console.log('📊 Diagnostics fetched:', { 
+        success: data.success, 
+        diagnosticsCount: data.diagnostics?.length || 0,
+        hasBotState: !!data.botState 
+      })
       
       if (data.success) {
         setDiagnostics(data)
+        if (data.diagnostics && data.diagnostics.length === 0) {
+          console.log('⚠️  No diagnostics available - bot may not have executed trading loop yet')
+        }
+      } else {
+        console.error('❌ Diagnostics fetch failed:', data.error)
       }
     } catch (error) {
-      console.error('Error fetching diagnostics:', error)
+      console.error('❌ Error fetching diagnostics:', error)
     } finally {
       setDiagnosticsLoading(false)
     }
@@ -772,8 +793,37 @@ export default function TradingBot({ mode }: TradingBotProps) {
                   ))}
                   
                   {diagnostics.diagnostics.length === 0 && (
-                    <div className="text-sm text-gray-400 text-center py-4">
-                      No recent activity. The bot may have just started or hasn't executed a trading loop yet.
+                    <div className="text-sm text-gray-400 text-center py-4 space-y-2">
+                      <p>No recent activity. The bot may have just started or hasn't executed a trading loop yet.</p>
+                      <p className="text-xs text-gray-500">
+                        Last run: {diagnostics.botState?.lastRun 
+                          ? new Date(diagnostics.botState.lastRun).toLocaleString() 
+                          : 'Never'}
+                      </p>
+                      <Button
+                        onClick={async () => {
+                          console.log('🔄 Manually triggering health check...')
+                          try {
+                            const supabase = createClient()
+                            const { data: { session } } = await supabase.auth.getSession()
+                            const response = await fetch('/api/trading/health-check', {
+                              headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+                            })
+                            const data = await response.json()
+                            console.log('Health check response:', data)
+                            if (data.success) {
+                              setTimeout(() => fetchDiagnostics(), 2000)
+                            }
+                          } catch (error) {
+                            console.error('Error triggering health check:', error)
+                          }
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                      >
+                        Trigger Health Check
+                      </Button>
                     </div>
                   )}
                 </div>

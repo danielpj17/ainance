@@ -72,10 +72,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     if (allActiveBots.size === 0) {
+      console.log('📊 Health check: No active bots found, checking current user...')
       // No active bots, but check current user anyway
       return await checkAndRunCurrentUser(supabase, req)
     }
 
+    console.log(`📊 Health check: Found ${allActiveBots.size} active bot(s) to process`)
     const results = []
     
     // Process each active bot (always-on or manually started)
@@ -90,15 +92,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }
 
         // Execute trading loop directly (this keeps the bot running)
-        console.log(`🔄 Health check: Executing trading loop for always-on user ${userId}`)
+        console.log(`🔄 Health check: Executing trading loop for user ${userId} (Always-On: ${user.always_on})`)
         
         // Get API keys
-        const { data: apiKeys } = await supabase.rpc('get_user_api_keys', {
+        const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
           user_uuid: userId
         })
 
+        if (apiKeysError) {
+          console.error(`❌ Error fetching API keys for user ${userId}:`, apiKeysError)
+          results.push({
+            userId,
+            success: false,
+            error: `Failed to fetch API keys: ${apiKeysError.message}`
+          })
+          continue
+        }
+
         if (!apiKeys?.[0]) {
           console.log(`⚠️  User ${userId} has no API keys configured`)
+          results.push({
+            userId,
+            success: false,
+            error: 'No API keys configured'
+          })
           continue
         }
 
@@ -111,16 +128,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }
 
         // Execute trading loop directly
+        console.log(`🚀 Health check: Calling executeTradingLoop for user ${userId}...`)
         await executeTradingLoop(supabase, userId, config, keys)
+        console.log(`✅ Health check: Trading loop completed for user ${userId}`)
         
         // Update last_run timestamp
-        await supabase.rpc('update_bot_state', {
+        const { error: updateError } = await supabase.rpc('update_bot_state', {
           user_uuid: userId,
           is_running_param: true,
           config_param: config,
           error_param: null,
-          always_on_param: true
+          always_on_param: user.always_on
         })
+
+        if (updateError) {
+          console.error(`⚠️  Error updating bot state for user ${userId}:`, updateError)
+        } else {
+          console.log(`✅ Health check: Bot state updated for user ${userId}`)
+        }
 
         results.push({
           userId,
@@ -130,7 +155,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
-        console.error(`Error executing trading loop for user ${user.user_id}:`, errorMsg)
+        const errorStack = error instanceof Error ? error.stack : undefined
+        console.error(`❌ Error executing trading loop for user ${user.user_id}:`, errorMsg)
+        console.error('Error stack:', errorStack)
         results.push({
           userId: user.user_id,
           success: false,
