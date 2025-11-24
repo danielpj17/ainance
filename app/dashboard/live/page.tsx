@@ -72,7 +72,7 @@ export default function LiveTradingPage() {
       .channel('live-trades')
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'trades' },
-        (payload) => {
+        (payload: { new: { account_type: string } }) => {
           if (payload.new.account_type === 'live') {
             loadData()
           }
