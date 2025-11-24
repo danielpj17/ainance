@@ -1060,6 +1060,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.log(`⚠️  BUY signals filtered out (low confidence): ${buyFilteredByConfidence}`)
     }
     
+    // Track signals before time filter for diagnostics
+    const buySignalsAfterConfidenceFilter = buySignals.length
+    
     // Filter out buy signals in last 30 minutes (prevent new positions, but allow closing existing ones)
     if (isInLast30Minutes()) {
       const buySignalsBeforeTimeFilter = buySignals.length
@@ -1170,6 +1173,17 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     // Log the trading loop execution with diagnostics
     const executedCount = signals.length
     
+    // Calculate filtered signals details for diagnostics
+    // Buy signals filtered by confidence (before time filter)
+    const filteredBuySignalsByConfidence = buySignalsBeforeFilter.filter((s: any) => s.adjusted_confidence < minConfidence)
+    // Buy signals that passed confidence but were filtered by time (if in last 30 min)
+    const filteredBuySignalsByTime = isInLast30Minutes() 
+      ? buySignalsBeforeFilter.filter((s: any) => s.adjusted_confidence >= minConfidence)
+      : []
+    const filteredBuySignals = [...filteredBuySignalsByConfidence, ...filteredBuySignalsByTime]
+    
+    const filteredSellSignals = sellSignalsBeforeFilter.filter((s: any) => s.adjusted_confidence < minConfidence)
+    
     console.log('═══════════════════════════════════════════════════════════')
     console.log('📊 TRADING LOOP SUMMARY')
     console.log('═══════════════════════════════════════════════════════════')
@@ -1177,6 +1191,18 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log(`📈 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`)
     console.log(`🎯 Confidence Threshold: ${(minConfidence * 100).toFixed(1)}%`)
     console.log(`💼 Positions Before: ${currentHoldings.length}`)
+    if (filteredBuySignals.length > 0) {
+      console.log(`⚠️  Filtered BUY signals (low confidence):`)
+      filteredBuySignals.forEach((s: any) => {
+        console.log(`   - ${s.symbol}: ${(s.confidence * 100).toFixed(1)}% base + ${(s.news_sentiment * 15).toFixed(1)}% sentiment = ${(s.adjusted_confidence * 100).toFixed(1)}% (need ${(minConfidence * 100).toFixed(1)}%)`)
+      })
+    }
+    if (filteredSellSignals.length > 0) {
+      console.log(`⚠️  Filtered SELL signals (low confidence):`)
+      filteredSellSignals.forEach((s: any) => {
+        console.log(`   - ${s.symbol}: ${(s.confidence * 100).toFixed(1)}% base + ${(s.news_sentiment * 15).toFixed(1)}% sentiment = ${(s.adjusted_confidence * 100).toFixed(1)}% (need ${(minConfidence * 100).toFixed(1)}%)`)
+      })
+    }
     console.log('═══════════════════════════════════════════════════════════')
     
     let logError = null
@@ -1196,6 +1222,26 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             reasoning: s.reasoning,
             timestamp: s.timestamp
           })),
+          filtered_signals: {
+            buy: filteredBuySignals.map((s: any) => ({
+              symbol: s.symbol,
+              base_confidence: s.confidence,
+              sentiment_boost: s.news_sentiment * 0.15,
+              adjusted_confidence: s.adjusted_confidence,
+              threshold: minConfidence,
+              reason: s.adjusted_confidence < minConfidence 
+                ? 'confidence_below_threshold' 
+                : (isInLast30Minutes() ? 'last_30_minutes' : 'other')
+            })),
+            sell: filteredSellSignals.map((s: any) => ({
+              symbol: s.symbol,
+              base_confidence: s.confidence,
+              sentiment_boost: s.news_sentiment * 0.15,
+              adjusted_confidence: s.adjusted_confidence,
+              threshold: minConfidence,
+              reason: s.adjusted_confidence < minConfidence ? 'confidence_below_threshold' : 'other'
+            }))
+          },
           diagnostics: {
             min_confidence_threshold: minConfidence,
             market_risk: marketRisk,
@@ -1207,7 +1253,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             allocated_buy_signals: allocatedBuySignals.length,
             executed_signals: executedCount,
             market_open: isMarketOpen(),
-            in_last_30_minutes: isInLast30Minutes()
+            in_last_30_minutes: isInLast30Minutes(),
+            filtered_buy_count: filteredBuySignals.length,
+            filtered_sell_count: filteredSellSignals.length
           }
         }
       }

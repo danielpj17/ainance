@@ -775,15 +775,62 @@ export default function TradingBot({ mode }: TradingBotProps) {
                               <strong>Why no trades?</strong>
                               <ul className="list-disc list-inside mt-1 space-y-0.5">
                                 {diag.diagnostics.final_buy_signals === 0 && diag.diagnostics.buy_signals_before_filter > 0 && (
-                                  <li>Buy signals filtered out (confidence below threshold or last 30 minutes)</li>
+                                  <>
+                                    <li>
+                                      {diag.diagnostics.filtered_buy_count > 0 
+                                        ? `${diag.diagnostics.filtered_buy_count} buy signal(s) filtered out due to low confidence (below ${(diag.diagnostics.min_confidence_threshold * 100).toFixed(1)}% threshold)`
+                                        : 'Buy signals filtered out (confidence below threshold or last 30 minutes)'}
+                                    </li>
+                                    {diag.data?.filtered_signals?.buy && diag.data.filtered_signals.buy.length > 0 && (
+                                      <li className="ml-4 mt-1">
+                                        <span className="text-xs">Filtered buy signals:</span>
+                                        <ul className="list-disc list-inside ml-2 mt-0.5">
+                                          {diag.data.filtered_signals.buy.slice(0, 3).map((f: any, idx: number) => (
+                                            <li key={idx} className="text-xs">
+                                              {f.symbol}: {(f.base_confidence * 100).toFixed(1)}% base
+                                              {f.sentiment_boost > 0 && ` + ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
+                                              {f.sentiment_boost < 0 && ` ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
+                                              {' '}= {(f.adjusted_confidence * 100).toFixed(1)}% (need {(f.threshold * 100).toFixed(1)}%)
+                                            </li>
+                                          ))}
+                                          {diag.data.filtered_signals.buy.length > 3 && (
+                                            <li className="text-xs text-gray-400">
+                                              ... and {diag.data.filtered_signals.buy.length - 3} more
+                                            </li>
+                                          )}
+                                        </ul>
+                                      </li>
+                                    )}
+                                  </>
                                 )}
                                 {diag.diagnostics.final_sell_signals === 0 && diag.diagnostics.sell_signals_before_filter > 0 && (
-                                  <li>Sell signals filtered out (confidence below threshold)</li>
+                                  <>
+                                    <li>
+                                      {diag.diagnostics.filtered_sell_count > 0
+                                        ? `${diag.diagnostics.filtered_sell_count} sell signal(s) filtered out due to low confidence`
+                                        : 'Sell signals filtered out (confidence below threshold)'}
+                                    </li>
+                                    {diag.data?.filtered_signals?.sell && diag.data.filtered_signals.sell.length > 0 && (
+                                      <li className="ml-4 mt-1">
+                                        <span className="text-xs">Filtered sell signals:</span>
+                                        <ul className="list-disc list-inside ml-2 mt-0.5">
+                                          {diag.data.filtered_signals.sell.slice(0, 3).map((f: any, idx: number) => (
+                                            <li key={idx} className="text-xs">
+                                              {f.symbol}: {(f.base_confidence * 100).toFixed(1)}% base
+                                              {f.sentiment_boost > 0 && ` + ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
+                                              {f.sentiment_boost < 0 && ` ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
+                                              {' '}= {(f.adjusted_confidence * 100).toFixed(1)}% (need {(f.threshold * 100).toFixed(1)}%)
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </li>
+                                    )}
+                                  </>
                                 )}
                                 {diag.diagnostics.allocated_buy_signals !== undefined && diag.diagnostics.allocated_buy_signals < diag.diagnostics.final_buy_signals && (
                                   <li>Some buy signals skipped due to capital allocation limits</li>
                                 )}
-                                {diag.diagnostics.in_last_30_minutes && (
+                                {diag.diagnostics.in_last_30_minutes && diag.diagnostics.final_buy_signals === 0 && (
                                   <li>Last 30 minutes of trading - new positions blocked</li>
                                 )}
                               </ul>
