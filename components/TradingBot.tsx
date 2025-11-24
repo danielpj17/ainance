@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react'
 
 export interface BotStatus {
   isRunning: boolean
@@ -57,6 +57,9 @@ export default function TradingBot({ mode }: TradingBotProps) {
   const [error, setError] = useState<string | null>(null)
   const [isMarketOpen, setIsMarketOpen] = useState(true) // Default to true
   const requestInProgressRef = useRef(false) // Track if a request is in progress
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<any>(null)
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [config, setConfig] = useState<BotConfig>({
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
     interval: 10, // 10 seconds
@@ -89,6 +92,29 @@ export default function TradingBot({ mode }: TradingBotProps) {
     const marketClose = 16 * 60 // 4:00 PM
     
     return currentMinutes >= marketOpen && currentMinutes < marketClose
+  }
+
+  // Fetch diagnostics
+  const fetchDiagnostics = async () => {
+    if (!botStatus?.isRunning) return
+    
+    setDiagnosticsLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch('/api/trading/diagnostics', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        setDiagnostics(data)
+      }
+    } catch (error) {
+      console.error('Error fetching diagnostics:', error)
+    } finally {
+      setDiagnosticsLoading(false)
+    }
   }
 
   // Fetch bot status on component mount
@@ -161,6 +187,18 @@ export default function TradingBot({ mode }: TradingBotProps) {
       clearInterval(healthCheckInterval)
     }
   }, [])
+  
+  // Fetch diagnostics when bot is running
+  useEffect(() => {
+    if (!botStatus?.isRunning) return
+    
+    fetchDiagnostics()
+    const diagnosticsInterval = setInterval(fetchDiagnostics, 30000) // Every 30 seconds
+    
+    return () => {
+      clearInterval(diagnosticsInterval)
+    }
+  }, [botStatus?.isRunning])
 
   const fetchBotStatus = async () => {
     try {
@@ -608,7 +646,146 @@ export default function TradingBot({ mode }: TradingBotProps) {
               <Activity className="h-4 w-4" />
               {isLoading ? 'Generating...' : 'Test Signals'}
             </Button>
+            
+            {/* Diagnostics Button */}
+            {botStatus?.isRunning && (
+              <Button 
+                onClick={() => {
+                  setShowDiagnostics(!showDiagnostics)
+                  if (!showDiagnostics && !diagnostics) {
+                    fetchDiagnostics()
+                  }
+                }}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Info className="h-4 w-4" />
+                {showDiagnostics ? 'Hide' : 'Show'} Diagnostics
+              </Button>
+            )}
           </div>
+          
+          {/* Diagnostics Panel */}
+          {showDiagnostics && botStatus?.isRunning && (
+            <div className="mt-4 p-4 rounded-lg bg-gray-900/50 border border-gray-700">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-white flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  Bot Activity & Diagnostics
+                </h4>
+                {diagnosticsLoading && (
+                  <div className="text-xs text-gray-400">Loading...</div>
+                )}
+              </div>
+              
+              {diagnostics && diagnostics.diagnostics && diagnostics.diagnostics.length > 0 ? (
+                <div className="space-y-3">
+                  {diagnostics.diagnostics.slice(0, 3).map((diag: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-gray-800/50 rounded border border-gray-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-medium text-white">
+                          {new Date(diag.timestamp).toLocaleString()}
+                        </div>
+                        <Badge variant={diag.action === 'execute' ? 'default' : diag.action === 'error' ? 'destructive' : 'secondary'}>
+                          {diag.action}
+                        </Badge>
+                      </div>
+                      
+                      {diag.diagnostics && (
+                        <div className="text-xs text-gray-300 space-y-1 mt-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-gray-400">ML Signals:</span>{' '}
+                              <span className="text-white">{diag.diagnostics.total_ml_signals || 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400">Confidence Threshold:</span>{' '}
+                              <span className="text-white">
+                                {diag.diagnostics.min_confidence_threshold 
+                                  ? `${(diag.diagnostics.min_confidence_threshold * 100).toFixed(1)}%`
+                                  : 'N/A'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400">Buy Signals:</span>{' '}
+                              <span className="text-white">
+                                {diag.diagnostics.final_buy_signals || 0} / {diag.diagnostics.buy_signals_before_filter || 0} (before filter)
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400">Sell Signals:</span>{' '}
+                              <span className="text-white">
+                                {diag.diagnostics.final_sell_signals || 0} / {diag.diagnostics.sell_signals_before_filter || 0} (before filter)
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400">Executed:</span>{' '}
+                              <span className="text-white">{diag.diagnostics.executed_signals || 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-400">Market Risk:</span>{' '}
+                              <span className="text-white">
+                                {diag.diagnostics.market_risk 
+                                  ? `${(diag.diagnostics.market_risk * 100).toFixed(1)}%`
+                                  : 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {diag.diagnostics.executed_signals === 0 && diag.diagnostics.total_ml_signals > 0 && (
+                            <div className="mt-2 p-2 bg-yellow-900/30 border border-yellow-700/50 rounded text-yellow-200">
+                              <strong>Why no trades?</strong>
+                              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                                {diag.diagnostics.final_buy_signals === 0 && diag.diagnostics.buy_signals_before_filter > 0 && (
+                                  <li>Buy signals filtered out (confidence below threshold or last 30 minutes)</li>
+                                )}
+                                {diag.diagnostics.final_sell_signals === 0 && diag.diagnostics.sell_signals_before_filter > 0 && (
+                                  <li>Sell signals filtered out (confidence below threshold)</li>
+                                )}
+                                {diag.diagnostics.allocated_buy_signals !== undefined && diag.diagnostics.allocated_buy_signals < diag.diagnostics.final_buy_signals && (
+                                  <li>Some buy signals skipped due to capital allocation limits</li>
+                                )}
+                                {diag.diagnostics.in_last_30_minutes && (
+                                  <li>Last 30 minutes of trading - new positions blocked</li>
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {diag.diagnostics.total_ml_signals === 0 && (
+                            <div className="mt-2 p-2 bg-blue-900/30 border border-blue-700/50 rounded text-blue-200">
+                              <strong>No ML signals generated.</strong> This could mean:
+                              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                                <li>ML service may be unavailable or timing out</li>
+                                <li>Market data may not be available</li>
+                                <li>Technical indicators may have failed to calculate</li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {diag.message && (
+                        <div className="mt-2 text-xs text-gray-400">{diag.message}</div>
+                      )}
+                    </div>
+                  ))}
+                  
+                  {diagnostics.diagnostics.length === 0 && (
+                    <div className="text-sm text-gray-400 text-center py-4">
+                      No recent activity. The bot may have just started or hasn't executed a trading loop yet.
+                    </div>
+                  )}
+                </div>
+              ) : diagnosticsLoading ? (
+                <div className="text-sm text-gray-400 text-center py-4">Loading diagnostics...</div>
+              ) : (
+                <div className="text-sm text-gray-400 text-center py-4">
+                  No diagnostics available yet. The bot will show activity after it runs its first trading loop.
+                </div>
+              )}
+            </div>
+          )}
           
           {/* Market Hours Info */}
           {botStatus?.marketOpen === false && (
