@@ -82,23 +82,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Process logs to extract diagnostics
     const diagnostics = logs?.map((log: any) => {
-      const diagnostics = log.data?.diagnostics || {}
+      const diagnosticsData = log.data?.diagnostics || {}
       return {
         timestamp: log.created_at,
         action: log.action,
         message: log.message,
+        data: log.data || {}, // Include full data object for filtered_signals
         diagnostics: {
-          min_confidence_threshold: diagnostics.min_confidence_threshold,
-          market_risk: diagnostics.market_risk,
-          total_ml_signals: diagnostics.total_ml_signals,
-          buy_signals_before_filter: diagnostics.buy_signals_before_filter,
-          sell_signals_before_filter: diagnostics.sell_signals_before_filter,
-          final_buy_signals: diagnostics.final_buy_signals,
-          final_sell_signals: diagnostics.final_sell_signals,
-          allocated_buy_signals: diagnostics.allocated_buy_signals,
-          executed_signals: diagnostics.executed_signals,
-          market_open: diagnostics.market_open,
-          in_last_30_minutes: diagnostics.in_last_30_minutes,
+          min_confidence_threshold: diagnosticsData.min_confidence_threshold,
+          market_risk: diagnosticsData.market_risk,
+          total_ml_signals: diagnosticsData.total_ml_signals,
+          buy_signals_before_filter: diagnosticsData.buy_signals_before_filter,
+          sell_signals_before_filter: diagnosticsData.sell_signals_before_filter,
+          final_buy_signals: diagnosticsData.final_buy_signals,
+          final_sell_signals: diagnosticsData.final_sell_signals,
+          allocated_buy_signals: diagnosticsData.allocated_buy_signals,
+          executed_signals: diagnosticsData.executed_signals,
+          market_open: diagnosticsData.market_open,
+          in_last_30_minutes: diagnosticsData.in_last_30_minutes,
+          filtered_buy_count: diagnosticsData.filtered_buy_count,
+          filtered_sell_count: diagnosticsData.filtered_sell_count,
           signals: log.data?.signals || []
         }
       }
