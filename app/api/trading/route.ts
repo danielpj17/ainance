@@ -335,21 +335,40 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     })
     const currentAlwaysOn = currentState?.[0]?.always_on || false
 
-    // Store bot state in database - ensure it completes
-    const { error: updateError } = await supabase.rpc('update_bot_state', {
-      user_uuid: userId,
-      is_running_param: true,
-      config_param: config,
-      error_param: null,
-      always_on_param: currentAlwaysOn
-    })
+    // Store bot state in database - ensure it completes with retry logic
+    let updateError = null
+    const maxRetries = 3
     
-    if (updateError) {
-      console.error('❌ Error updating bot state to running:', updateError)
-      throw new Error(`Failed to update bot state: ${updateError.message}`)
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const result = await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: true,
+        config_param: config,
+        error_param: null,
+        always_on_param: currentAlwaysOn
+      })
+      
+      updateError = result.error
+      
+      if (!updateError) {
+        console.log('✅ Bot state updated in database: is_running=true')
+        break // Success, exit retry loop
+      }
+      
+      // If it's a network error and we have retries left, wait and retry
+      if (updateError?.message?.includes('fetch failed') && attempt < maxRetries) {
+        console.warn(`⚠️ Retry ${attempt}/${maxRetries} for update_bot_state after network error`)
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)) // Exponential backoff
+        continue
+      }
+      
+      break // Either not a network error or out of retries
     }
     
-    console.log('✅ Bot state updated in database: is_running=true')
+    if (updateError) {
+      console.error('❌ Error updating bot state to running after retries:', updateError)
+      throw new Error(`Failed to update bot state: ${updateError.message}`)
+    }
 
     // Store bot user ID
     botState.userId = userId
@@ -1349,13 +1368,35 @@ async function executeTradeSignal(
 // Get bot status
 async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
   try {
-    // Get bot state from database
-    const { data: botStateData, error: botStateError } = await supabase.rpc('get_bot_state', {
-      user_uuid: userId
-    })
+    // Get bot state from database with retry logic
+    let botStateData = null
+    let botStateError = null
+    const maxRetries = 3
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const result = await supabase.rpc('get_bot_state', {
+        user_uuid: userId
+      })
+      
+      botStateData = result.data
+      botStateError = result.error
+      
+      if (!botStateError) {
+        break // Success, exit retry loop
+      }
+      
+      // If it's a network error and we have retries left, wait and retry
+      if (botStateError?.message?.includes('fetch failed') && attempt < maxRetries) {
+        console.warn(`⚠️ Retry ${attempt}/${maxRetries} for get_bot_state after network error`)
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)) // Exponential backoff
+        continue
+      }
+      
+      break // Either not a network error or out of retries
+    }
 
     if (botStateError) {
-      console.error('Error getting bot state:', botStateError)
+      console.error('Error getting bot state after retries:', botStateError)
     }
 
     const dbBotState = botStateData?.[0] || {
