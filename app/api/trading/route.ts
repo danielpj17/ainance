@@ -689,29 +689,71 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       })
       
       // Log the execution even when market is closed (so diagnostics can show activity)
-      await supabase
-        .from('bot_logs')
-        .insert({
-          user_id: userId,
-          action: 'execute',
-          message: 'Trading loop executed - market is closed',
-          data: {
-            market_open: false,
-            diagnostics: {
-              min_confidence_threshold: 0.55,
-              market_risk: 0.3,
-              total_ml_signals: 0,
-              buy_signals_before_filter: 0,
-              sell_signals_before_filter: 0,
-              final_buy_signals: 0,
-              final_sell_signals: 0,
-              allocated_buy_signals: 0,
-              executed_signals: 0,
+      let logError = null
+      try {
+        const { error } = await supabase
+          .from('bot_logs')
+          .insert({
+            user_id: userId,
+            action: 'execute',
+            message: 'Trading loop executed - market is closed',
+            data: {
               market_open: false,
-              in_last_30_minutes: false
+              diagnostics: {
+                min_confidence_threshold: 0.55,
+                market_risk: 0.3,
+                total_ml_signals: 0,
+                buy_signals_before_filter: 0,
+                sell_signals_before_filter: 0,
+                final_buy_signals: 0,
+                final_sell_signals: 0,
+                allocated_buy_signals: 0,
+                executed_signals: 0,
+                market_open: false,
+                in_last_30_minutes: false
+              }
             }
+          })
+        logError = error
+        
+        // If direct insert fails, try using the security definer function
+        if (logError) {
+          console.warn('⚠️  Direct insert failed, trying security definer function:', logError.message)
+          const { error: rpcError } = await supabase.rpc('insert_bot_log', {
+            user_uuid: userId,
+            action_param: 'execute',
+            message_param: 'Trading loop executed - market is closed',
+            data_param: {
+              market_open: false,
+              diagnostics: {
+                min_confidence_threshold: 0.55,
+                market_risk: 0.3,
+                total_ml_signals: 0,
+                buy_signals_before_filter: 0,
+                sell_signals_before_filter: 0,
+                final_buy_signals: 0,
+                final_sell_signals: 0,
+                allocated_buy_signals: 0,
+                executed_signals: 0,
+                market_open: false,
+                in_last_30_minutes: false
+              }
+            }
+          })
+          if (rpcError) {
+            console.error('❌ Error writing bot_logs via RPC (market closed):', rpcError)
+            logError = rpcError
+          } else {
+            console.log('✅ Bot log written via RPC (market closed)')
+            logError = null
           }
-        })
+        } else {
+          console.log('✅ Bot log written (market closed)')
+        }
+      } catch (err: any) {
+        console.error('❌ Exception writing bot_logs (market closed):', err)
+        logError = err
+      }
       
       return
     }
@@ -1137,9 +1179,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log(`💼 Positions Before: ${currentHoldings.length}`)
     console.log('═══════════════════════════════════════════════════════════')
     
-    await supabase
-      .from('bot_logs')
-      .insert({
+    let logError = null
+    try {
+      const logData = {
         user_id: userId,
         action: 'execute',
         message: `Trading loop executed. Generated ${signals.length} signals for execution`,
@@ -1168,7 +1210,42 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             in_last_30_minutes: isInLast30Minutes()
           }
         }
-      })
+      }
+      
+      const { error } = await supabase
+        .from('bot_logs')
+        .insert(logData)
+      logError = error
+      
+      // If direct insert fails, try using the security definer function
+      if (logError) {
+        console.warn('⚠️  Direct insert failed, trying security definer function:', logError.message)
+        const { error: rpcError } = await supabase.rpc('insert_bot_log', {
+          user_uuid: userId,
+          action_param: 'execute',
+          message_param: logData.message,
+          data_param: logData.data
+        })
+        if (rpcError) {
+          console.error('❌ Error writing bot_logs via RPC (trading loop):', rpcError)
+          console.error('Log error details:', {
+            code: rpcError.code,
+            message: rpcError.message,
+            details: rpcError.details,
+            hint: rpcError.hint
+          })
+          logError = rpcError
+        } else {
+          console.log('✅ Bot log written via RPC (trading loop executed)')
+          logError = null
+        }
+      } else {
+        console.log('✅ Bot log written (trading loop executed)')
+      }
+    } catch (err: any) {
+      console.error('❌ Exception writing bot_logs (trading loop):', err)
+      logError = err
+    }
 
   } catch (error) {
     console.error('Error in trading loop:', error)

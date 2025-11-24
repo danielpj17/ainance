@@ -37,6 +37,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // This works for all always-on users, not just the current user
     const { data: alwaysOnUsers, error: fetchError } = await supabase.rpc('get_always_on_users')
 
+    if (fetchError) {
+      console.error('❌ Error fetching always-on users:', fetchError)
+    } else {
+      console.log(`📊 Health check: Found ${alwaysOnUsers?.length || 0} always-on user(s)`)
+    }
+
     // Also get all users with is_running = true (manually started bots)
     // This ensures manually started bots continue running even if not always-on
     const { data: runningBots, error: runningBotsError } = await supabase
@@ -44,8 +50,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .select('user_id, config, always_on, is_running')
       .eq('is_running', true)
 
-    if (fetchError) {
-      console.error('Error fetching always-on users:', fetchError)
+    if (runningBotsError) {
+      console.error('❌ Error fetching running bots:', runningBotsError)
+    } else {
+      console.log(`📊 Health check: Found ${runningBots?.length || 0} manually running bot(s)`)
     }
 
     // Combine always-on users and manually started bots

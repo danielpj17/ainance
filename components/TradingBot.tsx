@@ -159,20 +159,41 @@ export default function TradingBot({ mode }: TradingBotProps) {
         
         // Call health check API (this will restart bot if it stopped but should be running)
         if (session?.access_token) {
+          console.log('🔄 Running health check...')
           const response = await fetch('/api/trading/health-check', {
             headers: { Authorization: `Bearer ${session.access_token}` }
           })
+          
+          if (!response.ok) {
+            console.error('❌ Health check failed:', response.status, response.statusText)
+            return
+          }
+          
           const data = await response.json()
+          console.log('📊 Health check response:', { 
+            success: data.success, 
+            message: data.message,
+            executed: data.executed,
+            total: data.total,
+            restarted: data.restarted
+          })
           
           if (data.success && data.restarted) {
             console.log('✅ Bot was restarted by health check')
             // Refresh status after restart
             setTimeout(fetchBotStatus, 1000)
           }
+          
+          // If health check executed trading loops, refresh diagnostics
+          if (data.success && data.executed > 0) {
+            console.log(`✅ Health check executed ${data.executed} trading loop(s)`)
+            setTimeout(() => fetchDiagnostics(), 3000) // Wait 3 seconds for logs to be written
+          }
+        } else {
+          console.log('⚠️  No session token available for health check')
         }
       } catch (error) {
-        // Silently fail - this is just a health check
-        console.log('Health check error (this is normal):', error)
+        console.error('❌ Health check error:', error)
       }
     }
     
