@@ -687,6 +687,32 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         config_param: config,
         error_param: null
       })
+      
+      // Log the execution even when market is closed (so diagnostics can show activity)
+      await supabase
+        .from('bot_logs')
+        .insert({
+          user_id: userId,
+          action: 'execute',
+          message: 'Trading loop executed - market is closed',
+          data: {
+            market_open: false,
+            diagnostics: {
+              min_confidence_threshold: 0.55,
+              market_risk: 0.3,
+              total_ml_signals: 0,
+              buy_signals_before_filter: 0,
+              sell_signals_before_filter: 0,
+              final_buy_signals: 0,
+              final_sell_signals: 0,
+              allocated_buy_signals: 0,
+              executed_signals: 0,
+              market_open: false,
+              in_last_30_minutes: false
+            }
+          }
+        })
+      
       return
     }
 

@@ -29,15 +29,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const supabase = await createServerClient(req, {})
 
-    // Check if market is open
-    if (!isMarketOpen()) {
-      return NextResponse.json({
-        success: true,
-        message: 'Market is closed',
-        marketOpen: false,
-        botRunning: false
-      })
-    }
+    // Note: We still process bots even when market is closed
+    // This ensures logs are written and bot state is maintained
+    // The executeTradingLoop function will handle the market closed case
 
     // Get all users with always_on enabled
     // This works for all always-on users, not just the current user
