@@ -85,4 +85,3 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }, { status: 500 })
   }
 }
-
