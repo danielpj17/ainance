@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -56,6 +56,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isMarketOpen, setIsMarketOpen] = useState(true) // Default to true
+  const requestInProgressRef = useRef(false) // Track if a request is in progress
   const [config, setConfig] = useState<BotConfig>({
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
     interval: 10, // 10 seconds
@@ -221,6 +222,13 @@ export default function TradingBot({ mode }: TradingBotProps) {
   }
 
   const startBot = async () => {
+    // Prevent duplicate requests
+    if (requestInProgressRef.current || isLoading) {
+      console.log('⚠️ Start bot request already in progress, ignoring duplicate click')
+      return
+    }
+    
+    requestInProgressRef.current = true
     setIsLoading(true)
     setError(null)
     
@@ -294,6 +302,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
       setError(error?.message || 'Failed to start trading bot. Please try again.')
     } finally {
       setIsLoading(false)
+      requestInProgressRef.current = false
     }
   }
 
@@ -332,6 +341,13 @@ export default function TradingBot({ mode }: TradingBotProps) {
   }
 
   const toggleAlwaysOn = async () => {
+    // Prevent duplicate requests
+    if (requestInProgressRef.current || isLoading) {
+      console.log('⚠️ Toggle always-on request already in progress, ignoring duplicate click')
+      return
+    }
+    
+    requestInProgressRef.current = true
     setIsLoading(true)
     setError(null)
     
@@ -414,6 +430,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
       setError(error?.message || 'Failed to toggle always-on mode. Please try again.')
     } finally {
       setIsLoading(false)
+      requestInProgressRef.current = false
     }
   }
 
