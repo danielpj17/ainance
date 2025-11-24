@@ -230,7 +230,39 @@ export class StockScanner {
 }
 
 // Utility function to get default stocks if scanner fails
+// Expanded list to provide more trading opportunities without scanning
 export function getDefaultScalpingStocks(): string[] {
-  return ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'SPY', 'QQQ', 'AMD', 'META', 'AMZN', 'GOOGL'];
+  return [
+    // Mega Cap Tech (10)
+    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'NFLX', 'AMD', 'INTC',
+    // High Volume ETFs (5)
+    'SPY', 'QQQ', 'IWM', 'DIA', 'VOO',
+    // Banks (5)
+    'JPM', 'BAC', 'WFC', 'C', 'GS',
+    // Energy (3)
+    'XOM', 'CVX', 'COP',
+    // Healthcare (5)
+    'JNJ', 'UNH', 'PFE', 'ABBV', 'MRK',
+    // Retail (4)
+    'WMT', 'HD', 'COST', 'TGT',
+    // Media (2)
+    'DIS', 'CMCSA',
+    // Industrials (3)
+    'BA', 'CAT', 'GE',
+    // Fintech/Crypto (6)
+    'COIN', 'RIOT', 'MARA', 'SQ', 'PYPL', 'SHOP',
+    // Cloud/Software (5)
+    'PLTR', 'SNOW', 'DDOG', 'NET', 'CRWD',
+    // EV (3)
+    'NIO', 'LCID', 'RIVN',
+    // Clean Energy (3)
+    'PLUG', 'FCEL', 'ENPH',
+    // Additional High Volume (10)
+    'F', 'GM', 'UBER', 'LYFT', 'DASH', 'ABNB', 'V', 'MA', 'AXP', 'SCHW',
+    // Tech (4)
+    'ORCL', 'IBM', 'CSCO', 'CRM',
+    // Volatility ETFs (4)
+    'TQQQ', 'SQQQ', 'SPXL', 'SPXS'
+  ];
 }
 
