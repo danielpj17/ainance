@@ -4,7 +4,7 @@
 export const DEMO_MODE = true // Set to false to enable real authentication
 
 export const DEMO_USER = {
-  id: '00000000-0000-0000-0000-000000000001',
+  id: '00000000-0000-0000-0000-000000000000',
   email: 'demo@ainance.app',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),

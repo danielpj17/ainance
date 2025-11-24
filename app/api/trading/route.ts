@@ -270,6 +270,27 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       }, { status: 400 })
     }
 
+    // Verify user exists in auth.users (skip for demo mode)
+    const isDemo = isDemoMode() && userId === '00000000-0000-0000-0000-000000000000'
+    if (!isDemo) {
+      try {
+        const { data: userData, error: userCheckError } = await supabase.auth.admin.getUserById(userId)
+        if (userCheckError || !userData?.user) {
+          console.error('❌ User not found in auth.users:', { userId, error: userCheckError })
+          return NextResponse.json({ 
+            success: false, 
+            error: 'User account not found. Please log out and log back in to refresh your session.' 
+          }, { status: 401 })
+        }
+        console.log('✅ User verified:', { userId, email: userData.user.email })
+      } catch (adminError) {
+        // If admin API is not available, try regular auth check
+        console.warn('⚠️ Admin API not available, skipping user verification:', adminError)
+      }
+    } else {
+      console.log('ℹ️ Demo mode: Skipping user verification')
+    }
+
     // Get Alpaca credentials from environment variables first, fallback to database
     let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
     let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
@@ -329,6 +350,18 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       }
     }
 
+    // Verify user exists in auth.users before proceeding
+    const { data: userData, error: userCheckError } = await supabase.auth.admin.getUserById(userId)
+    if (userCheckError || !userData?.user) {
+      console.error('❌ User not found in auth.users:', { userId, error: userCheckError })
+      return NextResponse.json({ 
+        success: false, 
+        error: 'User account not found. Please ensure you are logged in with a valid account.' 
+      }, { status: 401 })
+    }
+    
+    console.log('✅ User verified:', { userId, email: userData.user.email })
+
     // Get current always_on setting (don't change it when starting)
     const { data: currentState } = await supabase.rpc('get_bot_state', {
       user_uuid: userId
@@ -353,6 +386,26 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       if (!updateError) {
         console.log('✅ Bot state updated in database: is_running=true')
         break // Success, exit retry loop
+      }
+      
+      // Check for foreign key constraint violation
+      if (updateError?.message?.includes('foreign key constraint') || updateError?.code === '23503') {
+        console.error('❌ Foreign key constraint violation - user does not exist:', { userId, isDemo })
+        
+        if (isDemo) {
+          // For demo mode, try to create the user record first
+          console.log('🔧 Demo mode: Attempting to handle missing user record...')
+          // The demo user should exist, but if it doesn't, we'll return a helpful error
+          return NextResponse.json({ 
+            success: false, 
+            error: 'Demo user account not found in database. Please ensure the demo user exists in your Supabase project.' 
+          }, { status: 400 })
+        } else {
+          return NextResponse.json({ 
+            success: false, 
+            error: 'User account not found in database. Please log out and log back in to refresh your session.' 
+          }, { status: 400 })
+        }
       }
       
       // If it's a network error and we have retries left, wait and retry
