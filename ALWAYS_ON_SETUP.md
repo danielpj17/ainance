@@ -103,6 +103,16 @@ Optional: Set `CRON_SECRET` in Vercel environment variables to secure the health
 - Check Vercel dashboard → Crons tab to see if cron is running
 - Check server logs for errors
 
+**WebSocket/API connection errors (e.g., "ERR_NAME_NOT_RESOLVED" or WebSocket failures):**
+- **Most common cause**: Supabase URL mismatch in Vercel environment variables
+- Check browser console for error messages showing old project URL (e.g., `hukefaaxifspkybahqux.supabase.co`)
+- **Fix**: 
+  1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+  2. Update `NEXT_PUBLIC_SUPABASE_URL` to match your current Supabase project (e.g., `https://rffnvtzhnferhrqzvhw.supabase.co`)
+  3. Click "Redeploy" to rebuild with new environment variables
+  4. Hard refresh your browser (Ctrl+Shift+R or Cmd+Shift+R) to clear cached JavaScript
+- The console will show a warning if URL and token project IDs don't match
+
 ## Notes
 
 - The health check executes the full trading loop, so it will make trades if signals are generated

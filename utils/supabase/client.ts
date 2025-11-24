@@ -1,7 +1,15 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { isDemoMode, getDemoUser, getDemoSession } from '@/lib/demo-user'
 
+// Singleton pattern to prevent multiple client instances
+let clientInstance: ReturnType<typeof createSupabaseClient> | null = null
+
 export const createClient = () => {
+  // Return cached instance if available (client-side only)
+  if (typeof window !== 'undefined' && clientInstance) {
+    return clientInstance
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -22,7 +30,50 @@ export const createClient = () => {
     }
   }
 
-  const client = createSupabaseClient(supabaseUrl, supabaseAnonKey)
+  // Validate URL format and warn about potential mismatches
+  if (typeof window !== 'undefined') {
+    if (!supabaseUrl.includes('.supabase.co')) {
+      console.warn('⚠️ Invalid Supabase URL format:', supabaseUrl)
+    }
+    
+    // Extract project ID from URL and token for validation
+    const urlProjectId = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1]
+    if (urlProjectId && supabaseAnonKey) {
+      try {
+        // Decode JWT to check project ID (basic check)
+        const tokenParts = supabaseAnonKey.split('.')
+        if (tokenParts.length === 3) {
+          const payload = JSON.parse(atob(tokenParts[1]))
+          const tokenProjectId = payload.ref
+          if (tokenProjectId && urlProjectId !== tokenProjectId) {
+            console.error(
+              '❌ Supabase URL/Token Mismatch!',
+              '\n  URL Project ID:', urlProjectId,
+              '\n  Token Project ID:', tokenProjectId,
+              '\n  Please update NEXT_PUBLIC_SUPABASE_URL in Vercel to:',
+              `https://${tokenProjectId}.supabase.co`,
+              '\n  Then redeploy your application.'
+            )
+          }
+        }
+      } catch (e) {
+        // Silently fail if we can't decode the token
+      }
+    }
+  }
+
+  const client = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  })
+
+  // Cache the instance (client-side only)
+  if (typeof window !== 'undefined') {
+    clientInstance = client
+  }
 
   // In demo mode, override auth methods to always return demo user
   if (isDemoMode()) {
