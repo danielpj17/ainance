@@ -63,11 +63,28 @@ export const createClient = () => {
     }
   }
 
+  // In demo mode, use a custom fetch that removes Authorization headers
+  // This prevents JWT validation errors when using invalid demo tokens
+  const customFetch: typeof fetch = isDemoMode() && typeof window !== 'undefined'
+    ? async (input, init) => {
+        // Remove Authorization header if present
+        if (init?.headers) {
+          const headers = new Headers(init.headers)
+          headers.delete('Authorization')
+          init.headers = headers
+        }
+        return fetch(input, init)
+      }
+    : fetch
+
   const client = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+      persistSession: !isDemoMode(), // Don't persist session in demo mode
+      autoRefreshToken: !isDemoMode(), // Don't auto-refresh in demo mode
+      detectSessionInUrl: !isDemoMode(), // Don't detect session in demo mode
+    },
+    global: {
+      fetch: customFetch,
     },
   })
 
@@ -76,8 +93,11 @@ export const createClient = () => {
     clientInstance = client
   }
 
-  // In demo mode, override auth methods to always return demo user
+  // In demo mode, override auth methods and clear any existing session
   if (isDemoMode()) {
+    // Clear any existing session to prevent invalid token errors
+    client.auth.signOut().catch(() => {}) // Ignore errors
+    
     const originalAuth = client.auth
 
     client.auth = {
@@ -87,23 +107,27 @@ export const createClient = () => {
         error: null,
       }),
       getSession: async () => ({
-        data: { session: getDemoSession() },
+        data: { session: null }, // Return null session so client doesn't use token
         error: null,
       }),
       signInWithPassword: async () => ({
-        data: { user: getDemoUser(), session: getDemoSession() },
+        data: { user: getDemoUser(), session: null },
         error: null,
       }),
       signUp: async () => ({
-        data: { user: getDemoUser(), session: getDemoSession() },
+        data: { user: getDemoUser(), session: null },
         error: null,
       }),
-      signOut: async () => ({
-        error: null,
-      }),
+      signOut: async () => {
+        // Clear session storage
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(`sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`)
+        }
+        return { error: null }
+      },
       onAuthStateChange: (callback: any) => {
-        // Immediately call with signed in state
-        callback('SIGNED_IN', getDemoSession())
+        // Immediately call with signed in state (but no session token)
+        callback('SIGNED_IN', null)
         return {
           data: { subscription: { unsubscribe: () => {} } },
         }
