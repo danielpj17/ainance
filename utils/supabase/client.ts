@@ -2,7 +2,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { isDemoMode, getDemoUser, getDemoSession } from '@/lib/demo-user'
 
 // Singleton pattern to prevent multiple client instances
-let clientInstance: ReturnType<typeof createSupabaseClient> | null = null
+// Using 'any' type to allow different client configurations
+let clientInstance: any = null
 
 export const createClient = () => {
   // Return cached instance if available (client-side only)
