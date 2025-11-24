@@ -152,45 +152,41 @@ export default function TradingBot({ mode }: TradingBotProps) {
     const statusInterval = setInterval(fetchBotStatus, 5000) // Poll every 5 seconds
     
     // Health check: ensures bot keeps running during market hours
+    // Note: Health check doesn't require authentication (uses service role internally)
     const healthCheck = async () => {
       try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
+        console.log('🔄 Running health check...')
+        // Health check doesn't need auth - it uses service role internally
+        const response = await fetch('/api/trading/health-check')
         
-        // Call health check API (this will restart bot if it stopped but should be running)
-        if (session?.access_token) {
-          console.log('🔄 Running health check...')
-          const response = await fetch('/api/trading/health-check', {
-            headers: { Authorization: `Bearer ${session.access_token}` }
-          })
-          
-          if (!response.ok) {
-            console.error('❌ Health check failed:', response.status, response.statusText)
-            return
-          }
-          
-          const data = await response.json()
-          console.log('📊 Health check response:', { 
-            success: data.success, 
-            message: data.message,
-            executed: data.executed,
-            total: data.total,
-            restarted: data.restarted
-          })
-          
-          if (data.success && data.restarted) {
-            console.log('✅ Bot was restarted by health check')
-            // Refresh status after restart
-            setTimeout(fetchBotStatus, 1000)
-          }
-          
-          // If health check executed trading loops, refresh diagnostics
-          if (data.success && data.executed > 0) {
-            console.log(`✅ Health check executed ${data.executed} trading loop(s)`)
-            setTimeout(() => fetchDiagnostics(), 3000) // Wait 3 seconds for logs to be written
-          }
-        } else {
-          console.log('⚠️  No session token available for health check')
+        if (!response.ok) {
+          console.error('❌ Health check failed:', response.status, response.statusText)
+          const errorText = await response.text().catch(() => '')
+          console.error('Error response:', errorText)
+          return
+        }
+        
+        const data = await response.json()
+        console.log('📊 Health check response:', { 
+          success: data.success, 
+          message: data.message,
+          executed: data.executed,
+          total: data.total,
+          restarted: data.restarted
+        })
+        
+        if (data.success && data.restarted) {
+          console.log('✅ Bot was restarted by health check')
+          // Refresh status after restart
+          setTimeout(fetchBotStatus, 1000)
+        }
+        
+        // If health check executed trading loops, refresh diagnostics
+        if (data.success && data.executed > 0) {
+          console.log(`✅ Health check executed ${data.executed} trading loop(s)`)
+          setTimeout(() => fetchDiagnostics(), 3000) // Wait 3 seconds for logs to be written
+        } else if (data.success && data.executed === 0 && data.total > 0) {
+          console.log('⚠️  Health check found bots but executed 0 loops - check logs for errors')
         }
       } catch (error) {
         console.error('❌ Health check error:', error)
