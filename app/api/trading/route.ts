@@ -677,6 +677,25 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     await alpacaClient.initialize()
     console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
+    // Get user's confidence threshold from settings (needed for logging even when market is closed)
+    let baseConfidenceThreshold = 0.55 // Default
+    try {
+      const { data: userSettings } = await supabase
+        .from('user_settings')
+        .select('confidence_threshold')
+        .eq('user_id', userId)
+        .single()
+      
+      if (userSettings?.confidence_threshold !== null && userSettings?.confidence_threshold !== undefined) {
+        baseConfidenceThreshold = parseFloat(userSettings.confidence_threshold)
+        console.log(`✅ Using confidence threshold from settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+      } else {
+        console.log(`ℹ️  No confidence threshold in settings, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+      }
+    } catch (error) {
+      console.warn('⚠️  Could not fetch confidence threshold from settings, using default:', error)
+    }
+
     // Check if market is open (applies to both paper and live trading)
     if (!isMarketOpen()) {
       console.log('⏸️  Market is closed, skipping trading execution but continuing bot operation')
@@ -700,7 +719,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             data: {
               market_open: false,
               diagnostics: {
-                min_confidence_threshold: 0.55,
+                min_confidence_threshold: baseConfidenceThreshold,
                 market_risk: 0.3,
                 total_ml_signals: 0,
                 buy_signals_before_filter: 0,
@@ -726,7 +745,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             data_param: {
               market_open: false,
               diagnostics: {
-                min_confidence_threshold: 0.55,
+                min_confidence_threshold: baseConfidenceThreshold,
                 market_risk: 0.3,
                 total_ml_signals: 0,
                 buy_signals_before_filter: 0,
@@ -758,10 +777,10 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       return
     }
 
-    // STEP 1: Get FRED Economic Indicators
+    // STEP 2: Get FRED Economic Indicators
     let fredIndicators: any = null
     let marketRisk = 0.3 // Default moderate risk
-    let minConfidence = 0.55 // Base confidence threshold
+    let minConfidence = baseConfidenceThreshold // Start with user's setting
 
     try {
       if (isFREDInitialized()) {
@@ -770,18 +789,22 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         fredIndicators = await fredService.getIndicators()
         marketRisk = fredService.calculateMarketRisk(fredIndicators)
         
-        // Adjust confidence threshold based on market risk
-        minConfidence = 0.55 + (marketRisk * 0.15) // Higher risk = higher threshold (0.55-0.70)
+        // Adjust confidence threshold based on market risk (adds 0-15% to base threshold)
+        // This allows user's setting to be the base, with risk adjustment on top
+        const riskAdjustment = marketRisk * 0.15
+        minConfidence = Math.min(baseConfidenceThreshold + riskAdjustment, 1.0) // Cap at 100%
         
-        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Min Confidence Threshold: ${(minConfidence * 100).toFixed(1)}%`)
+        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Base Threshold: ${(baseConfidenceThreshold * 100).toFixed(1)}% | Adjusted: ${(minConfidence * 100).toFixed(1)}%`)
       } else {
-        console.log('⚠️  FRED not initialized, using default risk parameters')
+        console.log('⚠️  FRED not initialized, using base confidence threshold without risk adjustment')
+        minConfidence = baseConfidenceThreshold
       }
     } catch (error) {
-      console.warn('⚠️  Could not fetch FRED data:', error)
+      console.warn('⚠️  Could not fetch FRED data, using base confidence threshold:', error)
+      minConfidence = baseConfidenceThreshold
     }
 
-    // STEP 2: Stock Selection (skip scanning to avoid rate limits)
+    // STEP 3: Stock Selection (skip scanning to avoid rate limits)
     let scalpingStocks: string[] = []
     
     // TEMPORARY: Skip scanning to avoid Alpaca rate limits
@@ -822,7 +845,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     
     console.log(`📊 Trading ${scalpingStocks.length} stocks: ${scalpingStocks.join(', ')}`)
 
-    // STEP 3: Get Technical Indicators (call handler directly with error handling)
+    // STEP 4: Get Technical Indicators (call handler directly with error handling)
     console.log(`📈 Fetching technical indicators for ${scalpingStocks.length} symbols...`)
     let indicatorsData: any
     
@@ -873,7 +896,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       throw new Error(`Technical indicators failed: ${error.message}`)
     }
 
-    // STEP 4: Get News Sentiment
+    // STEP 5: Get News Sentiment
     let sentimentData: { [symbol: string]: any } = {}
     try {
       const newsAnalyzer = getNewsAnalyzer()
@@ -884,7 +907,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.warn('⚠️  News sentiment unavailable:', error)
     }
 
-    // STEP 5: Enhance Features with News + FRED
+    // STEP 6: Enhance Features with News + FRED
     console.log('🔬 Enhancing features with macro data...')
     const enhancedFeatures = indicatorsData.indicators.map((indicator: any) => ({
       ...indicator,
@@ -896,7 +919,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    // STEP 6: Get ML Predictions (call ML service directly with retry logic)
+    // STEP 7: Get ML Predictions (call ML service directly with retry logic)
     console.log('🧠 Calling ML prediction service directly...')
     const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '')
     
@@ -1002,7 +1025,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       throw new Error(`ML service unavailable after ${maxRetries} attempts: ${lastError?.message}`)
     }
 
-    // STEP 7: Get Current Positions
+    // STEP 8: Get Current Positions
     console.log('📊 Checking current positions...')
     const positions = await alpacaClient.getPositions()
     const currentHoldings = positions.map((p: any) => p.symbol)
@@ -1029,7 +1052,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       // Continue processing - we'll filter out buy signals but allow sell signals to execute
     }
 
-    // STEP 8: Process ML Signals - Separate BUY and SELL
+    // STEP 9: Process ML Signals - Separate BUY and SELL
     console.log('═══════════════════════════════════════════════════════════')
     console.log('📊 DIAGNOSTICS: Signal Processing Analysis')
     console.log('═══════════════════════════════════════════════════════════')
@@ -1118,7 +1141,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     // Combine: Process SELLs first (free up capital), then BUYs
     let signals = [...sellSignals, ...buySignals]
 
-    // STEP 9: Process SELL Signals (exit existing positions)
+    // STEP 10: Process SELL Signals (exit existing positions)
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`🔄 PROCESSING SELL SIGNALS: ${sellSignals.length} positions to exit`)
     console.log('═══════════════════════════════════════════════════════════')
@@ -1137,7 +1160,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       }
     }
 
-    // STEP 10: Intelligent Capital Allocation for BUY Signals
+    // STEP 11: Intelligent Capital Allocation for BUY Signals
     const account = await alpacaClient.getAccount()
     let availableCash = parseFloat(account.buying_power)
     

@@ -249,8 +249,8 @@ export function getDefaultScalpingStocks(): string[] {
     'DIS', 'CMCSA',
     // Industrials (3)
     'BA', 'CAT', 'GE',
-    // Fintech/Crypto (6)
-    'COIN', 'RIOT', 'MARA', 'SQ', 'PYPL', 'SHOP',
+    // Fintech/Crypto (5) - SQ removed (data unavailable)
+    'COIN', 'RIOT', 'MARA', 'PYPL', 'SHOP',
     // Cloud/Software (5)
     'PLTR', 'SNOW', 'DDOG', 'NET', 'CRWD',
     // EV (3)

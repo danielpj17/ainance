@@ -9,6 +9,7 @@ export interface UserSettings {
   daily_loss_limit: number
   take_profit: number
   stop_loss: number
+  confidence_threshold?: number
 }
 
 export interface SettingsResponse {
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
       max_trade_size: 5000,
       daily_loss_limit: -2,
       take_profit: 0.5,
-      stop_loss: 0.3
+      stop_loss: 0.3,
+      confidence_threshold: 0.55
     }
 
     return NextResponse.json({
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     }
 
     const body = await req.json()
-    const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss } = body
+    const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold } = body
 
     // Validate input
     const validationError = validateSettings({
@@ -82,7 +84,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
       max_trade_size,
       daily_loss_limit,
       take_profit,
-      stop_loss
+      stop_loss,
+      confidence_threshold
     })
 
     if (validationError) {
@@ -90,7 +93,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     }
 
     // Prepare settings data
-    const settingsData = {
+    const settingsData: any = {
       user_id: user.id,
       strategy,
       account_type,
@@ -99,6 +102,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
       take_profit: Number(take_profit),
       stop_loss: Number(stop_loss),
       updated_at: new Date().toISOString()
+    }
+    
+    // Add confidence_threshold if provided
+    if (confidence_threshold !== undefined) {
+      settingsData.confidence_threshold = Number(confidence_threshold)
     }
 
     // Upsert settings (insert or update)
@@ -130,7 +138,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
         max_trade_size: data.max_trade_size,
         daily_loss_limit: data.daily_loss_limit,
         take_profit: data.take_profit,
-        stop_loss: data.stop_loss
+        stop_loss: data.stop_loss,
+        confidence_threshold: data.confidence_threshold ?? 0.55
       }
     })
 
@@ -142,7 +151,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
 
 // Validation function
 function validateSettings(settings: any): string | null {
-  const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss } = settings
+  const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold } = settings
 
   // Validate strategy
   if (!strategy || !['cash', '25k_plus'].includes(strategy)) {
@@ -174,6 +183,13 @@ function validateSettings(settings: any): string | null {
   // Validate $25k+ rules
   if (strategy === '25k_plus' && max_trade_size < 5000) {
     return 'For $25k+ strategy, max trade size must be at least $5,000'
+  }
+
+  // Validate confidence threshold if provided
+  if (confidence_threshold !== undefined && confidence_threshold !== null) {
+    if (confidence_threshold < 0 || confidence_threshold > 1) {
+      return 'Confidence threshold must be between 0.0 and 1.0 (0% to 100%)'
+    }
   }
 
   // Warn about margin account with cash strategy (but allow it)

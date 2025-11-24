@@ -18,6 +18,18 @@ interface UserSettings {
   daily_loss_limit: number
   take_profit: number
   stop_loss: number
+  confidence_threshold?: number
+}
+
+interface PerformanceMetrics {
+  winRate: number
+  avgWin: number
+  avgLoss: number
+  monthlyReturn: number
+  totalTrades: number
+  winningTrades: number
+  losingTrades: number
+  totalPnL: number
 }
 
 interface StrategySettingsProps {
@@ -37,11 +49,30 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null)
+  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics | null>(null)
+  const [loadingMetrics, setLoadingMetrics] = useState(false)
 
-  // Load settings on component mount
+  // Load settings and performance metrics on component mount
   useEffect(() => {
     loadSettings()
+    loadPerformanceMetrics()
   }, [])
+  
+  const loadPerformanceMetrics = async () => {
+    setLoadingMetrics(true)
+    try {
+      const response = await fetch('/api/settings/performance')
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        setPerformanceMetrics(result.data)
+      }
+    } catch (error) {
+      console.error('Error loading performance metrics:', error)
+    } finally {
+      setLoadingMetrics(false)
+    }
+  }
 
   const loadSettings = async () => {
     setLoading(true)
@@ -59,7 +90,10 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
       const result = await response.json()
       
       if (result.success && result.data) {
-        setSettings(result.data)
+        setSettings({
+          ...result.data,
+          confidence_threshold: result.data.confidence_threshold ?? 0.55
+        })
       }
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -262,6 +296,94 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
               placeholder="0.3"
             />
           </div>
+        </div>
+
+        {/* Confidence Threshold */}
+        <div className="space-y-2 border-t pt-4">
+          <Label htmlFor="confidence_threshold">
+            ML Confidence Threshold ({(settings.confidence_threshold ?? 0.55) * 100}%)
+          </Label>
+          <div className="space-y-2">
+            <Input
+              id="confidence_threshold"
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              value={settings.confidence_threshold ?? 0.55}
+              onChange={(e) => updateSetting('confidence_threshold', Number(e.target.value))}
+              placeholder="0.55"
+            />
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Minimum confidence (0.0-1.0) required for ML signals to execute trades.</p>
+              <p><strong>Lower threshold (0.45-0.50):</strong> More trades, higher risk</p>
+              <p><strong>Higher threshold (0.55-0.70):</strong> Fewer trades, lower risk</p>
+              <p><strong>Recommended:</strong> Start at 0.50 (50%) and adjust based on performance</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Performance Metrics */}
+        <div className="border-t pt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Trading Performance</h3>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={loadPerformanceMetrics}
+              disabled={loadingMetrics}
+            >
+              {loadingMetrics ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                  Loading...
+                </>
+              ) : (
+                'Refresh'
+              )}
+            </Button>
+          </div>
+          
+          {performanceMetrics ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Win Rate</p>
+                <p className="text-2xl font-bold">
+                  {performanceMetrics.winRate.toFixed(1)}%
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Avg Win</p>
+                <p className="text-2xl font-bold text-green-500">
+                  ${performanceMetrics.avgWin.toFixed(2)}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Avg Loss</p>
+                <p className="text-2xl font-bold text-red-500">
+                  ${performanceMetrics.avgLoss.toFixed(2)}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Monthly Return</p>
+                <p className={`text-2xl font-bold ${performanceMetrics.monthlyReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {performanceMetrics.monthlyReturn.toFixed(2)}%
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              {loadingMetrics ? 'Loading performance data...' : 'No trading data available yet. Start trading to see your performance metrics.'}
+            </div>
+          )}
+          
+          {performanceMetrics && performanceMetrics.totalTrades > 0 && (
+            <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
+              <p><strong>Total Trades:</strong> {performanceMetrics.totalTrades} ({performanceMetrics.winningTrades} wins, {performanceMetrics.losingTrades} losses)</p>
+              <p><strong>Total P&L:</strong> ${performanceMetrics.totalPnL.toFixed(2)}</p>
+              <p><strong>Goal Progress:</strong> {performanceMetrics.monthlyReturn >= 5 ? '✅' : '⏳'} {performanceMetrics.monthlyReturn.toFixed(2)}% / 5.00% monthly target</p>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
