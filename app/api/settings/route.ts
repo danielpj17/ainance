@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/utils/supabase/server'
+import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
+import { isDemoMode } from '@/lib/demo-user'
 
 export interface UserSettings {
   strategy: 'cash' | '25k_plus'
@@ -21,19 +22,25 @@ export interface SettingsResponse {
 // GET - Fetch user settings
 export async function GET(req: NextRequest): Promise<NextResponse<SettingsResponse>> {
   try {
-    const supabase = await createServerClient(req, {})
+    const supabase = createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // Get user ID (support demo mode)
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     // Fetch user settings
     const { data: settings, error } = await supabase
       .from('user_settings')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
@@ -66,12 +73,18 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
 // POST/PUT - Update user settings
 export async function POST(req: NextRequest): Promise<NextResponse<SettingsResponse>> {
   try {
-    const supabase = await createServerClient(req, {})
+    const supabase = createServerClient(req, {})
     
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    // Get user ID (support demo mode)
+    let userId: string
+    if (isDemoMode()) {
+      userId = getDemoUserIdServer()
+    } else {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      }
+      userId = user.id
     }
 
     const body = await req.json()
@@ -94,7 +107,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
 
     // Prepare settings data
     const settingsData: any = {
-      user_id: user.id,
+      user_id: userId,
       strategy,
       account_type,
       max_trade_size: Number(max_trade_size),
