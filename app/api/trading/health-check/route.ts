@@ -1,10 +1,9 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/utils/supabase/server'
+import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
 import { isMarketOpen, startBot, executeTradingLoop } from '../route'
 import { BotConfig } from '../route'
 import { isDemoMode } from '@/lib/demo-user'
-import { getDemoUserIdServer } from '@/utils/supabase/server'
 
 // Enhanced health check endpoint that:
 // 1. Checks if bots should be running
@@ -102,35 +101,51 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // Execute trading loop directly (this keeps the bot running)
         console.log(`🔄 Health check: Executing trading loop for user ${userId} (Always-On: ${user.always_on})`)
         
-        // Get API keys
-        const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-          user_uuid: userId
-        })
-
-        if (apiKeysError) {
-          console.error(`❌ Error fetching API keys for user ${userId}:`, apiKeysError)
-          results.push({
-            userId,
-            success: false,
-            error: `Failed to fetch API keys: ${apiKeysError.message}`
+        // Get API keys - use environment variables first, then fallback to database
+        // This matches the logic in startBot
+        let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY
+        let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET
+        let newsApiKey: string | undefined = process.env.NEWS_API_KEY
+        
+        // If not in environment, try to get from database (skip for demo user)
+        const isDemo = isDemoMode() && userId === '00000000-0000-0000-0000-000000000000'
+        if ((!alpacaApiKey || !alpacaSecretKey) && !isDemo) {
+          const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
+            user_uuid: userId
           })
-          continue
+
+          if (apiKeysError) {
+            console.error(`❌ Error fetching API keys for user ${userId}:`, apiKeysError)
+            results.push({
+              userId,
+              success: false,
+              error: `Failed to fetch API keys: ${apiKeysError.message}`
+            })
+            continue
+          }
+
+          if (apiKeys?.[0]) {
+            alpacaApiKey = apiKeys[0].alpaca_paper_key
+            alpacaSecretKey = apiKeys[0].alpaca_paper_secret
+            newsApiKey = apiKeys[0].news_api_key
+          }
         }
 
-        if (!apiKeys?.[0]) {
-          console.log(`⚠️  User ${userId} has no API keys configured`)
+        // Final check to ensure Alpaca keys are available
+        if (!alpacaApiKey || !alpacaSecretKey) {
+          console.log(`⚠️  User ${userId} has no API keys configured (checked env vars${!isDemo ? ' and database' : ''})`)
           results.push({
             userId,
             success: false,
-            error: 'No API keys configured'
+            error: 'No API keys configured. Please set ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET environment variables or configure in database.'
           })
           continue
         }
 
         const keys = {
-          alpaca_paper_key: apiKeys[0].alpaca_paper_key,
-          alpaca_paper_secret: apiKeys[0].alpaca_paper_secret,
-          news_api_key: apiKeys[0].news_api_key || null,
+          alpaca_paper_key: alpacaApiKey,
+          alpaca_paper_secret: alpacaSecretKey,
+          news_api_key: newsApiKey || null,
           alpaca_live_key: null,
           alpaca_live_secret: null
         }
