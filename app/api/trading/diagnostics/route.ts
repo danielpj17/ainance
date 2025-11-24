@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/utils/supabase/server'
-import { isDemoMode, getDemoUserIdServer } from '@/lib/demo-user'
+import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
+import { isDemoMode } from '@/lib/demo-user'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
