@@ -395,8 +395,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 console.error(`❌ [TRADE-LOGS] Error fetching Alpaca positions for ${accountType} account:`, accountError?.message || accountError)
                 // Continue with other account types
               }
-            } else {
-              console.warn(`⚠️  [TRADE-LOGS] Skipping ${accountType} - no API keys`)
             }
           }
         } catch (error: any) {
