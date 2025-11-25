@@ -93,10 +93,16 @@ begin
     tl.qty,
     tl.buy_price,
     tl.buy_timestamp,
-    tl.price as current_price, -- Will be updated with real-time price in API
-    tl.qty * tl.price as current_value,
-    (tl.qty * tl.price) - (tl.qty * tl.buy_price) as unrealized_pl,
-    (((tl.qty * tl.price) - (tl.qty * tl.buy_price)) / (tl.qty * tl.buy_price)) * 100 as unrealized_pl_percent,
+    -- Use buy_price as initial current_price (will be updated with real-time price in API)
+    -- This ensures we always have a valid price even if API update fails
+    coalesce(tl.buy_price, tl.price) as current_price,
+    tl.qty * coalesce(tl.buy_price, tl.price) as current_value,
+    (tl.qty * coalesce(tl.buy_price, tl.price)) - (tl.qty * tl.buy_price) as unrealized_pl,
+    case 
+      when tl.buy_price > 0 then 
+        (((tl.qty * coalesce(tl.buy_price, tl.price)) - (tl.qty * tl.buy_price)) / (tl.qty * tl.buy_price)) * 100
+      else 0
+    end as unrealized_pl_percent,
     now() - tl.buy_timestamp as holding_duration,
     tl.buy_decision_metrics,
     tl.strategy,
