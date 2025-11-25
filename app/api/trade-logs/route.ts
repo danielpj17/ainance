@@ -233,24 +233,48 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         console.log('[TRADE-LOGS] Trades to update: ' + currentTrades.map(t => t.symbol + '@' + t.account_type).join(', '))
 
         try {
-          console.log('[TRADE-LOGS] Fetching API keys for userId=' + userId)
-          const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-            user_uuid: userId
-          })
+          // Try environment variables first (especially useful for demo mode)
+          let envPaperKey = process.env.ALPACA_PAPER_KEY || process.env.ALPACA_PAPER_API_KEY
+          let envPaperSecret = process.env.ALPACA_PAPER_SECRET || process.env.ALPACA_PAPER_SECRET_KEY
+          let envLiveKey = process.env.ALPACA_API_KEY || process.env.ALPACA_LIVE_KEY
+          let envLiveSecret = process.env.ALPACA_SECRET_KEY || process.env.ALPACA_LIVE_SECRET
+          
+          console.log('[TRADE-LOGS] Checking environment variables: hasPaperKey=' + !!envPaperKey + ', hasPaperSecret=' + !!envPaperSecret)
+          
+          // If we have env vars, use them; otherwise try database
+          let keys: any = null
+          if (envPaperKey && envPaperSecret) {
+            console.log('[TRADE-LOGS] Using API keys from environment variables')
+            keys = {
+              alpaca_paper_key: envPaperKey,
+              alpaca_paper_secret: envPaperSecret,
+              alpaca_live_key: envLiveKey || null,
+              alpaca_live_secret: envLiveSecret || null
+            }
+          } else {
+            console.log('[TRADE-LOGS] Fetching API keys from database for userId=' + userId)
+            const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
+              user_uuid: userId
+            })
 
-          console.log('[TRADE-LOGS] API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
+            console.log('[TRADE-LOGS] API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
 
-          if (apiKeysError) {
-            console.error('[TRADE-LOGS] Error fetching API keys:', JSON.stringify(apiKeysError))
+            if (apiKeysError) {
+              console.error('[TRADE-LOGS] Error fetching API keys:', JSON.stringify(apiKeysError))
+            }
+
+            if (apiKeys?.[0]) {
+              keys = apiKeys[0]
+              console.log('[TRADE-LOGS] API keys retrieved from database')
+              console.log('[TRADE-LOGS] Keys object has properties: ' + JSON.stringify(Object.keys(keys)))
+              console.log('[TRADE-LOGS] Keys object values: alpaca_paper_key=' + (keys.alpaca_paper_key ? 'SET(' + keys.alpaca_paper_key.length + ' chars)' : 'NULL/EMPTY') + ', alpaca_paper_secret=' + (keys.alpaca_paper_secret ? 'SET(' + keys.alpaca_paper_secret.length + ' chars)' : 'NULL/EMPTY'))
+            }
           }
 
-          if (!apiKeys?.[0]) {
-            console.warn('[TRADE-LOGS] No API keys found for user')
+          if (!keys) {
+            console.warn('[TRADE-LOGS] No API keys found in environment or database')
           } else {
-            console.log('[TRADE-LOGS] API keys retrieved successfully')
-          const keys = apiKeys[0]
-          console.log('[TRADE-LOGS] API keys found, processing ' + tradesByAccountType.size + ' account types')
-          console.log('[TRADE-LOGS] Keys object has properties: ' + JSON.stringify(Object.keys(keys)))
+            console.log('[TRADE-LOGS] API keys found, processing ' + tradesByAccountType.size + ' account types')
           
           // Process each account type separately
           for (const [accountType, trades] of tradesByAccountType) {
@@ -423,24 +447,44 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           console.warn('[TRADE-LOGS] Trade ' + trade.symbol + ' still has current_price (' + trade.current_price + ') equal to buy_price (' + trade.buy_price + ') - attempting quote fallback')
           
           try {
-            console.log('[TRADE-LOGS] Fallback: Fetching API keys for userId=' + userId + ', accountType=' + trade.account_type + ', strategy=' + trade.strategy)
-            const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-              user_uuid: userId
-            })
+            // Try environment variables first, then database
+            let envPaperKey = process.env.ALPACA_PAPER_KEY || process.env.ALPACA_PAPER_API_KEY
+            let envPaperSecret = process.env.ALPACA_PAPER_SECRET || process.env.ALPACA_PAPER_SECRET_KEY
+            let envLiveKey = process.env.ALPACA_API_KEY || process.env.ALPACA_LIVE_KEY
+            let envLiveSecret = process.env.ALPACA_SECRET_KEY || process.env.ALPACA_LIVE_SECRET
             
-            console.log('[TRADE-LOGS] Fallback: API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
-            
-            if (apiKeysError) {
-              console.error('[TRADE-LOGS] Fallback: Error fetching API keys:', JSON.stringify(apiKeysError))
+            let keys: any = null
+            if (envPaperKey && envPaperSecret) {
+              console.log('[TRADE-LOGS] Fallback: Using API keys from environment variables')
+              keys = {
+                alpaca_paper_key: envPaperKey,
+                alpaca_paper_secret: envPaperSecret,
+                alpaca_live_key: envLiveKey || null,
+                alpaca_live_secret: envLiveSecret || null
+              }
+            } else {
+              console.log('[TRADE-LOGS] Fallback: Fetching API keys from database for userId=' + userId + ', accountType=' + trade.account_type + ', strategy=' + trade.strategy)
+              const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
+                user_uuid: userId
+              })
+              
+              console.log('[TRADE-LOGS] Fallback: API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
+              
+              if (apiKeysError) {
+                console.error('[TRADE-LOGS] Fallback: Error fetching API keys:', JSON.stringify(apiKeysError))
+              }
+              
+              if (apiKeys?.[0]) {
+                keys = apiKeys[0]
+              }
             }
             
-            if (apiKeys?.[0]) {
-              const keys = apiKeys[0]
+            if (keys) {
               const strategy = trade.strategy || 'cash'
               console.log('[TRADE-LOGS] Fallback: Got keys object')
               console.log('[TRADE-LOGS] Fallback: Keys object keys: ' + JSON.stringify(Object.keys(keys)))
-              console.log('[TRADE-LOGS] Fallback: Has alpaca_paper_key=' + !!keys.alpaca_paper_key + ', alpaca_paper_secret=' + !!keys.alpaca_paper_secret)
-              console.log('[TRADE-LOGS] Fallback: Has alpaca_live_key=' + !!keys.alpaca_live_key + ', alpaca_live_secret=' + !!keys.alpaca_live_secret)
+              console.log('[TRADE-LOGS] Fallback: alpaca_paper_key=' + (keys.alpaca_paper_key ? 'SET(' + keys.alpaca_paper_key.length + ' chars)' : 'NULL/EMPTY') + ', alpaca_paper_secret=' + (keys.alpaca_paper_secret ? 'SET(' + keys.alpaca_paper_secret.length + ' chars)' : 'NULL/EMPTY'))
+              console.log('[TRADE-LOGS] Fallback: alpaca_live_key=' + (keys.alpaca_live_key ? 'SET(' + keys.alpaca_live_key.length + ' chars)' : 'NULL/EMPTY') + ', alpaca_live_secret=' + (keys.alpaca_live_secret ? 'SET(' + keys.alpaca_live_secret.length + ' chars)' : 'NULL/EMPTY'))
               console.log('[TRADE-LOGS] Fallback: Calling getAlpacaKeys(accountType=' + trade.account_type + ', strategy=' + strategy + ')')
               const alpacaKeys = getAlpacaKeys(keys, trade.account_type as 'paper' | 'live', strategy)
               
