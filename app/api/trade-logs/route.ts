@@ -82,33 +82,33 @@ export interface TradeStatistics {
 
 // GET - Fetch trade logs
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  console.log(`🚀🚀🚀 [TRADE-LOGS] GET HANDLER CALLED 🚀🚀🚀`)
+  console.log('[TRADE-LOGS] GET HANDLER CALLED')
   try {
-    console.log(`🔧 [TRADE-LOGS] Creating Supabase client...`)
+    console.log('[TRADE-LOGS] Creating Supabase client')
     const supabase = await createServerClient(req, {})
-    console.log(`✅ [TRADE-LOGS] Supabase client created`)
+    console.log('[TRADE-LOGS] Supabase client created')
     
     // In demo mode, always use demo user ID
     let userId: string
     if (isDemoMode()) {
-      console.log(`👤 [TRADE-LOGS] Using demo mode`)
+      console.log('[TRADE-LOGS] Using demo mode')
       userId = getDemoUserIdServer()
     } else {
-      console.log(`👤 [TRADE-LOGS] Getting authenticated user...`)
+      console.log('[TRADE-LOGS] Getting authenticated user')
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) {
-        console.error(`❌ [TRADE-LOGS] Auth error:`, userError)
+        console.error('[TRADE-LOGS] Auth error:', userError)
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
       }
       userId = user.id
-      console.log(`✅ [TRADE-LOGS] User authenticated: ${userId}`)
+      console.log('[TRADE-LOGS] User authenticated:', userId)
     }
 
     const { searchParams } = new URL(req.url)
     const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics'
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
-    console.log(`📋 [TRADE-LOGS] Request params: view=${view}, limit=${limit}, offset=${offset}`)
+    console.log('[TRADE-LOGS] Request params: view=' + view + ', limit=' + limit + ', offset=' + offset)
 
     let currentTrades: CurrentTrade[] = []
     let completedTrades: CompletedTrade[] = []
@@ -141,16 +141,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Fetch current/open trades from multiple sources
     if (view === 'current' || view === 'all' || !view) {
-      console.log(`🚀 [TRADE-LOGS] ========== STARTING FETCH ==========`)
-      console.log(`🚀 [TRADE-LOGS] view=${view || 'all'}, userId=${userId}`)
+      console.log('[TRADE-LOGS] STARTING FETCH - view=' + (view || 'all') + ', userId=' + userId)
       
       // Get from trade_logs table
-      console.log(`📞 [TRADE-LOGS] Calling get_current_trades RPC...`)
+      console.log('[TRADE-LOGS] Calling get_current_trades RPC')
       const { data: currentData, error: currentError } = await supabase.rpc('get_current_trades', {
         user_uuid: userId
       })
 
-      console.log(`📞 [TRADE-LOGS] RPC response: data=${!!currentData}, error=${!!currentError}, dataLength=${currentData?.length || 0}`)
+      console.log('[TRADE-LOGS] RPC response: hasData=' + !!currentData + ', hasError=' + !!currentError + ', dataLength=' + (currentData?.length || 0))
 
       if (currentError) {
         console.error(`❌ [TRADE-LOGS] Error fetching current trades:`, JSON.stringify(currentError))
@@ -158,9 +157,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       if (!currentError && currentData) {
         currentTrades = currentData
-        console.log(`✅ [TRADE-LOGS] Found ${currentTrades.length} current trades from database`)
+        console.log('[TRADE-LOGS] Found ' + currentTrades.length + ' current trades from database')
         if (currentTrades.length > 0) {
-          console.log(`📋 [TRADE-LOGS] Trade details:`, JSON.stringify(currentTrades.map(t => ({
+          console.log('[TRADE-LOGS] Trade details: ' + JSON.stringify(currentTrades.map(t => ({
             symbol: t.symbol,
             account_type: t.account_type,
             buy_price: t.buy_price,
@@ -169,9 +168,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           }))))
         }
       } else {
-        console.warn(`⚠️  [TRADE-LOGS] No current trades found or error occurred`)
+        console.warn('[TRADE-LOGS] No current trades found or error occurred')
         if (currentError) {
-          console.error(`❌ [TRADE-LOGS] Database error:`, JSON.stringify(currentError))
+          console.error('[TRADE-LOGS] Database error:', JSON.stringify(currentError))
         }
       }
 
@@ -434,14 +433,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             if (apiKeys?.[0]) {
               const keys = apiKeys[0]
               const strategy = trade.strategy || 'cash'
-              console.log(`🔑 [TRADE-LOGS] Fallback: Got keys object`)
-              console.log(`🔑 [TRADE-LOGS] Fallback: Keys object keys:`, Object.keys(keys))
-              console.log(`🔑 [TRADE-LOGS] Fallback: Has alpaca_paper_key=${!!keys.alpaca_paper_key}, alpaca_paper_secret=${!!keys.alpaca_paper_secret}`)
-              console.log(`🔑 [TRADE-LOGS] Fallback: Has alpaca_live_key=${!!keys.alpaca_live_key}, alpaca_live_secret=${!!keys.alpaca_live_secret}`)
-              console.log(`🔑 [TRADE-LOGS] Fallback: Calling getAlpacaKeys(accountType=${trade.account_type}, strategy=${strategy})`)
+              console.log('[TRADE-LOGS] Fallback: Got keys object')
+              console.log('[TRADE-LOGS] Fallback: Keys object keys: ' + JSON.stringify(Object.keys(keys)))
+              console.log('[TRADE-LOGS] Fallback: Has alpaca_paper_key=' + !!keys.alpaca_paper_key + ', alpaca_paper_secret=' + !!keys.alpaca_paper_secret)
+              console.log('[TRADE-LOGS] Fallback: Has alpaca_live_key=' + !!keys.alpaca_live_key + ', alpaca_live_secret=' + !!keys.alpaca_live_secret)
+              console.log('[TRADE-LOGS] Fallback: Calling getAlpacaKeys(accountType=' + trade.account_type + ', strategy=' + strategy + ')')
               const alpacaKeys = getAlpacaKeys(keys, trade.account_type as 'paper' | 'live', strategy)
               
-              console.log(`🔑 [TRADE-LOGS] Fallback: getAlpacaKeys returned: apiKey=${alpacaKeys.apiKey ? 'SET' : 'EMPTY'}, secretKey=${alpacaKeys.secretKey ? 'SET' : 'EMPTY'}, paper=${alpacaKeys.paper}`)
+              console.log('[TRADE-LOGS] Fallback: getAlpacaKeys returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
               
               if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
                 console.log(`✅ [TRADE-LOGS] Fallback: API keys available, creating client...`)
