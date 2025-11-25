@@ -350,24 +350,47 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 console.log(`🔍 [TRADE-LOGS] Processing trade ${trade.symbol} (${tradeSymbol}): position found=${!!position}, current_price=${trade.current_price}, buy_price=${trade.buy_price}`)
                 
                 if (position) {
-                  // Update with live data from Alpaca, but preserve buy_price from database
-                  const preservedBuyPrice = trade.buy_price
+                  // Use Alpaca's cost_basis to get the actual average entry price (more accurate than database)
+                  const costBasis = parseFloat(position.cost_basis) || 0
+                  const positionQty = Math.abs(parseFloat(position.qty) || trade.qty)
+                  const actualEntryPrice = positionQty > 0 ? costBasis / positionQty : trade.buy_price
+                  
+                  // Use actual entry price from Alpaca if available, otherwise use database buy_price
+                  const preservedBuyPrice = actualEntryPrice > 0 ? actualEntryPrice : trade.buy_price
+                  
                   const rawCurrentPrice = position.current_price
                   const newCurrentPrice = typeof rawCurrentPrice === 'string' 
                     ? parseFloat(rawCurrentPrice) 
                     : (typeof rawCurrentPrice === 'number' ? rawCurrentPrice : NaN)
                   
-                  console.log(`🔍 [TRADE-LOGS] ${trade.symbol} details: buy_price=${preservedBuyPrice}, raw_current=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}, isNaN=${isNaN(newCurrentPrice)}, isFinite=${isFinite(newCurrentPrice)}, >0=${newCurrentPrice > 0}`)
+                  console.log(`🔍 [TRADE-LOGS] ${trade.symbol} details: costBasis=${costBasis}, qty=${positionQty}, actualEntryPrice=${actualEntryPrice}, dbBuyPrice=${trade.buy_price}, raw_current=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}`)
                   
                   // Always update current_price from Alpaca if we got a valid value
                   if (newCurrentPrice && !isNaN(newCurrentPrice) && isFinite(newCurrentPrice) && newCurrentPrice > 0) {
                     const oldCurrentPrice = trade.current_price
                     trade.current_price = newCurrentPrice
                     trade.current_value = parseFloat(position.market_value) || (trade.qty * newCurrentPrice)
-                    trade.unrealized_pl = parseFloat(position.unrealized_pl) || ((newCurrentPrice - preservedBuyPrice) * trade.qty)
-                    trade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100 || (((newCurrentPrice - preservedBuyPrice) / preservedBuyPrice) * 100)
                     
-                    console.log(`✅ [TRADE-LOGS] UPDATED ${trade.symbol}: buy=${preservedBuyPrice}, current=${oldCurrentPrice}→${newCurrentPrice}, P&L=${trade.unrealized_pl_percent.toFixed(2)}%`)
+                    // Use Alpaca's P&L if available (it's more accurate), otherwise calculate manually
+                    const alpacaUnrealizedPl = position.unrealized_pl != null ? parseFloat(position.unrealized_pl) : null
+                    const alpacaUnrealizedPlPercent = position.unrealized_plpc != null ? parseFloat(position.unrealized_plpc) * 100 : null
+                    
+                    if (alpacaUnrealizedPl != null && !isNaN(alpacaUnrealizedPl)) {
+                      trade.unrealized_pl = alpacaUnrealizedPl
+                    } else {
+                      trade.unrealized_pl = (newCurrentPrice - preservedBuyPrice) * trade.qty
+                    }
+                    
+                    if (alpacaUnrealizedPlPercent != null && !isNaN(alpacaUnrealizedPlPercent)) {
+                      trade.unrealized_pl_percent = alpacaUnrealizedPlPercent
+                    } else {
+                      trade.unrealized_pl_percent = preservedBuyPrice > 0 ? ((newCurrentPrice - preservedBuyPrice) / preservedBuyPrice) * 100 : 0
+                    }
+                    
+                    // Update buy_price to use actual entry price from Alpaca
+                    trade.buy_price = preservedBuyPrice
+                    
+                    console.log(`✅ [TRADE-LOGS] UPDATED ${trade.symbol}: buy=${preservedBuyPrice}, current=${oldCurrentPrice}→${newCurrentPrice}, P&L=$${trade.unrealized_pl.toFixed(2)} (${trade.unrealized_pl_percent.toFixed(2)}%)`)
                   } else {
                     console.warn(`⚠️  [TRADE-LOGS] Invalid current_price from Alpaca for ${trade.symbol}: raw=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}`)
                     // Try to fetch quote as fallback
@@ -376,12 +399,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     if (!quoteSuccess) {
                       console.error(`❌ [TRADE-LOGS] Failed to update ${trade.symbol} from both position and quote`)
                     }
-                  }
-                  
-                  // Ensure buy_price is never overwritten
-                  if (trade.buy_price !== preservedBuyPrice) {
-                    console.warn(`⚠️  [TRADE-LOGS] buy_price was changed for ${trade.symbol}, restoring: ${preservedBuyPrice}`)
-                    trade.buy_price = preservedBuyPrice
                   }
                 } else {
                   // Position not found in Alpaca - try to fetch quote
