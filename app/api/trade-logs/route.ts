@@ -147,8 +147,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       if (!currentError && currentData) {
         currentTrades = currentData
         console.log(`✅ [TRADE-LOGS] Found ${currentTrades.length} current trades from database`)
+        if (currentTrades.length > 0) {
+          console.log(`📋 [TRADE-LOGS] Trade details:`, currentTrades.map(t => ({
+            symbol: t.symbol,
+            account_type: t.account_type,
+            buy_price: t.buy_price,
+            current_price: t.current_price,
+            qty: t.qty
+          })))
+        }
       } else {
         console.warn(`⚠️  [TRADE-LOGS] No current trades found or error occurred`)
+        if (currentError) {
+          console.error(`❌ [TRADE-LOGS] Database error:`, currentError)
+        }
       }
 
       // Helper function to fetch quote for a trade
@@ -202,21 +214,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         tradesByAccountType.get(trade.account_type)!.push(trade)
       }
 
-      console.log(`🔍 [TRADE-LOGS] Fetching prices for ${currentTrades.length} trades across ${tradesByAccountType.size} account types`)
-      console.log(`🔍 [TRADE-LOGS] Trades to update:`, currentTrades.map(t => `${t.symbol}@${t.account_type}`).join(', '))
+      if (currentTrades.length === 0) {
+        console.log(`ℹ️  [TRADE-LOGS] No current trades to update prices for`)
+      } else {
+        console.log(`🔍 [TRADE-LOGS] Fetching prices for ${currentTrades.length} trades across ${tradesByAccountType.size} account types`)
+        console.log(`🔍 [TRADE-LOGS] Trades to update:`, currentTrades.map(t => `${t.symbol}@${t.account_type}`).join(', '))
 
-      try {
-        const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-          user_uuid: userId
-        })
+        try {
+          const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
+            user_uuid: userId
+          })
 
-        if (apiKeysError) {
-          console.error(`❌ [TRADE-LOGS] Error fetching API keys:`, apiKeysError)
-        }
+          if (apiKeysError) {
+            console.error(`❌ [TRADE-LOGS] Error fetching API keys:`, apiKeysError)
+          }
 
-        if (!apiKeys?.[0]) {
-          console.warn('⚠️  [TRADE-LOGS] No API keys found for user')
-        } else {
+          if (!apiKeys?.[0]) {
+            console.warn('⚠️  [TRADE-LOGS] No API keys found for user')
+          } else {
           const keys = apiKeys[0]
           console.log(`✅ [TRADE-LOGS] API keys found, processing ${tradesByAccountType.size} account types`)
           
@@ -379,6 +394,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           console.error(`❌ [TRADE-LOGS] Error in main Alpaca fetch block:`, error?.message || error)
           // Continue with data from database only
         }
+      }
       
       // For any trades that still have current_price == buy_price, try to fetch latest quote as fallback
       const tradesNeedingUpdate = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) < 0.01)
