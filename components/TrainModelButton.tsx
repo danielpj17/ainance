@@ -27,11 +27,16 @@ export default function TrainModelButton() {
   }
 
   return (
-    <div className="flex items-center gap-3">
-      <Button onClick={runTrain} disabled={loading}>
-        {loading ? (<><Loader2 className="h-4 w-4 animate-spin mr-2" /> Training...</>) : 'Re-Train Model'}
-      </Button>
-      {message && <span className="text-xs text-muted-foreground">{message}</span>}
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <Button onClick={runTrain} disabled={loading} variant="outline">
+          {loading ? (<><Loader2 className="h-4 w-4 animate-spin mr-2" /> Updating...</>) : 'Update Model Metadata (Not Real Training)'}
+        </Button>
+        {message && <span className="text-xs text-muted-foreground">{message}</span>}
+      </div>
+      <p className="text-xs text-gray-500 italic">
+        This only updates metadata. For real ML training, run the Python script locally (see instructions above).
+      </p>
     </div>
   )
 }

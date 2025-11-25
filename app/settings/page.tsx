@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ApiKeysForm from '@/components/ApiKeysForm'
 import StrategySettings from '@/components/StrategySettings'
 import TrainModelButton from '@/components/TrainModelButton'
+import ModelStatus from '@/components/ModelStatus'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Settings, Key, TrendingUp, Brain } from 'lucide-react'
 
@@ -60,10 +61,27 @@ export default function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                  <p className="text-sm text-blue-900 dark:text-blue-100">
-                    <strong>Note:</strong> Make sure you've created a 'models' bucket in your Supabase Storage before training.
+                <div className="bg-yellow-50 dark:bg-yellow-950 border-2 border-yellow-400 dark:border-yellow-600 rounded-lg p-4">
+                  <p className="text-sm text-yellow-900 dark:text-yellow-100 font-semibold mb-2">
+                    ⚠️ Important: This button does NOT train a real ML model
                   </p>
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    The "Re-Train Model" button below only updates metadata. It does <strong>not</strong> train a real machine learning model. 
+                    The app currently uses <strong>rule-based predictions</strong> (simple if/else logic), not ML predictions.
+                  </p>
+                </div>
+
+                <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                  <p className="text-sm text-green-900 dark:text-green-100 font-semibold mb-2">
+                    ✅ For Real ML Training (Required):
+                  </p>
+                  <ol className="text-sm text-green-800 dark:text-green-200 list-decimal list-inside space-y-2">
+                    <li>Install Python dependencies: <code className="bg-gray-800 px-1 rounded">pip install -r python-functions/requirements.txt</code></li>
+                    <li>Set environment variables: <code className="bg-gray-800 px-1 rounded">SUPABASE_URL</code> and <code className="bg-gray-800 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code></li>
+                    <li>Run the training script: <code className="bg-gray-800 px-1 rounded">python python-functions/model/train_with_real_data.py</code></li>
+                    <li>This will fetch 5 years of real historical data from Alpaca, train a Random Forest model, and upload the <code className="bg-gray-800 px-1 rounded">.pkl</code> file to Supabase Storage</li>
+                    <li>Once uploaded, the app will automatically use the trained model for predictions</li>
+                  </ol>
                 </div>
                 
                 <div className="space-y-2">
@@ -78,18 +96,13 @@ export default function SettingsPage() {
                   </ul>
                 </div>
 
-                <div className="pt-4">
-                  <TrainModelButton />
+                <div className="pt-4 border-t border-gray-700">
+                  <ModelStatus />
                 </div>
 
-                <div className="text-xs text-gray-500 pt-2 space-y-2">
-                  <p>
-                    <strong>Vercel Deployment:</strong> Updates model metadata. The app uses rule-based predictions.
-                  </p>
-                  <p>
-                    <strong>For Real ML Training:</strong> Run <code className="bg-gray-800 px-1 rounded">python-functions/model/train.py</code> locally 
-                    to train a real Random Forest model with scikit-learn and upload it to Supabase Storage.
-                  </p>
+                <div className="pt-4 border-t border-gray-700">
+                  <p className="text-xs text-gray-500 mb-2">Metadata Update Only (Not Real Training):</p>
+                  <TrainModelButton />
                 </div>
               </CardContent>
             </Card>

@@ -260,7 +260,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
           // it might be a timing issue - don't overwrite optimistic update immediately
           const wasJustStarted = botStatus?.isRunning && !data.status.isRunning
           // If always-on was just toggled, don't overwrite immediately
-          const alwaysOnChanged = botStatus?.alwaysOn !== data.status.alwaysOn
+          // Only check for changes if botStatus already exists (not on first load)
+          const alwaysOnChanged = botStatus && botStatus.alwaysOn !== undefined && botStatus.alwaysOn !== data.status.alwaysOn
           
           if (wasJustStarted) {
             console.log('⚠️  Status shows bot not running, but it was just started - might be timing issue')
@@ -268,8 +269,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
             setTimeout(() => {
               setBotStatus(data.status)
             }, 1000)
-          } else if (alwaysOnChanged && Math.abs((botStatus?.alwaysOn ? 1 : 0) - (data.status.alwaysOn ? 1 : 0)) === 1) {
-            // Always-on was just toggled (changed by 1), wait a bit to ensure database is updated
+          } else if (alwaysOnChanged) {
+            // Always-on was just toggled, wait a bit to ensure database is updated
             console.log('⚠️  Always-on status changed, waiting before updating:', {
               prev: botStatus?.alwaysOn,
               new: data.status.alwaysOn
