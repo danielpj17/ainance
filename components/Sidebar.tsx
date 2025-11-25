@@ -29,8 +29,8 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-20 bg-[#0f1117]/70 backdrop-blur-xl border-r border-blue-300/30 flex flex-col items-center py-6 z-50">
       {/* Logo */}
       <Link href="/dashboard" className="mb-8">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-400/40">
-          <span className="text-white font-bold text-xl">A</span>
+        <div className="w-12 h-12 rounded-xl border-2 border-blue-400 flex items-center justify-center shadow-lg shadow-blue-400/40 bg-transparent">
+          <span className="text-blue-400 font-bold text-xl">A</span>
         </div>
       </Link>
 

@@ -259,11 +259,11 @@ export default function DashboardPage() {
               </div>
               <div className="flex gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                  <span className="text-gray-400">Your Portfolio</span>
+                  <div className="w-3 h-3 rounded-full bg-blue-300"></div>
+                  <span className="text-gray-300">Your Portfolio</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-300"></div>
+                  <div className="w-3 h-3 rounded-full bg-blue-400"></div>
                   <span className="text-gray-300">Benchmark</span>
                 </div>
               </div>
@@ -309,12 +309,12 @@ export default function DashboardPage() {
                 <AreaChart data={trendData}>
                   <defs>
                     <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="benchmarkGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3}/>
                       <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="benchmarkGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#93c5fd" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -324,8 +324,8 @@ export default function DashboardPage() {
                     contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Area type="monotone" dataKey="portfolio" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
-                  <Area type="monotone" dataKey="benchmark" stroke="#60a5fa" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
+                  <Area type="monotone" dataKey="portfolio" stroke="#60a5fa" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
+                  <Area type="monotone" dataKey="benchmark" stroke="#93c5fd" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -386,7 +386,7 @@ export default function DashboardPage() {
                     contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Bar dataKey="count" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="count" fill="#60a5fa" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
