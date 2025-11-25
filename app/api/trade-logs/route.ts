@@ -304,11 +304,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               }
             }
           }
+        } catch (error) {
+          console.error('Error fetching Alpaca positions:', error)
+          // Continue with data from database only
         }
-      } catch (error) {
-        console.error('Error fetching Alpaca positions:', error)
-        // Continue with data from database only
-      }
       
       // For any trades that still have current_price == buy_price, try to fetch latest quote as fallback
       for (const trade of currentTrades) {
