@@ -133,33 +133,37 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Fetch current/open trades from multiple sources
     if (view === 'current' || view === 'all' || !view) {
-      console.log(`🚀 [TRADE-LOGS] Starting fetch for view=${view || 'all'}, userId=${userId}`)
+      console.log(`🚀 [TRADE-LOGS] ========== STARTING FETCH ==========`)
+      console.log(`🚀 [TRADE-LOGS] view=${view || 'all'}, userId=${userId}`)
       
       // Get from trade_logs table
+      console.log(`📞 [TRADE-LOGS] Calling get_current_trades RPC...`)
       const { data: currentData, error: currentError } = await supabase.rpc('get_current_trades', {
         user_uuid: userId
       })
 
+      console.log(`📞 [TRADE-LOGS] RPC response: data=${!!currentData}, error=${!!currentError}, dataLength=${currentData?.length || 0}`)
+
       if (currentError) {
-        console.error(`❌ [TRADE-LOGS] Error fetching current trades:`, currentError)
+        console.error(`❌ [TRADE-LOGS] Error fetching current trades:`, JSON.stringify(currentError))
       }
 
       if (!currentError && currentData) {
         currentTrades = currentData
         console.log(`✅ [TRADE-LOGS] Found ${currentTrades.length} current trades from database`)
         if (currentTrades.length > 0) {
-          console.log(`📋 [TRADE-LOGS] Trade details:`, currentTrades.map(t => ({
+          console.log(`📋 [TRADE-LOGS] Trade details:`, JSON.stringify(currentTrades.map(t => ({
             symbol: t.symbol,
             account_type: t.account_type,
             buy_price: t.buy_price,
             current_price: t.current_price,
             qty: t.qty
-          })))
+          }))))
         }
       } else {
         console.warn(`⚠️  [TRADE-LOGS] No current trades found or error occurred`)
         if (currentError) {
-          console.error(`❌ [TRADE-LOGS] Database error:`, currentError)
+          console.error(`❌ [TRADE-LOGS] Database error:`, JSON.stringify(currentError))
         }
       }
 
@@ -217,21 +221,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       if (currentTrades.length === 0) {
         console.log(`ℹ️  [TRADE-LOGS] No current trades to update prices for`)
       } else {
+        console.log(`🔍 [TRADE-LOGS] ========== STARTING PRICE UPDATE ==========`)
         console.log(`🔍 [TRADE-LOGS] Fetching prices for ${currentTrades.length} trades across ${tradesByAccountType.size} account types`)
         console.log(`🔍 [TRADE-LOGS] Trades to update:`, currentTrades.map(t => `${t.symbol}@${t.account_type}`).join(', '))
 
         try {
+          console.log(`🔑 [TRADE-LOGS] Fetching API keys for userId=${userId}...`)
           const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
             user_uuid: userId
           })
 
+          console.log(`🔑 [TRADE-LOGS] API keys response: hasData=${!!apiKeys}, hasError=${!!apiKeysError}, keysLength=${apiKeys?.length || 0}`)
+
           if (apiKeysError) {
-            console.error(`❌ [TRADE-LOGS] Error fetching API keys:`, apiKeysError)
+            console.error(`❌ [TRADE-LOGS] Error fetching API keys:`, JSON.stringify(apiKeysError))
           }
 
           if (!apiKeys?.[0]) {
             console.warn('⚠️  [TRADE-LOGS] No API keys found for user')
           } else {
+            console.log(`✅ [TRADE-LOGS] API keys retrieved successfully`)
           const keys = apiKeys[0]
           console.log(`✅ [TRADE-LOGS] API keys found, processing ${tradesByAccountType.size} account types`)
           

@@ -195,12 +195,31 @@ class AlpacaDataFetcher:
         print(f"  ❌ No data available for {symbol}")
         return None
     
-    def fetch_multiple_symbols(self, symbols, years=5, timeframe='1Day'):
-        """Fetch data for multiple symbols"""
+    def fetch_multiple_symbols(self, symbols, years=5, timeframe='1Day', start_date=None):
+        """
+        Fetch data for multiple symbols
+        
+        Args:
+            symbols: List of stock symbols
+            years: Number of years of historical data (if start_date not provided)
+            timeframe: Timeframe (1Min, 5Min, 15Min, 1Hour, 1Day)
+            start_date: Optional start date for incremental training (overrides years)
+        """
         all_data = []
         
+        # If start_date is provided, use it instead of years
+        if start_date:
+            print(f"\n📅 Fetching data from {start_date.strftime('%Y-%m-%d')} to now (incremental update)")
+        
         for symbol in symbols:
-            df = self.fetch_historical_data(symbol, years, timeframe)
+            if start_date:
+                # Calculate years based on start_date
+                days_diff = (datetime.now() - start_date).days
+                years_to_fetch = max(1, days_diff / 365.25)  # At least 1 year, but calculate from date
+                df = self.fetch_historical_data_from_date(symbol, start_date, timeframe)
+            else:
+                df = self.fetch_historical_data(symbol, years, timeframe)
+            
             if df is not None:
                 df['symbol'] = symbol
                 all_data.append(df)
@@ -209,6 +228,59 @@ class AlpacaDataFetcher:
             return None
         
         return pd.concat(all_data, ignore_index=True)
+    
+    def fetch_historical_data_from_date(self, symbol, start_date, timeframe='1Day'):
+        """Fetch historical data from a specific start date to now"""
+        end = datetime.now()
+        
+        print(f"Fetching data for {symbol} from {start_date.strftime('%Y-%m-%d')}...")
+        
+        # Try Alpaca first
+        try:
+            bars = self.api.get_bars(
+                symbol,
+                timeframe,
+                start=start_date.strftime('%Y-%m-%d'),
+                end=end.strftime('%Y-%m-%d'),
+                limit=10000,
+                feed='iex'
+            ).df
+            
+            if not bars.empty:
+                bars = bars.reset_index()
+                bars.columns = [col.lower() for col in bars.columns]
+                print(f"  ✅ Got {len(bars)} bars for {symbol} from Alpaca")
+                return bars
+        except Exception as e:
+            print(f"  ⚠️  Alpaca failed for {symbol}: {e}")
+        
+        # Fallback to Yahoo Finance
+        if YFINANCE_AVAILABLE:
+            try:
+                ticker = yf.Ticker(symbol)
+                interval_map = {
+                    '1Min': '1m', '5Min': '5m', '15Min': '15m',
+                    '1Hour': '1h', '1Day': '1d'
+                }
+                yf_interval = interval_map.get(timeframe, '1d')
+                
+                hist = ticker.history(start=start_date, end=end, interval=yf_interval)
+                
+                if not hist.empty:
+                    hist = hist.reset_index()
+                    hist.columns = [col.lower() if col != 'Date' else 'timestamp' for col in hist.columns]
+                    if 'date' in hist.columns:
+                        hist.rename(columns={'date': 'timestamp'}, inplace=True)
+                    
+                    required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                    if all(col in hist.columns for col in required_cols):
+                        print(f"  ✅ Got {len(hist)} bars for {symbol} from Yahoo Finance")
+                        return hist[required_cols]
+            except Exception as e:
+                print(f"  ❌ Yahoo Finance also failed for {symbol}: {e}")
+        
+        print(f"  ❌ No data available for {symbol}")
+        return None
 
 
 class TradingModelTrainer:
@@ -465,6 +537,26 @@ def main():
     print("🚀 ENHANCED ML TRAINING WITH REAL HISTORICAL DATA")
     print("=" * 70)
     
+    # Check if we should use incremental training (only fetch new data)
+    INCREMENTAL_TRAINING = os.getenv('INCREMENTAL_TRAINING', 'false').lower() == 'true'
+    last_training_date_file = 'last_training_date.txt'
+    
+    if INCREMENTAL_TRAINING and os.path.exists(last_training_date_file):
+        try:
+            with open(last_training_date_file, 'r') as f:
+                last_training_date = datetime.fromisoformat(f.read().strip())
+            print(f"\n📅 Last training date: {last_training_date.strftime('%Y-%m-%d')}")
+            print("🔄 Incremental mode: Will only fetch data since last training")
+            USE_INCREMENTAL = True
+        except Exception as e:
+            print(f"⚠️  Could not read last training date: {e}")
+            print("📊 Fetching full historical data...")
+            USE_INCREMENTAL = False
+    else:
+        USE_INCREMENTAL = False
+        if not INCREMENTAL_TRAINING:
+            print("📊 Fetching full historical data (set INCREMENTAL_TRAINING=true to enable incremental updates)")
+    
     # Configuration - Expanded list for better ML training
     SYMBOLS = [
         # Major ETFs (High volume, good for patterns)
@@ -661,6 +753,11 @@ def main():
     with open('training_metrics.json', 'w') as f:
         json.dump(metrics, f, indent=2)
     print("  📊 Metrics saved to training_metrics.json")
+    
+    # Save last training date for incremental updates
+    with open('last_training_date.txt', 'w') as f:
+        f.write(datetime.now().isoformat())
+    print("  📅 Last training date saved for incremental updates")
 
 
 if __name__ == '__main__':
