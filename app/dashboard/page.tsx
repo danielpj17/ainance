@@ -18,6 +18,8 @@ export default function DashboardPage() {
   const [winRate, setWinRate] = useState<number>(0)
   const [trendData, setTrendData] = useState<any[]>([])
   const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'year'>('week')
+  const [totalTrades, setTotalTrades] = useState<number>(0)
+  const [recentActivity, setRecentActivity] = useState<any[]>([])
   
   // Generate trend data dynamically based on period
   const generateTrendData = (period: 'week' | 'month' | 'year') => {
@@ -79,12 +81,6 @@ export default function DashboardPage() {
     { type: 'Database', count: 42, level: 'low' },
   ]
 
-  const recentActivity = [
-    { action: 'Buy AAPL', time: '2 min ago', status: 'completed' },
-    { action: 'Sell TSLA', time: '15 min ago', status: 'completed' },
-    { action: 'Buy MSFT', time: '1 hour ago', status: 'pending' },
-  ]
-
   useEffect(() => {
     supabaseRef.current = createClient()
     fetchData()
@@ -112,12 +108,17 @@ export default function DashboardPage() {
         }
       }
 
-      // Fetch trade metrics for win rate calculation
-      const logsRes = await fetch('/api/logs?view=closed')
+      // Fetch trade metrics for win rate calculation and total trades
+      const logsRes = await fetch('/api/logs?view=all')
       if (logsRes.ok) {
         const logsData = await logsRes.json()
         if (logsData.success) {
           setTradeMetrics(logsData.data.metrics)
+          
+          // Calculate total trades from metrics
+          const metrics = logsData.data.metrics || {}
+          const total = (metrics.open_positions || 0) + (metrics.closed_positions || 0)
+          setTotalTrades(total)
           
           // Calculate win rate from closed positions
           const closedPositions = logsData.data.closedPositions || []
@@ -128,6 +129,35 @@ export default function DashboardPage() {
           } else {
             setWinRate(0)
           }
+          
+          // Get recent trades for activity feed
+          const allTrades = logsData.data.trades || []
+          const recentTrades = allTrades.slice(0, 5).map((trade: any) => {
+            const tradeDate = new Date(trade.trade_timestamp || trade.created_at)
+            const now = new Date()
+            const diffMs = now.getTime() - tradeDate.getTime()
+            const diffMins = Math.floor(diffMs / 60000)
+            const diffHours = Math.floor(diffMs / 3600000)
+            const diffDays = Math.floor(diffMs / 86400000)
+            
+            let timeAgo = ''
+            if (diffMins < 1) {
+              timeAgo = 'Just now'
+            } else if (diffMins < 60) {
+              timeAgo = `${diffMins} min ago`
+            } else if (diffHours < 24) {
+              timeAgo = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+            } else {
+              timeAgo = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+            }
+            
+            return {
+              action: `${trade.action === 'buy' ? 'Buy' : 'Sell'} ${trade.symbol}`,
+              time: timeAgo,
+              status: trade.order_status === 'filled' || trade.order_status === 'partially_filled' ? 'completed' : 'pending'
+            }
+          })
+          setRecentActivity(recentTrades)
         }
       }
     } catch (error) {
@@ -149,9 +179,9 @@ export default function DashboardPage() {
             <p className="text-2xl font-bold">${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}</p>
           </div>
           <div className="flex gap-2">
-            <Badge className="bg-blue-600 hover:bg-blue-700">High</Badge>
-            <Badge variant="outline" className="text-gray-400 border-gray-600">Medium</Badge>
-            <Badge variant="outline" className="text-gray-400 border-gray-600">Low</Badge>
+            <Badge className="bg-blue-400 hover:bg-blue-500 text-white">High</Badge>
+            <Badge variant="outline" className="text-gray-300 border-gray-500">Medium</Badge>
+            <Badge variant="outline" className="text-gray-300 border-gray-500">Low</Badge>
           </div>
         </div>
       </div>
@@ -161,13 +191,13 @@ export default function DashboardPage() {
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Value</CardTitle>
-            <DollarSign className="h-5 w-5 text-blue-500" />
+            <DollarSign className="h-5 w-5 text-blue-300" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
               ${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}
             </div>
-            <p className="text-xs text-blue-500 flex items-center gap-1 mt-1">
+            <p className="text-xs text-blue-300 flex items-center gap-1 mt-1">
               <TrendingUp className="h-3 w-3" />
               +2.5% from last week
             </p>
@@ -177,24 +207,26 @@ export default function DashboardPage() {
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Total Trades</CardTitle>
-            <Activity className="h-5 w-5 text-blue-500" />
+            <Activity className="h-5 w-5 text-blue-300" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{trades.length}</div>
-            <p className="text-xs text-gray-400 mt-1">Active positions</p>
+            <div className="text-3xl font-bold text-white">{totalTrades}</div>
+            <p className="text-xs text-gray-400 mt-1">
+              {tradeMetrics ? `${tradeMetrics.open_positions || 0} open, ${tradeMetrics.closed_positions || 0} closed` : 'No trades yet'}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Win Rate</CardTitle>
-            <TrendingUp className="h-5 w-5 text-blue-500" />
+            <TrendingUp className="h-5 w-5 text-blue-300" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
               {winRate.toFixed(1)}%
             </div>
-            <p className={`text-xs mt-1 ${winRate > 0 ? 'text-blue-500' : 'text-gray-400'}`}>
+            <p className={`text-xs mt-1 ${winRate > 0 ? 'text-blue-300' : 'text-gray-400'}`}>
               {tradeMetrics ? `${tradeMetrics.closed_positions} closed trades` : 'No trades yet'}
             </p>
           </CardContent>
@@ -231,8 +263,8 @@ export default function DashboardPage() {
                   <span className="text-gray-400">Your Portfolio</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                  <span className="text-gray-400">Benchmark</span>
+                  <div className="w-3 h-3 rounded-full bg-blue-300"></div>
+                  <span className="text-gray-300">Benchmark</span>
                 </div>
               </div>
             </div>
@@ -243,8 +275,8 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('week')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === 'week'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    ? 'bg-blue-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
                 Week
@@ -253,8 +285,8 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('month')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === 'month'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    ? 'bg-blue-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
                 Month
@@ -263,8 +295,8 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('year')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === 'year'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    ? 'bg-blue-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
                 Year
@@ -281,8 +313,8 @@ export default function DashboardPage() {
                       <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="benchmarkGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -293,7 +325,7 @@ export default function DashboardPage() {
                     labelStyle={{ color: '#fff' }}
                   />
                   <Area type="monotone" dataKey="portfolio" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
-                  <Area type="monotone" dataKey="benchmark" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
+                  <Area type="monotone" dataKey="benchmark" stroke="#60a5fa" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -308,24 +340,29 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentActivity.map((activity, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-blue-500/10 backdrop-blur-sm rounded-lg">
+              {recentActivity.length > 0 ? recentActivity.map((activity, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-blue-400/10 backdrop-blur-sm rounded-lg">
                   <div className="flex items-center gap-3">
                     {activity.status === 'completed' ? (
-                      <CheckCircle className="h-5 w-5 text-blue-500" />
+                      <CheckCircle className="h-5 w-5 text-blue-300" />
                     ) : (
-                      <Activity className="h-5 w-5 text-yellow-500 animate-pulse" />
+                      <Activity className="h-5 w-5 text-yellow-400 animate-pulse" />
                     )}
                     <div>
                       <p className="text-white font-medium">{activity.action}</p>
-                      <p className="text-xs text-gray-400">{activity.time}</p>
+                      <p className="text-xs text-gray-300">{activity.time}</p>
                     </div>
                   </div>
-                  <Badge variant={activity.status === 'completed' ? 'default' : 'outline'} className={activity.status === 'completed' ? 'bg-blue-600' : 'border-yellow-600 text-yellow-600'}>
+                  <Badge variant={activity.status === 'completed' ? 'default' : 'outline'} className={activity.status === 'completed' ? 'bg-blue-400 text-white' : 'border-yellow-400 text-yellow-400'}>
                     {activity.status}
                   </Badge>
                 </div>
-              ))}
+              )) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                  <p>No recent activity</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -364,10 +401,10 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-3">
               {signals.length > 0 ? signals.map((signal, idx) => (
-                <div key={idx} className="p-4 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-gray-700 hover:border-blue-500 transition-colors">
+                <div key={idx} className="p-4 bg-blue-400/10 backdrop-blur-sm rounded-lg border border-gray-600 hover:border-blue-400 transition-colors">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={signal.action === 'buy' ? 'bg-blue-600' : 'bg-red-600'}>
+                      <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={signal.action === 'buy' ? 'bg-blue-400 text-white' : 'bg-red-500 text-white'}>
                         {signal.action.toUpperCase()}
                       </Badge>
                       <span className="font-bold text-white">{signal.symbol}</span>
