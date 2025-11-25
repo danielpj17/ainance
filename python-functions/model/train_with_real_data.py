@@ -9,6 +9,12 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Fix encoding for Windows
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -27,6 +33,16 @@ except ImportError:
     print("Installing alpaca-trade-api...")
     os.system("pip install alpaca-trade-api")
     import alpaca_trade_api as tradeapi
+
+# Try to import yfinance as fallback
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    print("Installing yfinance for free historical data...")
+    os.system("pip install yfinance")
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
 
 try:
     from supabase import create_client
@@ -123,6 +139,7 @@ class AlpacaDataFetcher:
         
         print(f"Fetching {years} years of {timeframe} data for {symbol}...")
         
+        # Try Alpaca first
         try:
             bars = self.api.get_bars(
                 symbol,
@@ -133,22 +150,50 @@ class AlpacaDataFetcher:
                 feed='iex'  # Use IEX feed for free tier
             ).df
             
-            if bars.empty:
-                print(f"  ⚠️  No data returned for {symbol}")
-                return None
-            
-            # Reset index to make timestamp a column
-            bars = bars.reset_index()
-            
-            # Rename columns to lowercase
-            bars.columns = [col.lower() for col in bars.columns]
-            
-            print(f"  ✅ Got {len(bars)} bars for {symbol}")
-            return bars
-            
+            if not bars.empty:
+                # Reset index to make timestamp a column
+                bars = bars.reset_index()
+                # Rename columns to lowercase
+                bars.columns = [col.lower() for col in bars.columns]
+                print(f"  ✅ Got {len(bars)} bars for {symbol} from Alpaca")
+                return bars
         except Exception as e:
-            print(f"  ❌ Error fetching {symbol}: {e}")
-            return None
+            print(f"  ⚠️  Alpaca failed for {symbol}: {e}")
+            print(f"  🔄 Trying Yahoo Finance as fallback...")
+        
+        # Fallback to Yahoo Finance (free, no API key needed)
+        if YFINANCE_AVAILABLE:
+            try:
+                ticker = yf.Ticker(symbol)
+                # Map timeframe to yfinance interval
+                interval_map = {
+                    '1Min': '1m',
+                    '5Min': '5m',
+                    '15Min': '15m',
+                    '1Hour': '1h',
+                    '1Day': '1d'
+                }
+                yf_interval = interval_map.get(timeframe, '1d')
+                
+                hist = ticker.history(start=start, end=end, interval=yf_interval)
+                
+                if not hist.empty:
+                    # Reset index and rename columns
+                    hist = hist.reset_index()
+                    hist.columns = [col.lower() if col != 'Date' else 'timestamp' for col in hist.columns]
+                    if 'date' in hist.columns:
+                        hist.rename(columns={'date': 'timestamp'}, inplace=True)
+                    
+                    # Ensure we have the right columns
+                    required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                    if all(col in hist.columns for col in required_cols):
+                        print(f"  ✅ Got {len(hist)} bars for {symbol} from Yahoo Finance")
+                        return hist[required_cols]
+            except Exception as e:
+                print(f"  ❌ Yahoo Finance also failed for {symbol}: {e}")
+        
+        print(f"  ❌ No data available for {symbol}")
+        return None
     
     def fetch_multiple_symbols(self, symbols, years=5, timeframe='1Day'):
         """Fetch data for multiple symbols"""
