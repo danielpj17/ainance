@@ -137,9 +137,7 @@ class AlpacaDataFetcher:
         end = datetime.now()
         start = end - timedelta(days=years * 365)
         
-        print(f"Fetching {years} years of {timeframe} data for {symbol}...")
-        
-        # Try Alpaca first
+        # Try Alpaca first (only print once per symbol, not every attempt)
         try:
             bars = self.api.get_bars(
                 symbol,
@@ -158,46 +156,146 @@ class AlpacaDataFetcher:
                 print(f"  ✅ Got {len(bars)} bars for {symbol} from Alpaca")
                 return bars
         except Exception as e:
-            print(f"  ⚠️  Alpaca failed for {symbol}: {e}")
-            print(f"  🔄 Trying Yahoo Finance as fallback...")
+            pass  # Silently fall back to Yahoo Finance
         
         # Fallback to Yahoo Finance (free, no API key needed)
         if YFINANCE_AVAILABLE:
-            try:
-                ticker = yf.Ticker(symbol)
-                # Map timeframe to yfinance interval
-                interval_map = {
-                    '1Min': '1m',
-                    '5Min': '5m',
-                    '15Min': '15m',
-                    '1Hour': '1h',
-                    '1Day': '1d'
-                }
-                yf_interval = interval_map.get(timeframe, '1d')
-                
-                hist = ticker.history(start=start, end=end, interval=yf_interval)
-                
-                if not hist.empty:
-                    # Reset index and rename columns
-                    hist = hist.reset_index()
-                    hist.columns = [col.lower() if col != 'Date' else 'timestamp' for col in hist.columns]
-                    if 'date' in hist.columns:
-                        hist.rename(columns={'date': 'timestamp'}, inplace=True)
+            import time
+            max_retries = 5
+            base_delay = 1  # Start with 1 second delay
+            
+            for attempt in range(max_retries):
+                try:
+                    # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                    if attempt > 0:
+                        delay = base_delay * (2 ** (attempt - 1))
+                        time.sleep(delay)
                     
-                    # Ensure we have the right columns
-                    required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-                    if all(col in hist.columns for col in required_cols):
-                        print(f"  ✅ Got {len(hist)} bars for {symbol} from Yahoo Finance")
-                        return hist[required_cols]
-            except Exception as e:
-                print(f"  ❌ Yahoo Finance also failed for {symbol}: {e}")
+                    ticker = yf.Ticker(symbol)
+                    
+                    # Map timeframe to yfinance interval
+                    interval_map = {
+                        '1Min': '1m',
+                        '5Min': '5m',
+                        '15Min': '15m',
+                        '1Hour': '1h',
+                        '1Day': '1d'
+                    }
+                    yf_interval = interval_map.get(timeframe, '1d')
+                    
+                    # Use period-based approach (more reliable than start/end dates)
+                    hist = None
+                    if attempt == 0:
+                        # First attempt: Use period (most reliable)
+                        if years <= 1:
+                            period = "1y"
+                        elif years <= 2:
+                            period = "2y"
+                        elif years <= 5:
+                            period = "5y"
+                        else:
+                            period = "max"
+                        try:
+                            hist = ticker.history(period=period, interval=yf_interval, timeout=60, raise_errors=False)
+                            # Filter by date range if using period (to get exactly what we need)
+                            if hist is not None and not hist.empty and len(hist) > 0:
+                                hist.index = pd.to_datetime(hist.index)
+                                hist = hist[(hist.index >= start) & (hist.index <= end)]
+                        except Exception:
+                            pass
+                    elif attempt == 1:
+                        # Second attempt: try download method (alternative API endpoint)
+                        try:
+                            if years <= 1:
+                                period = "1y"
+                            elif years <= 2:
+                                period = "2y"
+                            elif years <= 5:
+                                period = "5y"
+                            else:
+                                period = "max"
+                            hist = yf.download(symbol, period=period, interval=yf_interval, progress=False, timeout=60, show_errors=False)
+                            if isinstance(hist, pd.DataFrame) and not hist.empty:
+                                # Download returns MultiIndex sometimes
+                                if isinstance(hist.columns, pd.MultiIndex):
+                                    hist.columns = hist.columns.droplevel(0)
+                                # Filter by date range
+                                hist.index = pd.to_datetime(hist.index)
+                                hist = hist[(hist.index >= start) & (hist.index <= end)]
+                        except Exception:
+                            pass
+                    else:
+                        # Third attempt: try with start/end dates as last resort
+                        try:
+                            hist = ticker.history(start=start, end=end, interval=yf_interval, timeout=60, raise_errors=False)
+                        except Exception:
+                            pass
+                    
+                    # Validate data - check if we actually got meaningful data
+                    if hist is not None and not hist.empty and len(hist) > 10:  # Need at least 10 data points
+                        # Reset index to make timestamp a column
+                        hist = hist.reset_index()
+                        
+                        # Handle timestamp column (first column is usually the date index)
+                        if len(hist.columns) > 0:
+                            first_col = hist.columns[0]
+                            if first_col not in ['Date', 'Datetime', 'date', 'datetime', 'timestamp']:
+                                # Assume first column is timestamp
+                                hist.rename(columns={first_col: 'timestamp'}, inplace=True)
+                        
+                        # Normalize all column names to lowercase for easier matching
+                        column_map = {}
+                        for col in hist.columns:
+                            col_lower = str(col).lower().strip()
+                            if col_lower in ['date', 'datetime']:
+                                column_map[col] = 'timestamp'
+                            elif col_lower in ['open', 'o']:
+                                column_map[col] = 'open'
+                            elif col_lower in ['high', 'h']:
+                                column_map[col] = 'high'
+                            elif col_lower in ['low', 'l']:
+                                column_map[col] = 'low'
+                            elif col_lower in ['close', 'c', 'adj close', 'adjclose']:
+                                column_map[col] = 'close'
+                            elif col_lower in ['volume', 'vol', 'v']:
+                                column_map[col] = 'volume'
+                        
+                        # Apply column mapping
+                        for old_col, new_col in column_map.items():
+                            if old_col in hist.columns:
+                                hist.rename(columns={old_col: new_col}, inplace=True)
+                        
+                        # Ensure timestamp column exists
+                        if 'timestamp' not in hist.columns:
+                            # Try to find it with different names
+                            for col in hist.columns:
+                                if 'date' in str(col).lower() or 'time' in str(col).lower():
+                                    hist.rename(columns={col: 'timestamp'}, inplace=True)
+                                    break
+                        
+                        # Select only required columns
+                        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                        available_cols = [col for col in required_cols if col in hist.columns]
+                        
+                        if len(available_cols) == len(required_cols):
+                            return hist[required_cols]
+                        elif 'close' not in hist.columns and 'adj close' in hist.columns:
+                            # Use adjusted close if regular close not available
+                            hist.rename(columns={'adj close': 'close'}, inplace=True)
+                            available_cols = [col for col in required_cols if col in hist.columns]
+                            if len(available_cols) == len(required_cols):
+                                return hist[required_cols]
+                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        continue
+                    # Last attempt failed - silently continue
         
-        print(f"  ❌ No data available for {symbol}")
         return None
     
     def fetch_multiple_symbols(self, symbols, years=5, timeframe='1Day', start_date=None):
         """
-        Fetch data for multiple symbols
+        Fetch data for multiple symbols with progress tracking
         
         Args:
             symbols: List of stock symbols
@@ -205,24 +303,53 @@ class AlpacaDataFetcher:
             timeframe: Timeframe (1Min, 5Min, 15Min, 1Hour, 1Day)
             start_date: Optional start date for incremental training (overrides years)
         """
+        import time
         all_data = []
+        total = len(symbols)
+        successful = 0
+        failed = 0
+        
+        print(f"\n📊 Fetching data for {total} symbols...")
+        print(f"Progress: [{' ' * 50}] 0% (0/{total})", end='', flush=True)
         
         # If start_date is provided, use it instead of years
         if start_date:
             print(f"\n📅 Fetching data from {start_date.strftime('%Y-%m-%d')} to now (incremental update)")
         
-        for symbol in symbols:
-            if start_date:
-                # Calculate years based on start_date
-                days_diff = (datetime.now() - start_date).days
-                years_to_fetch = max(1, days_diff / 365.25)  # At least 1 year, but calculate from date
-                df = self.fetch_historical_data_from_date(symbol, start_date, timeframe)
-            else:
-                df = self.fetch_historical_data(symbol, years, timeframe)
+        for idx, symbol in enumerate(symbols):
+            try:
+                if start_date:
+                    # Calculate years based on start_date
+                    days_diff = (datetime.now() - start_date).days
+                    years_to_fetch = max(1, days_diff / 365.25)  # At least 1 year, but calculate from date
+                    df = self.fetch_historical_data_from_date(symbol, start_date, timeframe)
+                else:
+                    df = self.fetch_historical_data(symbol, years, timeframe)
+                
+                if df is not None and not df.empty:
+                    df['symbol'] = symbol
+                    all_data.append(df)
+                    successful += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                failed += 1
             
-            if df is not None:
-                df['symbol'] = symbol
-                all_data.append(df)
+            # Update progress bar
+            progress = int((idx + 1) / total * 50)
+            percent = int((idx + 1) / total * 100)
+            bar = '█' * progress + ' ' * (50 - progress)
+            success_rate = int((successful / (idx + 1)) * 100) if idx > 0 else 0
+            print(f"\rProgress: [{bar}] {percent}% ({idx + 1}/{total}) | Success: {successful} ({success_rate}%) | Failed: {failed}", end='', flush=True)
+            
+            # Rate limiting: Add delay between requests to avoid overwhelming Yahoo Finance
+            # Staggered delay: 0.3-0.5 seconds between requests to avoid rate limits
+            if idx < total - 1:  # Don't delay after last symbol
+                time.sleep(0.3 + (idx % 3) * 0.1)  # Vary delay: 0.3s, 0.4s, 0.5s, repeat
+        
+        print(f"\n\n✅ Successfully fetched: {successful}/{total} symbols")
+        if failed > 0:
+            print(f"⚠️  Failed: {failed} symbols")
         
         if not all_data:
             return None
@@ -698,14 +825,21 @@ def main():
     TIMEFRAME = '1Day'  # Daily data for more historical depth
     
     # Step 1: Fetch historical data
-    print(f"\n📊 Step 1: Fetching historical data")
-    print(f"  Symbols: {', '.join(SYMBOLS)}")
+    print(f"\n{'='*70}")
+    print(f"📊 Step 1: Fetching historical data")
+    print(f"{'='*70}")
+    print(f"  Symbols: {len(SYMBOLS)} total")
     print(f"  Timeframe: {TIMEFRAME}")
     print(f"  History: {YEARS} years")
+    print(f"  Sample symbols: {', '.join(SYMBOLS[:5])}...")
     print()
     
+    start_time = datetime.now()
     fetcher = AlpacaDataFetcher()
     df = fetcher.fetch_multiple_symbols(SYMBOLS, years=YEARS, timeframe=TIMEFRAME)
+    
+    fetch_time = (datetime.now() - start_time).total_seconds()
+    print(f"\n⏱️  Data fetching completed in {fetch_time/60:.1f} minutes")
     
     if df is None or df.empty:
         print("\n❌ No data fetched. Cannot train model.")
@@ -715,9 +849,14 @@ def main():
     print(f"  ✅ Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
     
     # Step 2: Add technical indicators
-    print(f"\n📈 Step 2: Adding technical indicators")
+    print(f"\n{'='*70}")
+    print(f"📈 Step 2: Adding technical indicators")
+    print(f"{'='*70}")
+    start_time = datetime.now()
     trainer = TradingModelTrainer()
     df = trainer.add_technical_indicators(df)
+    calc_time = (datetime.now() - start_time).total_seconds()
+    print(f"\n⏱️  Indicator calculation completed in {calc_time:.1f} seconds")
     
     # Step 3: Create labels
     print(f"\n🏷️  Step 3: Creating labels")
@@ -728,8 +867,15 @@ def main():
     X, y, df_clean = trainer.prepare_features(df)
     
     # Step 5: Train model
-    print(f"\n🎯 Step 5: Training model")
+    print(f"\n{'='*70}")
+    print(f"🎯 Step 5: Training Random Forest model")
+    print(f"{'='*70}")
+    print(f"  Training samples: {len(X)}")
+    print(f"  Features: {len(trainer.feature_columns)}")
+    start_time = datetime.now()
     metrics = trainer.train(X, y)
+    train_time = (datetime.now() - start_time).total_seconds()
+    print(f"\n⏱️  Model training completed in {train_time:.1f} seconds")
     
     # Step 6: Save model
     print(f"\n💾 Step 6: Saving model")
