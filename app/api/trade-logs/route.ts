@@ -172,11 +172,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               const existingTrade = positionMap.get(position.symbol)
               
               if (existingTrade) {
-                // Update with live data from Alpaca
+                // Update with live data from Alpaca, but preserve buy_price from database
+                // buy_price should never change - it's the entry price when the position was opened
+                // CRITICAL: Do not overwrite buy_price - it must remain the original entry price
+                const preservedBuyPrice = existingTrade.buy_price // Preserve original entry price
                 existingTrade.current_price = parseFloat(position.current_price)
                 existingTrade.current_value = parseFloat(position.market_value)
                 existingTrade.unrealized_pl = parseFloat(position.unrealized_pl)
                 existingTrade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100
+                // Ensure buy_price is never overwritten - restore it if somehow changed
+                if (existingTrade.buy_price !== preservedBuyPrice) {
+                  console.warn(`⚠️  buy_price was changed for ${position.symbol}, restoring original value: ${preservedBuyPrice}`)
+                  existingTrade.buy_price = preservedBuyPrice
+                }
               } else {
                 // Add position from Alpaca that's not in trade_logs
                 const qty = Math.abs(parseFloat(position.qty))

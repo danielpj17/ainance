@@ -1146,6 +1146,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log(`🔄 PROCESSING SELL SIGNALS: ${sellSignals.length} positions to exit`)
     console.log('═══════════════════════════════════════════════════════════')
     
+    // Filter out sell signals that don't have valid positions
+    const validSellSignals: any[] = []
+    
     for (const sellSignal of sellSignals) {
       console.log(`📉 SELL ${sellSignal.symbol} @ $${sellSignal.price.toFixed(2)}`)
       console.log(`   Confidence: ${(sellSignal.adjusted_confidence * 100).toFixed(1)}%`)
@@ -1157,8 +1160,39 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         sellSignal.shares = Math.abs(parseInt(position.qty))
         sellSignal.allocated_capital = Math.abs(parseFloat(position.market_value))
         console.log(`   Selling entire position: ${sellSignal.shares} shares = $${sellSignal.allocated_capital.toFixed(2)}`)
+        validSellSignals.push(sellSignal)
+      } else {
+        // Position not found in Alpaca - try to get from trade_logs as fallback
+        console.warn(`⚠️  Position for ${sellSignal.symbol} not found in Alpaca positions, checking trade_logs...`)
+        try {
+          const { data: tradeLog } = await supabase
+            .from('trade_logs')
+            .select('qty')
+            .eq('user_id', userId)
+            .eq('symbol', sellSignal.symbol)
+            .eq('status', 'open')
+            .eq('action', 'buy')
+            .order('buy_timestamp', { ascending: false })
+            .limit(1)
+            .single()
+          
+          if (tradeLog && tradeLog.qty) {
+            sellSignal.shares = Math.abs(parseInt(tradeLog.qty))
+            sellSignal.allocated_capital = sellSignal.shares * sellSignal.price
+            console.log(`   Found position in trade_logs: ${sellSignal.shares} shares = $${sellSignal.allocated_capital.toFixed(2)}`)
+            validSellSignals.push(sellSignal)
+          } else {
+            console.error(`❌ No open position found for ${sellSignal.symbol} in Alpaca or trade_logs - skipping sell signal`)
+          }
+        } catch (error) {
+          console.error(`❌ Error checking trade_logs for ${sellSignal.symbol}:`, error)
+        }
       }
     }
+    
+    // Update sellSignals array with only valid signals
+    sellSignals.length = 0
+    sellSignals.push(...validSellSignals)
 
     // STEP 11: Intelligent Capital Allocation for BUY Signals
     const account = await alpacaClient.getAccount()
