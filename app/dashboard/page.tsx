@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'year'>('week')
   const [totalTrades, setTotalTrades] = useState<number>(0)
   const [recentActivity, setRecentActivity] = useState<any[]>([])
+  const [portfolioChange, setPortfolioChange] = useState<number>(0)
   
   // Generate trend data dynamically based on period
   const generateTrendData = (period: 'week' | 'month' | 'year') => {
@@ -74,12 +75,10 @@ export default function DashboardPage() {
     }
   }, [account, chartPeriod])
 
-  const riskData = [
-    { type: 'Git Exposure', count: 158, level: 'low' },
-    { type: 'SSL Certificate', count: 214, level: 'high' },
-    { type: 'API Keys', count: 87, level: 'medium' },
-    { type: 'Database', count: 42, level: 'low' },
-  ]
+  // This will be populated with real data if we have open positions
+  const [riskData, setRiskData] = useState([
+    { type: 'No positions', count: 0, level: 'low' },
+  ])
 
   useEffect(() => {
     supabaseRef.current = createClient()
@@ -91,7 +90,17 @@ export default function DashboardPage() {
       const accountRes = await fetch('/api/account')
       if (accountRes.ok) {
         const accountData = await accountRes.json()
-        if (accountData.success) setAccount(accountData.data)
+        if (accountData.success) {
+          setAccount(accountData.data)
+          
+          // Calculate portfolio change percentage
+          const currentValue = parseFloat(accountData.data.portfolio_value || accountData.data.equity || '0')
+          const lastValue = parseFloat(accountData.data.last_equity || accountData.data.equity || currentValue)
+          if (lastValue > 0 && currentValue !== lastValue) {
+            const changePercent = ((currentValue - lastValue) / lastValue) * 100
+            setPortfolioChange(changePercent)
+          }
+        }
       }
 
       const tradesRes = await fetch('/api/trade?limit=10')
@@ -104,8 +113,16 @@ export default function DashboardPage() {
       if (signalsRes.ok) {
         const signalsData = await signalsRes.json()
         if (signalsData.success && signalsData.status?.currentSignals) {
-          setSignals(signalsData.status.currentSignals.slice(0, 5))
+          // Filter out 'hold' signals and get the most recent ones
+          const activeSignals = signalsData.status.currentSignals
+            .filter((s: any) => s.action !== 'hold')
+            .slice(0, 5)
+          setSignals(activeSignals)
+        } else {
+          setSignals([])
         }
+      } else {
+        setSignals([])
       }
 
       // Fetch trade metrics for win rate calculation and total trades
@@ -158,6 +175,19 @@ export default function DashboardPage() {
             }
           })
           setRecentActivity(recentTrades)
+          
+          // Update portfolio distribution data from open positions
+          const openPositions = logsData.data.openPositions || []
+          if (openPositions.length > 0) {
+            const positionData = openPositions.slice(0, 4).map((pos: any) => ({
+              type: pos.symbol,
+              count: Math.abs(pos.total_qty || 0),
+              level: (pos.unrealized_pl || 0) > 0 ? 'high' : (pos.unrealized_pl || 0) < 0 ? 'low' : 'medium'
+            }))
+            setRiskData(positionData.length > 0 ? positionData : [{ type: 'No positions', count: 0, level: 'low' }])
+          } else {
+            setRiskData([{ type: 'No positions', count: 0, level: 'low' }])
+          }
         }
       }
     } catch (error) {
@@ -197,9 +227,13 @@ export default function DashboardPage() {
             <div className="text-3xl font-bold text-white">
               ${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}
             </div>
-            <p className="text-xs text-blue-300 flex items-center gap-1 mt-1">
-              <TrendingUp className="h-3 w-3" />
-              +2.5% from last week
+            <p className={`text-xs flex items-center gap-1 mt-1 ${portfolioChange >= 0 ? 'text-blue-300' : 'text-red-400'}`}>
+              {portfolioChange >= 0 ? (
+                <TrendingUp className="h-3 w-3" />
+              ) : (
+                <TrendingDown className="h-3 w-3" />
+              )}
+              {portfolioChange !== 0 ? `${portfolioChange >= 0 ? '+' : ''}${portfolioChange.toFixed(2)}%` : 'No change'} from last period
             </p>
           </CardContent>
         </Card>
@@ -372,23 +406,32 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <Card className="glass-card">
           <CardHeader>
-            <CardTitle className="text-white">Risk Analysis</CardTitle>
-            <CardDescription className="text-gray-400">Portfolio risk distribution</CardDescription>
+            <CardTitle className="text-white">Portfolio Distribution</CardTitle>
+            <CardDescription className="text-gray-400">Open positions by symbol</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={riskData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="type" stroke="#9ca3af" />
-                  <YAxis stroke="#9ca3af" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#fff' }}
-                  />
-                  <Bar dataKey="count" fill="#60a5fa" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {tradeMetrics && tradeMetrics.open_positions > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={riskData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="type" stroke="#9ca3af" />
+                    <YAxis stroke="#9ca3af" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
+                      labelStyle={{ color: '#fff' }}
+                    />
+                    <Bar dataKey="count" fill="#60a5fa" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="text-center">
+                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>No open positions to display</p>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
