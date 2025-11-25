@@ -412,22 +412,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       
       // For any trades that still have current_price == buy_price, try to fetch latest quote as fallback
       const tradesNeedingUpdate = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) < 0.01)
+      console.log('[TRADE-LOGS] Checking trades needing update: total=' + currentTrades.length + ', needingUpdate=' + tradesNeedingUpdate.length)
+      
       if (tradesNeedingUpdate.length > 0) {
-        console.warn(`⚠️  [TRADE-LOGS] ${tradesNeedingUpdate.length} trade(s) still have current_price == buy_price: ${tradesNeedingUpdate.map(t => `${t.symbol}(${t.current_price})`).join(', ')}`)
+        console.warn('[TRADE-LOGS] ' + tradesNeedingUpdate.length + ' trade(s) still have current_price == buy_price')
         
         for (const trade of tradesNeedingUpdate) {
-          console.warn(`⚠️  [TRADE-LOGS] Trade ${trade.symbol} still has current_price (${trade.current_price}) equal to buy_price (${trade.buy_price}) - attempting quote fallback`)
+          console.warn('[TRADE-LOGS] Trade ' + trade.symbol + ' still has current_price (' + trade.current_price + ') equal to buy_price (' + trade.buy_price + ') - attempting quote fallback')
           
           try {
-            console.log(`🔑 [TRADE-LOGS] Fallback: Fetching API keys for userId=${userId}, accountType=${trade.account_type}, strategy=${trade.strategy}`)
+            console.log('[TRADE-LOGS] Fallback: Fetching API keys for userId=' + userId + ', accountType=' + trade.account_type + ', strategy=' + trade.strategy)
             const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
               user_uuid: userId
             })
             
-            console.log(`🔑 [TRADE-LOGS] Fallback: API keys response: hasData=${!!apiKeys}, hasError=${!!apiKeysError}, keysLength=${apiKeys?.length || 0}`)
+            console.log('[TRADE-LOGS] Fallback: API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
             
             if (apiKeysError) {
-              console.error(`❌ [TRADE-LOGS] Fallback: Error fetching API keys:`, JSON.stringify(apiKeysError))
+              console.error('[TRADE-LOGS] Fallback: Error fetching API keys:', JSON.stringify(apiKeysError))
             }
             
             if (apiKeys?.[0]) {
@@ -443,7 +445,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               console.log('[TRADE-LOGS] Fallback: getAlpacaKeys returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
               
               if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-                console.log(`✅ [TRADE-LOGS] Fallback: API keys available, creating client...`)
+                console.log('[TRADE-LOGS] Fallback: API keys available, creating client')
                 const alpacaClient = createAlpacaClient({
                   apiKey: alpacaKeys.apiKey,
                   secretKey: alpacaKeys.secretKey,
@@ -454,28 +456,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 await alpacaClient.initialize()
                 const success = await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
                 if (success) {
-                  console.log(`✅ [TRADE-LOGS] Successfully updated ${trade.symbol} via quote fallback`)
+                  console.log('[TRADE-LOGS] Successfully updated ' + trade.symbol + ' via quote fallback')
                 } else {
-                  console.error(`❌ [TRADE-LOGS] Quote fallback failed for ${trade.symbol}`)
+                  console.error('[TRADE-LOGS] Quote fallback failed for ' + trade.symbol)
                 }
               } else {
-                console.warn(`⚠️  [TRADE-LOGS] No API keys available for quote fallback for ${trade.symbol} - apiKey=${!!alpacaKeys.apiKey}, secretKey=${!!alpacaKeys.secretKey}`)
+                console.warn('[TRADE-LOGS] No API keys available for quote fallback for ' + trade.symbol + ' - apiKey=' + !!alpacaKeys.apiKey + ', secretKey=' + !!alpacaKeys.secretKey)
                 if (keys) {
-                  console.log(`🔍 [TRADE-LOGS] Fallback: Keys object has:`, Object.keys(keys).filter(k => k.includes('alpaca')))
+                  const alpacaKeysInObject = Object.keys(keys).filter(k => k.includes('alpaca'))
+                  console.log('[TRADE-LOGS] Fallback: Keys object has: ' + JSON.stringify(alpacaKeysInObject))
                 }
               }
             } else {
-              console.warn(`⚠️  [TRADE-LOGS] Fallback: No API keys returned from RPC for ${trade.symbol}`)
+              console.warn('[TRADE-LOGS] Fallback: No API keys returned from RPC for ' + trade.symbol)
             }
           } catch (error: any) {
-            console.error(`❌ [TRADE-LOGS] Error fetching quote fallback for ${trade.symbol}:`, error?.message || error)
-            if (process.env.NODE_ENV === 'development') {
-              console.error(`Stack:`, error?.stack)
-            }
+            console.error('[TRADE-LOGS] Error fetching quote fallback for ' + trade.symbol + ': ' + (error?.message || String(error)))
           }
         }
       } else {
-        console.log(`✅ [TRADE-LOGS] All ${currentTrades.length} trades have updated prices`)
+        console.log('[TRADE-LOGS] All ' + currentTrades.length + ' trades have updated prices')
       }
       
       // Summary log
