@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       }, { status: 500 })
     }
     
-    let modelsBucket = buckets?.find(b => b.name === 'models')
+    const modelsBucket = buckets?.find(b => b.name === 'models')
     
     // Create bucket if it doesn't exist
     if (!modelsBucket) {
@@ -31,8 +31,16 @@ export async function POST(req: NextRequest) {
       if (createError) {
         // Check if error is because bucket already exists (race condition)
         if (createError.message?.includes('already exists') || createError.message?.includes('duplicate')) {
-          // Bucket was created by another request, continue
+          // Bucket was created by another request, fetch it again
           console.log('Bucket already exists (created concurrently)')
+          const { data: refreshedBuckets } = await supabase.storage.listBuckets()
+          const refreshedBucket = refreshedBuckets?.find(b => b.name === 'models')
+          if (!refreshedBucket) {
+            return NextResponse.json({
+              success: false,
+              error: 'Storage bucket "models" not found after creation attempt. Please create it manually in Supabase Dashboard → Storage → New Bucket → name: "models" or run the migration file: supabase/migrations/20250125000002_create_models_bucket.sql'
+            }, { status: 400 })
+          }
         } else {
           // If creation fails, return helpful error message
           console.warn('Failed to create bucket via API:', createError.message)
@@ -42,8 +50,16 @@ export async function POST(req: NextRequest) {
           }, { status: 400 })
         }
       } else {
-        modelsBucket = newBucket
         console.log('✅ Created "models" storage bucket')
+        // Verify bucket was created by fetching it again
+        const { data: refreshedBuckets } = await supabase.storage.listBuckets()
+        const refreshedBucket = refreshedBuckets?.find(b => b.name === 'models')
+        if (!refreshedBucket) {
+          return NextResponse.json({
+            success: false,
+            error: 'Storage bucket "models" was created but could not be verified. Please try again or create it manually in Supabase Dashboard → Storage → New Bucket → name: "models"'
+          }, { status: 500 })
+        }
       }
     }
 
