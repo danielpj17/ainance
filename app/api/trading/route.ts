@@ -843,17 +843,30 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       scalpingStocks = getDefaultScalpingStocks()
     }
     
-    console.log(`📊 Trading ${scalpingStocks.length} stocks: ${scalpingStocks.join(', ')}`)
+    // STEP 8: Get Current Positions (moved earlier to include held positions in ML predictions)
+    console.log('📊 Checking current positions...')
+    const positions = await alpacaClient.getPositions()
+    const currentHoldings = positions.map((p: any) => p.symbol)
+    console.log(`📌 Currently holding ${currentHoldings.length} positions: ${currentHoldings.join(', ')}`)
+    
+    // Ensure all held positions are included in symbols for ML predictions (so we can get sell signals)
+    const symbolsForML = Array.from(new Set([...scalpingStocks, ...currentHoldings]))
+    if (symbolsForML.length > scalpingStocks.length) {
+      const addedSymbols = symbolsForML.filter(s => !scalpingStocks.includes(s))
+      console.log(`➕ Added ${addedSymbols.length} held position(s) to ML prediction list: ${addedSymbols.join(', ')}`)
+    }
+    
+    console.log(`📊 Trading ${scalpingStocks.length} stocks, ${symbolsForML.length} total symbols for ML predictions: ${symbolsForML.join(', ')}`)
 
     // STEP 4: Get Technical Indicators (call handler directly with error handling)
-    console.log(`📈 Fetching technical indicators for ${scalpingStocks.length} symbols...`)
+    console.log(`📈 Fetching technical indicators for ${symbolsForML.length} symbols...`)
     let indicatorsData: any
     
     try {
       const { POST: getIndicators } = await import('@/app/api/stocks/indicators/route')
       const indicatorsReq = new NextRequest('http://localhost/api/stocks/indicators', {
         method: 'POST',
-        body: JSON.stringify({ symbols: scalpingStocks })
+        body: JSON.stringify({ symbols: symbolsForML })
       })
       const indicatorsRes = await getIndicators(indicatorsReq)
       indicatorsData = await indicatorsRes.json()
@@ -873,7 +886,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         throw new Error('No technical indicators available')
       }
       
-      console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols (requested ${scalpingStocks.length})`)
+      console.log(`✅ Technical indicators received for ${indicatorsData.indicators.length} symbols (requested ${symbolsForML.length})`)
       
       // Log any partial failures
       if (indicatorsData.errors && indicatorsData.errors.length > 0) {
@@ -881,17 +894,17 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       }
       
       // Warn if we got fewer indicators than requested symbols
-      if (indicatorsData.indicators.length < scalpingStocks.length) {
+      if (indicatorsData.indicators.length < symbolsForML.length) {
         const indicatorSymbols = new Set(indicatorsData.indicators.map((ind: any) => ind.symbol))
-        const missingSymbols = scalpingStocks.filter(s => !indicatorSymbols.has(s))
+        const missingSymbols = symbolsForML.filter(s => !indicatorSymbols.has(s))
         console.warn(`⚠️  Missing indicators for ${missingSymbols.length} symbols: ${missingSymbols.slice(0, 10).join(', ')}${missingSymbols.length > 10 ? ` ... and ${missingSymbols.length - 10} more` : ''}`)
       }
     } catch (error: any) {
       console.error('❌ Failed to get technical indicators:', error)
       console.error('Error details:', {
         message: error.message,
-        symbols: scalpingStocks,
-        count: scalpingStocks.length
+        symbols: symbolsForML,
+        count: symbolsForML.length
       })
       throw new Error(`Technical indicators failed: ${error.message}`)
     }
@@ -901,7 +914,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     try {
       const newsAnalyzer = getNewsAnalyzer()
       console.log('📰 Fetching news sentiment...')
-      sentimentData = await newsAnalyzer.getSentimentForSymbols(scalpingStocks, 1)
+      sentimentData = await newsAnalyzer.getSentimentForSymbols(symbolsForML, 1)
       console.log(`✅ News sentiment received for ${Object.keys(sentimentData).length} symbols`)
     } catch (error) {
       console.warn('⚠️  News sentiment unavailable:', error)
@@ -1025,11 +1038,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       throw new Error(`ML service unavailable after ${maxRetries} attempts: ${lastError?.message}`)
     }
 
-    // STEP 8: Get Current Positions
-    console.log('📊 Checking current positions...')
-    const positions = await alpacaClient.getPositions()
-    const currentHoldings = positions.map((p: any) => p.symbol)
-    console.log(`📌 Currently holding ${currentHoldings.length} positions: ${currentHoldings.join(', ')}`)
+    // STEP 8: Current positions already retrieved above (moved earlier to include in ML predictions)
 
     // Check if we're in the last 30 minutes of trading
     const inLast30Minutes = isInLast30Minutes()
