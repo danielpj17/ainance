@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     
     const now = new Date().toISOString()
     
-    // Check if storage bucket exists
+    // Check if storage bucket exists, create if it doesn't
     const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
     
     if (bucketsError) {
@@ -19,13 +19,32 @@ export async function POST(req: NextRequest) {
       }, { status: 500 })
     }
     
-    const modelsBucket = buckets?.find(b => b.name === 'models')
+    let modelsBucket = buckets?.find(b => b.name === 'models')
     
+    // Create bucket if it doesn't exist
     if (!modelsBucket) {
-      return NextResponse.json({
-        success: false,
-        error: 'Storage bucket "models" not found. Please create it in Supabase Dashboard → Storage → New Bucket → name: "models"'
-      }, { status: 400 })
+      const { data: newBucket, error: createError } = await supabase.storage.createBucket('models', {
+        public: false,
+        fileSizeLimit: 52428800, // 50MB
+      })
+      
+      if (createError) {
+        // Check if error is because bucket already exists (race condition)
+        if (createError.message?.includes('already exists') || createError.message?.includes('duplicate')) {
+          // Bucket was created by another request, continue
+          console.log('Bucket already exists (created concurrently)')
+        } else {
+          // If creation fails, return helpful error message
+          console.warn('Failed to create bucket via API:', createError.message)
+          return NextResponse.json({
+            success: false,
+            error: `Storage bucket "models" not found and could not be created automatically: ${createError.message}. Please create it manually in Supabase Dashboard → Storage → New Bucket → name: "models" or run the migration file: supabase/migrations/20250125000002_create_models_bucket.sql`
+          }, { status: 400 })
+        }
+      } else {
+        modelsBucket = newBucket
+        console.log('✅ Created "models" storage bucket')
+      }
     }
 
     // Create a model metadata file
