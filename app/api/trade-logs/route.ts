@@ -82,25 +82,33 @@ export interface TradeStatistics {
 
 // GET - Fetch trade logs
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  console.log(`🚀🚀🚀 [TRADE-LOGS] GET HANDLER CALLED 🚀🚀🚀`)
   try {
+    console.log(`🔧 [TRADE-LOGS] Creating Supabase client...`)
     const supabase = await createServerClient(req, {})
+    console.log(`✅ [TRADE-LOGS] Supabase client created`)
     
     // In demo mode, always use demo user ID
     let userId: string
     if (isDemoMode()) {
+      console.log(`👤 [TRADE-LOGS] Using demo mode`)
       userId = getDemoUserIdServer()
     } else {
+      console.log(`👤 [TRADE-LOGS] Getting authenticated user...`)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) {
+        console.error(`❌ [TRADE-LOGS] Auth error:`, userError)
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
       }
       userId = user.id
+      console.log(`✅ [TRADE-LOGS] User authenticated: ${userId}`)
     }
 
     const { searchParams } = new URL(req.url)
     const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics'
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
+    console.log(`📋 [TRADE-LOGS] Request params: view=${view}, limit=${limit}, offset=${offset}`)
 
     let currentTrades: CurrentTrade[] = []
     let completedTrades: CompletedTrade[] = []
@@ -412,16 +420,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           console.warn(`⚠️  [TRADE-LOGS] Trade ${trade.symbol} still has current_price (${trade.current_price}) equal to buy_price (${trade.buy_price}) - attempting quote fallback`)
           
           try {
-            const { data: apiKeys } = await supabase.rpc('get_user_api_keys', {
+            console.log(`🔑 [TRADE-LOGS] Fallback: Fetching API keys for userId=${userId}, accountType=${trade.account_type}, strategy=${trade.strategy}`)
+            const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
               user_uuid: userId
             })
+            
+            console.log(`🔑 [TRADE-LOGS] Fallback: API keys response: hasData=${!!apiKeys}, hasError=${!!apiKeysError}, keysLength=${apiKeys?.length || 0}`)
+            
+            if (apiKeysError) {
+              console.error(`❌ [TRADE-LOGS] Fallback: Error fetching API keys:`, JSON.stringify(apiKeysError))
+            }
             
             if (apiKeys?.[0]) {
               const keys = apiKeys[0]
               const strategy = trade.strategy || 'cash'
+              console.log(`🔑 [TRADE-LOGS] Fallback: Got keys object, calling getAlpacaKeys(accountType=${trade.account_type}, strategy=${strategy})`)
               const alpacaKeys = getAlpacaKeys(keys, trade.account_type as 'paper' | 'live', strategy)
               
+              console.log(`🔑 [TRADE-LOGS] Fallback: getAlpacaKeys returned: hasApiKey=${!!alpacaKeys.apiKey}, hasSecretKey=${!!alpacaKeys.secretKey}, paper=${alpacaKeys.paper}`)
+              
               if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+                console.log(`✅ [TRADE-LOGS] Fallback: API keys available, creating client...`)
                 const alpacaClient = createAlpacaClient({
                   apiKey: alpacaKeys.apiKey,
                   secretKey: alpacaKeys.secretKey,
@@ -437,11 +456,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   console.error(`❌ [TRADE-LOGS] Quote fallback failed for ${trade.symbol}`)
                 }
               } else {
-                console.warn(`⚠️  [TRADE-LOGS] No API keys available for quote fallback for ${trade.symbol}`)
+                console.warn(`⚠️  [TRADE-LOGS] No API keys available for quote fallback for ${trade.symbol} - apiKey=${!!alpacaKeys.apiKey}, secretKey=${!!alpacaKeys.secretKey}`)
+                if (keys) {
+                  console.log(`🔍 [TRADE-LOGS] Fallback: Keys object has:`, Object.keys(keys).filter(k => k.includes('alpaca')))
+                }
               }
+            } else {
+              console.warn(`⚠️  [TRADE-LOGS] Fallback: No API keys returned from RPC for ${trade.symbol}`)
             }
           } catch (error: any) {
             console.error(`❌ [TRADE-LOGS] Error fetching quote fallback for ${trade.symbol}:`, error?.message || error)
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`Stack:`, error?.stack)
+            }
           }
         }
       } else {
