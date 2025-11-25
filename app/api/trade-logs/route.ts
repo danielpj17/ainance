@@ -226,51 +226,53 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
 
       if (currentTrades.length === 0) {
-        console.log(`ℹ️  [TRADE-LOGS] No current trades to update prices for`)
+        console.log('[TRADE-LOGS] No current trades to update prices for')
       } else {
-        console.log(`🔍 [TRADE-LOGS] ========== STARTING PRICE UPDATE ==========`)
-        console.log(`🔍 [TRADE-LOGS] Fetching prices for ${currentTrades.length} trades across ${tradesByAccountType.size} account types`)
-        console.log(`🔍 [TRADE-LOGS] Trades to update:`, currentTrades.map(t => `${t.symbol}@${t.account_type}`).join(', '))
+        console.log('[TRADE-LOGS] STARTING PRICE UPDATE')
+        console.log('[TRADE-LOGS] Fetching prices for ' + currentTrades.length + ' trades across ' + tradesByAccountType.size + ' account types')
+        console.log('[TRADE-LOGS] Trades to update: ' + currentTrades.map(t => t.symbol + '@' + t.account_type).join(', '))
 
         try {
-          console.log(`🔑 [TRADE-LOGS] Fetching API keys for userId=${userId}...`)
+          console.log('[TRADE-LOGS] Fetching API keys for userId=' + userId)
           const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
             user_uuid: userId
           })
 
-          console.log(`🔑 [TRADE-LOGS] API keys response: hasData=${!!apiKeys}, hasError=${!!apiKeysError}, keysLength=${apiKeys?.length || 0}`)
+          console.log('[TRADE-LOGS] API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
 
           if (apiKeysError) {
-            console.error(`❌ [TRADE-LOGS] Error fetching API keys:`, JSON.stringify(apiKeysError))
+            console.error('[TRADE-LOGS] Error fetching API keys:', JSON.stringify(apiKeysError))
           }
 
           if (!apiKeys?.[0]) {
-            console.warn('⚠️  [TRADE-LOGS] No API keys found for user')
+            console.warn('[TRADE-LOGS] No API keys found for user')
           } else {
-            console.log(`✅ [TRADE-LOGS] API keys retrieved successfully`)
+            console.log('[TRADE-LOGS] API keys retrieved successfully')
           const keys = apiKeys[0]
-          console.log(`✅ [TRADE-LOGS] API keys found, processing ${tradesByAccountType.size} account types`)
+          console.log('[TRADE-LOGS] API keys found, processing ' + tradesByAccountType.size + ' account types')
+          console.log('[TRADE-LOGS] Keys object has properties: ' + JSON.stringify(Object.keys(keys)))
           
           // Process each account type separately
           for (const [accountType, trades] of tradesByAccountType) {
             if (trades.length === 0) {
-              console.log(`⏭️  [TRADE-LOGS] Skipping ${accountType} - no trades`)
+              console.log('[TRADE-LOGS] Skipping ' + accountType + ' - no trades')
               continue
             }
             
             // Determine strategy from first trade (they should all have same strategy)
             const strategy = trades[0]?.strategy || 'cash'
-            console.log(`🔍 [TRADE-LOGS] Processing ${trades.length} trades for ${accountType} account with strategy ${strategy}`)
-            console.log(`🔍 [TRADE-LOGS] Trade symbols:`, trades.map(t => t.symbol).join(', '))
+            console.log('[TRADE-LOGS] Processing ' + trades.length + ' trades for ' + accountType + ' account with strategy ' + strategy)
+            console.log('[TRADE-LOGS] Trade symbols: ' + trades.map(t => t.symbol).join(', '))
             
             const alpacaKeys = getAlpacaKeys(keys, accountType as 'paper' | 'live', strategy)
+            console.log('[TRADE-LOGS] getAlpacaKeys returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
             
             if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
-              console.warn(`⚠️  [TRADE-LOGS] No API keys found for ${accountType} account`)
+              console.warn('[TRADE-LOGS] No API keys found for ' + accountType + ' account')
               continue
             }
             
-            console.log(`🔑 [TRADE-LOGS] Using ${alpacaKeys.paper ? 'PAPER' : 'LIVE'} Alpaca account for ${accountType}`)
+            console.log('[TRADE-LOGS] Using ' + (alpacaKeys.paper ? 'PAPER' : 'LIVE') + ' Alpaca account for ' + accountType)
             
             try {
               const alpacaClient = createAlpacaClient({
