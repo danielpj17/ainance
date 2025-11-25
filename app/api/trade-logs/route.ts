@@ -434,10 +434,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             if (apiKeys?.[0]) {
               const keys = apiKeys[0]
               const strategy = trade.strategy || 'cash'
-              console.log(`🔑 [TRADE-LOGS] Fallback: Got keys object, calling getAlpacaKeys(accountType=${trade.account_type}, strategy=${strategy})`)
+              console.log(`🔑 [TRADE-LOGS] Fallback: Got keys object`)
+              console.log(`🔑 [TRADE-LOGS] Fallback: Keys object keys:`, Object.keys(keys))
+              console.log(`🔑 [TRADE-LOGS] Fallback: Has alpaca_paper_key=${!!keys.alpaca_paper_key}, alpaca_paper_secret=${!!keys.alpaca_paper_secret}`)
+              console.log(`🔑 [TRADE-LOGS] Fallback: Has alpaca_live_key=${!!keys.alpaca_live_key}, alpaca_live_secret=${!!keys.alpaca_live_secret}`)
+              console.log(`🔑 [TRADE-LOGS] Fallback: Calling getAlpacaKeys(accountType=${trade.account_type}, strategy=${strategy})`)
               const alpacaKeys = getAlpacaKeys(keys, trade.account_type as 'paper' | 'live', strategy)
               
-              console.log(`🔑 [TRADE-LOGS] Fallback: getAlpacaKeys returned: hasApiKey=${!!alpacaKeys.apiKey}, hasSecretKey=${!!alpacaKeys.secretKey}, paper=${alpacaKeys.paper}`)
+              console.log(`🔑 [TRADE-LOGS] Fallback: getAlpacaKeys returned: apiKey=${alpacaKeys.apiKey ? 'SET' : 'EMPTY'}, secretKey=${alpacaKeys.secretKey ? 'SET' : 'EMPTY'}, paper=${alpacaKeys.paper}`)
               
               if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
                 console.log(`✅ [TRADE-LOGS] Fallback: API keys available, creating client...`)
