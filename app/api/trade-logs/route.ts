@@ -143,10 +143,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
 
       // Helper function to fetch quote for a trade
-      async function fetchQuoteForTrade(trade: CurrentTrade, alpacaClient: any, preservedBuyPrice: number) {
+      async function fetchQuoteForTrade(trade: CurrentTrade, alpacaClient: any, preservedBuyPrice: number): Promise<boolean> {
         try {
+          console.log(`📞 Fetching quote for ${trade.symbol}...`)
           const quote = await alpacaClient.getLatestQuote(trade.symbol)
-          const latestPrice = quote.bid && quote.ask ? (quote.bid + quote.ask) / 2 : (quote.bid || quote.ask || 0)
+          console.log(`📞 Quote received for ${trade.symbol}:`, JSON.stringify(quote))
+          
+          const bid = typeof quote.bid === 'string' ? parseFloat(quote.bid) : quote.bid
+          const ask = typeof quote.ask === 'string' ? parseFloat(quote.ask) : quote.ask
+          const latestPrice = (bid && ask) ? (bid + ask) / 2 : (bid || ask || 0)
+          
+          console.log(`📞 ${trade.symbol} quote: bid=${bid}, ask=${ask}, mid=${latestPrice}`)
           
           if (latestPrice && latestPrice > 0 && !isNaN(latestPrice) && isFinite(latestPrice)) {
             const oldPrice = trade.current_price
@@ -155,11 +162,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             trade.unrealized_pl = (latestPrice - preservedBuyPrice) * trade.qty
             trade.unrealized_pl_percent = ((latestPrice - preservedBuyPrice) / preservedBuyPrice) * 100
             
-            console.log(`✅ Updated ${trade.symbol} from quote: ${oldPrice}→${latestPrice}, P&L=${trade.unrealized_pl_percent.toFixed(2)}%`)
+            console.log(`✅ UPDATED ${trade.symbol} from quote: ${oldPrice}→${latestPrice}, P&L=${trade.unrealized_pl_percent.toFixed(2)}%`)
             return true
+          } else {
+            console.warn(`⚠️  Invalid quote price for ${trade.symbol}: ${latestPrice}`)
           }
         } catch (quoteError: any) {
-          console.warn(`⚠️  Could not fetch quote for ${trade.symbol}:`, quoteError?.message || quoteError)
+          console.error(`❌ Error fetching quote for ${trade.symbol}:`, quoteError?.message || quoteError, quoteError?.stack)
         }
         return false
       }
@@ -214,6 +223,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               // Get all open positions from Alpaca
               const positions = await alpacaClient.getPositions()
               console.log(`📊 Alpaca returned ${positions.length} positions for ${accountType} account`)
+              console.log(`📊 Full positions data:`, JSON.stringify(positions.slice(0, 3), null, 2)) // Log first 3 for debugging
               
               // Create a map of positions by symbol for quick lookup (case-insensitive)
               const positionMap = new Map<string, any>()
@@ -221,14 +231,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const symbol = pos.symbol?.toUpperCase()
                 if (symbol) {
                   positionMap.set(symbol, pos)
-                  console.log(`   Position: ${symbol}, current_price: ${pos.current_price}, qty: ${pos.qty}`)
+                  const price = typeof pos.current_price === 'string' ? parseFloat(pos.current_price) : pos.current_price
+                  console.log(`   Position: ${symbol}, current_price: ${pos.current_price} (type: ${typeof pos.current_price}, parsed: ${price}), qty: ${pos.qty}`)
                 }
               }
+              
+              console.log(`📊 Looking for ${trades.length} trades: ${trades.map(t => t.symbol.toUpperCase()).join(', ')}`)
+              console.log(`📊 Available positions: ${Array.from(positionMap.keys()).join(', ')}`)
               
               // Update current_price for trades that exist in Alpaca
               for (const trade of trades) {
                 const tradeSymbol = trade.symbol.toUpperCase()
                 const position = positionMap.get(tradeSymbol)
+                
+                console.log(`🔍 Processing trade ${trade.symbol} (${tradeSymbol}): position found=${!!position}`)
                 
                 if (position) {
                   // Update with live data from Alpaca, but preserve buy_price from database
@@ -236,9 +252,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   const rawCurrentPrice = position.current_price
                   const newCurrentPrice = typeof rawCurrentPrice === 'string' 
                     ? parseFloat(rawCurrentPrice) 
-                    : rawCurrentPrice
+                    : (typeof rawCurrentPrice === 'number' ? rawCurrentPrice : NaN)
                   
-                  console.log(`🔍 Processing ${trade.symbol}: buy_price=${preservedBuyPrice}, raw_current=${rawCurrentPrice}, parsed=${newCurrentPrice}`)
+                  console.log(`🔍 ${trade.symbol} details: buy_price=${preservedBuyPrice}, raw_current=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}, isNaN=${isNaN(newCurrentPrice)}, isFinite=${isFinite(newCurrentPrice)}, >0=${newCurrentPrice > 0}`)
                   
                   // Always update current_price from Alpaca if we got a valid value
                   if (newCurrentPrice && !isNaN(newCurrentPrice) && isFinite(newCurrentPrice) && newCurrentPrice > 0) {
@@ -248,11 +264,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     trade.unrealized_pl = parseFloat(position.unrealized_pl) || ((newCurrentPrice - preservedBuyPrice) * trade.qty)
                     trade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100 || (((newCurrentPrice - preservedBuyPrice) / preservedBuyPrice) * 100)
                     
-                    console.log(`✅ Updated ${trade.symbol}: buy=${preservedBuyPrice}, current=${oldCurrentPrice}→${newCurrentPrice}, P&L=${trade.unrealized_pl_percent.toFixed(2)}%`)
+                    console.log(`✅ UPDATED ${trade.symbol}: buy=${preservedBuyPrice}, current=${oldCurrentPrice}→${newCurrentPrice}, P&L=${trade.unrealized_pl_percent.toFixed(2)}%`)
                   } else {
-                    console.warn(`⚠️  Invalid current_price from Alpaca for ${trade.symbol}: raw=${rawCurrentPrice}, parsed=${newCurrentPrice}`)
+                    console.warn(`⚠️  Invalid current_price from Alpaca for ${trade.symbol}: raw=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}`)
                     // Try to fetch quote as fallback
-                    await fetchQuoteForTrade(trade, alpacaClient, preservedBuyPrice)
+                    console.log(`🔄 Attempting quote fallback for ${trade.symbol}...`)
+                    const quoteSuccess = await fetchQuoteForTrade(trade, alpacaClient, preservedBuyPrice)
+                    if (!quoteSuccess) {
+                      console.error(`❌ Failed to update ${trade.symbol} from both position and quote`)
+                    }
                   }
                   
                   // Ensure buy_price is never overwritten
@@ -262,8 +282,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   }
                 } else {
                   // Position not found in Alpaca - try to fetch quote
-                  console.warn(`⚠️  Position ${trade.symbol} not found in Alpaca ${accountType} account, trying quote...`)
-                  await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
+                  console.warn(`⚠️  Position ${trade.symbol} (${tradeSymbol}) not found in Alpaca ${accountType} account, trying quote...`)
+                  const quoteSuccess = await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
+                  if (!quoteSuccess) {
+                    console.error(`❌ Failed to update ${trade.symbol} - position not found and quote failed`)
+                  }
                 }
               }
                 
@@ -298,16 +321,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     })
                   }
                 }
-              } catch (accountError) {
-                console.error(`Error fetching Alpaca positions for ${accountType} account:`, accountError)
-                // Continue with other account types
-              }
+            } catch (accountError) {
+              console.error(`Error fetching Alpaca positions for ${accountType} account:`, accountError)
+              // Continue with other account types
             }
           }
-        } catch (error) {
-          console.error('Error fetching Alpaca positions:', error)
-          // Continue with data from database only
         }
+      } catch (error) {
+        console.error('Error fetching Alpaca positions:', error)
+        // Continue with data from database only
+      }
       
       // For any trades that still have current_price == buy_price, try to fetch latest quote as fallback
       for (const trade of currentTrades) {
