@@ -142,7 +142,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         currentTrades = currentData
       }
 
-      // Also get current positions directly from Alpaca
+      // Also get current positions directly from Alpaca and update current_price
+      // Group trades by account_type to fetch from correct Alpaca account
+      const tradesByAccountType = new Map<string, CurrentTrade[]>()
+      for (const trade of currentTrades) {
+        if (!tradesByAccountType.has(trade.account_type)) {
+          tradesByAccountType.set(trade.account_type, [])
+        }
+        tradesByAccountType.get(trade.account_type)!.push(trade)
+      }
+
       try {
         const { data: apiKeys } = await supabase.rpc('get_user_api_keys', {
           user_uuid: userId
@@ -150,66 +159,97 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
         if (apiKeys?.[0]) {
           const keys = apiKeys[0]
-          const alpacaKeys = getAlpacaKeys(keys, 'paper', 'cash')
           
-          if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-            const alpacaClient = createAlpacaClient({
-              apiKey: alpacaKeys.apiKey,
-              secretKey: alpacaKeys.secretKey,
-              baseUrl: 'https://paper-api.alpaca.markets',
-              paper: true
-            })
-
-            await alpacaClient.initialize()
-
-            // Get all open positions from Alpaca
-            const positions = await alpacaClient.getPositions()
+          // Process each account type separately
+          for (const [accountType, trades] of tradesByAccountType) {
+            // Determine strategy from first trade (they should all have same strategy)
+            const strategy = trades[0]?.strategy || 'cash'
+            const alpacaKeys = getAlpacaKeys(keys, accountType as 'paper' | 'live', strategy)
             
-            // Merge Alpaca positions with trade_logs data
-            const positionMap = new Map(currentTrades.map(t => [t.symbol, t]))
-            
-            for (const position of positions) {
-              const existingTrade = positionMap.get(position.symbol)
-              
-              if (existingTrade) {
-                // Update with live data from Alpaca, but preserve buy_price from database
-                // buy_price should never change - it's the entry price when the position was opened
-                // CRITICAL: Do not overwrite buy_price - it must remain the original entry price
-                const preservedBuyPrice = existingTrade.buy_price // Preserve original entry price
-                existingTrade.current_price = parseFloat(position.current_price)
-                existingTrade.current_value = parseFloat(position.market_value)
-                existingTrade.unrealized_pl = parseFloat(position.unrealized_pl)
-                existingTrade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100
-                // Ensure buy_price is never overwritten - restore it if somehow changed
-                if (existingTrade.buy_price !== preservedBuyPrice) {
-                  console.warn(`⚠️  buy_price was changed for ${position.symbol}, restoring original value: ${preservedBuyPrice}`)
-                  existingTrade.buy_price = preservedBuyPrice
-                }
-              } else {
-                // Add position from Alpaca that's not in trade_logs
-                const qty = Math.abs(parseFloat(position.qty))
-                const costBasis = parseFloat(position.cost_basis)
-                const avgEntryPrice = qty > 0 ? costBasis / qty : 0
-                
-                currentTrades.push({
-                  id: BigInt(0), // Placeholder
-                  symbol: position.symbol,
-                  qty,
-                  buy_price: avgEntryPrice,
-                  buy_timestamp: new Date().toISOString(), // Alpaca doesn't provide this in position
-                  current_price: parseFloat(position.current_price),
-                  current_value: parseFloat(position.market_value),
-                  unrealized_pl: parseFloat(position.unrealized_pl),
-                  unrealized_pl_percent: parseFloat(position.unrealized_plpc) * 100,
-                  holding_duration: '0:0:0', // Will be calculated on frontend
-                  buy_decision_metrics: {
-                    confidence: 0,
-                    reasoning: 'Trade from Alpaca (not logged in system)'
-                  },
-                  strategy: 'unknown',
-                  account_type: 'paper',
-                  trade_pair_id: crypto.randomUUID()
+            if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+              try {
+                const alpacaClient = createAlpacaClient({
+                  apiKey: alpacaKeys.apiKey,
+                  secretKey: alpacaKeys.secretKey,
+                  baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+                  paper: alpacaKeys.paper
                 })
+
+                await alpacaClient.initialize()
+
+                // Get all open positions from Alpaca
+                const positions = await alpacaClient.getPositions()
+                
+                // Create a map of positions by symbol for quick lookup
+                const positionMap = new Map(positions.map((p: any) => [p.symbol, p]))
+                
+                // Update current_price for trades that exist in Alpaca
+                for (const trade of trades) {
+                  const position = positionMap.get(trade.symbol)
+                  
+                  if (position) {
+                    // Update with live data from Alpaca, but preserve buy_price from database
+                    // buy_price should never change - it's the entry price when the position was opened
+                    const preservedBuyPrice = trade.buy_price // Preserve original entry price
+                    const newCurrentPrice = parseFloat(position.current_price)
+                    
+                    // Only update if we got a valid current_price from Alpaca
+                    if (newCurrentPrice && newCurrentPrice > 0 && newCurrentPrice !== trade.buy_price) {
+                      trade.current_price = newCurrentPrice
+                      trade.current_value = parseFloat(position.market_value)
+                      trade.unrealized_pl = parseFloat(position.unrealized_pl)
+                      trade.unrealized_pl_percent = parseFloat(position.unrealized_plpc) * 100
+                    } else {
+                      console.warn(`⚠️  Invalid current_price from Alpaca for ${trade.symbol}: ${newCurrentPrice} (buy_price: ${trade.buy_price})`)
+                    }
+                    
+                    // Ensure buy_price is never overwritten - restore it if somehow changed
+                    if (trade.buy_price !== preservedBuyPrice) {
+                      console.warn(`⚠️  buy_price was changed for ${trade.symbol}, restoring original value: ${preservedBuyPrice}`)
+                      trade.buy_price = preservedBuyPrice
+                    }
+                  } else {
+                    // Position not found in Alpaca - this might mean it was sold
+                    // Keep the current_price from database (which is the buy price)
+                    // But log a warning
+                    console.warn(`⚠️  Position ${trade.symbol} exists in trade_logs but not in Alpaca ${accountType} account - may have been sold`)
+                  }
+                }
+                
+                // Also add positions from Alpaca that aren't in trade_logs
+                for (const position of positions) {
+                  const existingTrade = trades.find(t => t.symbol === position.symbol)
+                  
+                  if (!existingTrade) {
+                    // Add position from Alpaca that's not in trade_logs
+                    const qty = Math.abs(parseFloat(position.qty))
+                    const costBasis = parseFloat(position.cost_basis)
+                    const avgEntryPrice = qty > 0 ? costBasis / qty : 0
+                    
+                    currentTrades.push({
+                      id: BigInt(0), // Placeholder
+                      symbol: position.symbol,
+                      qty,
+                      buy_price: avgEntryPrice,
+                      buy_timestamp: new Date().toISOString(), // Alpaca doesn't provide this in position
+                      current_price: parseFloat(position.current_price),
+                      current_value: parseFloat(position.market_value),
+                      unrealized_pl: parseFloat(position.unrealized_pl),
+                      unrealized_pl_percent: parseFloat(position.unrealized_plpc) * 100,
+                      holding_duration: '0:0:0', // Will be calculated on frontend
+                      buy_decision_metrics: {
+                        confidence: 0,
+                        reasoning: 'Trade from Alpaca (not logged in system)'
+                      },
+                      strategy: strategy,
+                      account_type: accountType as 'paper' | 'live',
+                      trade_pair_id: crypto.randomUUID()
+                    })
+                  }
+                }
+              } catch (accountError) {
+                console.error(`Error fetching Alpaca positions for ${accountType} account:`, accountError)
+                // Continue with other account types
               }
             }
           }
@@ -217,6 +257,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       } catch (error) {
         console.error('Error fetching Alpaca positions:', error)
         // Continue with data from database only
+      }
+      
+      // For any trades that still have current_price == buy_price, log a warning
+      for (const trade of currentTrades) {
+        if (Math.abs(trade.current_price - trade.buy_price) < 0.01) {
+          console.warn(`⚠️  Trade ${trade.symbol} has current_price (${trade.current_price}) equal to buy_price (${trade.buy_price}) - may not have been updated from Alpaca`)
+        }
       }
     }
 
