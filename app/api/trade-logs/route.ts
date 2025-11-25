@@ -133,13 +133,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Fetch current/open trades from multiple sources
     if (view === 'current' || view === 'all' || !view) {
+      console.log(`🚀 [TRADE-LOGS] Starting fetch for view=${view || 'all'}, userId=${userId}`)
+      
       // Get from trade_logs table
       const { data: currentData, error: currentError } = await supabase.rpc('get_current_trades', {
         user_uuid: userId
       })
 
+      if (currentError) {
+        console.error(`❌ [TRADE-LOGS] Error fetching current trades:`, currentError)
+      }
+
       if (!currentError && currentData) {
         currentTrades = currentData
+        console.log(`✅ [TRADE-LOGS] Found ${currentTrades.length} current trades from database`)
+      } else {
+        console.warn(`⚠️  [TRADE-LOGS] No current trades found or error occurred`)
       }
 
       // Helper function to fetch quote for a trade
@@ -358,16 +367,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     })
                   }
                 }
-            } catch (accountError) {
-              console.error(`Error fetching Alpaca positions for ${accountType} account:`, accountError)
-              // Continue with other account types
+              } catch (accountError: any) {
+                console.error(`❌ [TRADE-LOGS] Error fetching Alpaca positions for ${accountType} account:`, accountError?.message || accountError)
+                // Continue with other account types
+              }
+            } else {
+              console.warn(`⚠️  [TRADE-LOGS] Skipping ${accountType} - no API keys`)
             }
           }
+        } catch (error: any) {
+          console.error(`❌ [TRADE-LOGS] Error in main Alpaca fetch block:`, error?.message || error)
+          // Continue with data from database only
         }
-      } catch (error) {
-        console.error('Error fetching Alpaca positions:', error)
-        // Continue with data from database only
-      }
       
       // For any trades that still have current_price == buy_price, try to fetch latest quote as fallback
       const tradesNeedingUpdate = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) < 0.01)
@@ -412,6 +423,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }
       } else {
         console.log(`✅ [TRADE-LOGS] All ${currentTrades.length} trades have updated prices`)
+      }
+      
+      // Summary log
+      const updatedCount = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) > 0.01).length
+      const unchangedCount = currentTrades.length - updatedCount
+      console.log(`📊 [TRADE-LOGS] SUMMARY: ${updatedCount} trades updated, ${unchangedCount} trades unchanged`)
+      if (unchangedCount > 0) {
+        const unchanged = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) < 0.01)
+        console.log(`⚠️  [TRADE-LOGS] Unchanged trades: ${unchanged.map(t => `${t.symbol}(${t.current_price})`).join(', ')}`)
       }
     }
 
