@@ -240,6 +240,37 @@ export default function PaperTradingPage() {
     }).format(value)
   }
 
+  const formatDuration = (duration: string) => {
+    // Parse PostgreSQL interval format (can be HH:MM:SS or days HH:MM:SS format)
+    // First try to match days if present (PostgreSQL interval format like "3 days 01:30:00")
+    const daysMatch = duration.match(/(\d+)\s+days?/i)
+    const days = daysMatch ? parseInt(daysMatch[1]) : 0
+    
+    // Then match the time portion (HH:MM:SS)
+    const timeMatch = duration.match(/(\d+):(\d+):(\d+)/)
+    if (!timeMatch) return duration
+    
+    const hours = parseInt(timeMatch[1])
+    const minutes = parseInt(timeMatch[2])
+    
+    // Calculate total hours including days
+    const totalHours = days * 24 + hours
+    
+    if (totalHours >= 24) {
+      const totalDays = Math.floor(totalHours / 24)
+      const remainingHours = totalHours % 24
+      if (remainingHours > 0) {
+        return `${totalDays}d ${remainingHours}h`
+      } else {
+        return `${totalDays}d`
+      }
+    } else if (totalHours > 0) {
+      return `${totalHours}h ${minutes}m`
+    } else {
+      return `${minutes}m`
+    }
+  }
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString()
   }
@@ -433,7 +464,7 @@ export default function PaperTradingPage() {
                           <Activity className="h-3 w-3" />
                           Holding Time
                         </div>
-                        <div className="font-semibold text-white">{position.holding_duration}</div>
+                        <div className="font-semibold text-white">{formatDuration(position.holding_duration)}</div>
                       </div>
                     </div>
 

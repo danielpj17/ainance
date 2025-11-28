@@ -11,6 +11,7 @@ export interface UserSettings {
   take_profit: number
   stop_loss: number
   confidence_threshold?: number
+  max_exposure?: number  // Max total exposure % (default 90)
 }
 
 export interface SettingsResponse {
@@ -56,7 +57,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
       daily_loss_limit: -2,
       take_profit: 0.5,
       stop_loss: 0.3,
-      confidence_threshold: 0.55
+      confidence_threshold: 0.55,
+      max_exposure: 90
     }
 
     return NextResponse.json({
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     }
 
     const body = await req.json()
-    const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold } = body
+    const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold, max_exposure } = body
 
     // Validate input
     const validationError = validateSettings({
@@ -98,7 +100,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
       daily_loss_limit,
       take_profit,
       stop_loss,
-      confidence_threshold
+      confidence_threshold,
+      max_exposure
     })
 
     if (validationError) {
@@ -120,6 +123,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     // Add confidence_threshold if provided
     if (confidence_threshold !== undefined) {
       settingsData.confidence_threshold = Number(confidence_threshold)
+    }
+    
+    // Add max_exposure if provided
+    if (max_exposure !== undefined) {
+      settingsData.max_exposure = Number(max_exposure)
     }
 
     // Upsert settings (insert or update)
@@ -152,7 +160,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
         daily_loss_limit: data.daily_loss_limit,
         take_profit: data.take_profit,
         stop_loss: data.stop_loss,
-        confidence_threshold: data.confidence_threshold ?? 0.55
+        confidence_threshold: data.confidence_threshold ?? 0.55,
+        max_exposure: data.max_exposure ?? 90
       }
     })
 
@@ -164,7 +173,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
 
 // Validation function
 function validateSettings(settings: any): string | null {
-  const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold } = settings
+  const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold, max_exposure } = settings
 
   // Validate strategy
   if (!strategy || !['cash', '25k_plus'].includes(strategy)) {
@@ -202,6 +211,13 @@ function validateSettings(settings: any): string | null {
   if (confidence_threshold !== undefined && confidence_threshold !== null) {
     if (confidence_threshold < 0 || confidence_threshold > 1) {
       return 'Confidence threshold must be between 0.0 and 1.0 (0% to 100%)'
+    }
+  }
+
+  // Validate max_exposure if provided
+  if (max_exposure !== undefined && max_exposure !== null) {
+    if (max_exposure < 50 || max_exposure > 100) {
+      return 'Max exposure must be between 50 and 100 (50% to 100%)'
     }
   }
 

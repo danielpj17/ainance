@@ -95,19 +95,31 @@ export default function TradeLogsPage() {
   }
 
   const formatDuration = (duration: string) => {
-    // Parse PostgreSQL interval format
-    const match = duration.match(/(\d+):(\d+):(\d+)/)
-    if (!match) return duration
+    // Parse PostgreSQL interval format (can be HH:MM:SS or days HH:MM:SS format)
+    // First try to match days if present (PostgreSQL interval format like "3 days 01:30:00")
+    const daysMatch = duration.match(/(\d+)\s+days?/i)
+    const days = daysMatch ? parseInt(daysMatch[1]) : 0
     
-    const hours = parseInt(match[1])
-    const minutes = parseInt(match[2])
+    // Then match the time portion (HH:MM:SS)
+    const timeMatch = duration.match(/(\d+):(\d+):(\d+)/)
+    if (!timeMatch) return duration
     
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24)
-      const remainingHours = hours % 24
-      return `${days}d ${remainingHours}h`
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m`
+    const hours = parseInt(timeMatch[1])
+    const minutes = parseInt(timeMatch[2])
+    
+    // Calculate total hours including days
+    const totalHours = days * 24 + hours
+    
+    if (totalHours >= 24) {
+      const totalDays = Math.floor(totalHours / 24)
+      const remainingHours = totalHours % 24
+      if (remainingHours > 0) {
+        return `${totalDays}d ${remainingHours}h`
+      } else {
+        return `${totalDays}d`
+      }
+    } else if (totalHours > 0) {
+      return `${totalHours}h ${minutes}m`
     } else {
       return `${minutes}m`
     }
@@ -437,6 +449,123 @@ export default function TradeLogsPage() {
                     </div>
                   </div>
 
+                  {/* Technical Indicators */}
+                  {selectedTrade.buy_decision_metrics?.indicators && Object.keys(selectedTrade.buy_decision_metrics.indicators).length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-2">Technical Indicators</div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        {selectedTrade.buy_decision_metrics.indicators.rsi !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">RSI</div>
+                            <div className={`font-bold ${
+                              selectedTrade.buy_decision_metrics.indicators.rsi > 70 
+                                ? 'text-red-400' 
+                                : selectedTrade.buy_decision_metrics.indicators.rsi < 30 
+                                  ? 'text-green-400' 
+                                  : 'text-white'
+                            }`}>
+                              {selectedTrade.buy_decision_metrics.indicators.rsi.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedTrade.buy_decision_metrics.indicators.rsi > 70 ? 'Overbought' : 
+                               selectedTrade.buy_decision_metrics.indicators.rsi < 30 ? 'Oversold' : 'Neutral'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrade.buy_decision_metrics.indicators.macd !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">MACD</div>
+                            <div className={`font-bold ${
+                              selectedTrade.buy_decision_metrics.indicators.macd > 0 
+                                ? 'text-green-400' 
+                                : 'text-red-400'
+                            }`}>
+                              {selectedTrade.buy_decision_metrics.indicators.macd.toFixed(4)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedTrade.buy_decision_metrics.indicators.macd > 0 ? 'Bullish' : 'Bearish'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrade.buy_decision_metrics.indicators.stochastic !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">Stochastic</div>
+                            <div className={`font-bold ${
+                              selectedTrade.buy_decision_metrics.indicators.stochastic > 80 
+                                ? 'text-red-400' 
+                                : selectedTrade.buy_decision_metrics.indicators.stochastic < 20 
+                                  ? 'text-green-400' 
+                                  : 'text-white'
+                            }`}>
+                              {selectedTrade.buy_decision_metrics.indicators.stochastic.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedTrade.buy_decision_metrics.indicators.stochastic > 80 ? 'Overbought' : 
+                               selectedTrade.buy_decision_metrics.indicators.stochastic < 20 ? 'Oversold' : 'Neutral'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrade.buy_decision_metrics.indicators.bb_position !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">BB Position</div>
+                            <div className={`font-bold ${
+                              selectedTrade.buy_decision_metrics.indicators.bb_position > 0.9 
+                                ? 'text-red-400' 
+                                : selectedTrade.buy_decision_metrics.indicators.bb_position < 0.1 
+                                  ? 'text-green-400' 
+                                  : 'text-white'
+                            }`}>
+                              {(selectedTrade.buy_decision_metrics.indicators.bb_position * 100).toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedTrade.buy_decision_metrics.indicators.bb_position > 0.9 ? 'Upper Band' : 
+                               selectedTrade.buy_decision_metrics.indicators.bb_position < 0.1 ? 'Lower Band' : 'Mid Range'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedTrade.buy_decision_metrics.indicators.volume_ratio !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">Volume Ratio</div>
+                            <div className={`font-bold ${
+                              selectedTrade.buy_decision_metrics.indicators.volume_ratio > 2 
+                                ? 'text-green-400' 
+                                : selectedTrade.buy_decision_metrics.indicators.volume_ratio < 0.5 
+                                  ? 'text-yellow-400' 
+                                  : 'text-white'
+                            }`}>
+                              {selectedTrade.buy_decision_metrics.indicators.volume_ratio.toFixed(2)}x
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedTrade.buy_decision_metrics.indicators.volume_ratio > 2 ? 'High Volume' : 
+                               selectedTrade.buy_decision_metrics.indicators.volume_ratio < 0.5 ? 'Low Volume' : 'Normal'}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Model Probabilities */}
+                  {selectedTrade.buy_decision_metrics?.probabilities && Object.keys(selectedTrade.buy_decision_metrics.probabilities).length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-2">ML Model Probabilities</div>
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        {Object.entries(selectedTrade.buy_decision_metrics.probabilities).map(([action, prob]: [string, any]) => (
+                          <div key={action} className="bg-[#1a1d2e] p-2 rounded border border-gray-700 text-center">
+                            <div className="text-gray-400 text-xs mb-1 capitalize">{action}</div>
+                            <div className={`font-bold ${
+                              action === 'buy' ? 'text-green-400' : 
+                              action === 'sell' ? 'text-red-400' : 
+                              'text-gray-400'
+                            }`}>
+                              {(prob * 100).toFixed(1)}%
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div className="text-center">
                       <div className="text-gray-500 mb-1">News Sentiment</div>
@@ -449,6 +578,11 @@ export default function TradeLogsPage() {
                       }`}>
                         {((selectedTrade.buy_decision_metrics?.news_sentiment || 0) * 100).toFixed(1)}%
                       </div>
+                      {selectedTrade.buy_decision_metrics?.sentiment_boost !== undefined && selectedTrade.buy_decision_metrics.sentiment_boost > 0 && (
+                        <div className="text-xs text-blue-400 mt-1">
+                          +{((selectedTrade.buy_decision_metrics.sentiment_boost) * 100).toFixed(1)}% boost
+                        </div>
+                      )}
                     </div>
                     <div className="text-center">
                       <div className="text-gray-500 mb-1">Market Risk</div>
@@ -486,6 +620,37 @@ export default function TradeLogsPage() {
                 </div>
               </div>
 
+              {/* Buy vs Sell Confidence Comparison (for completed trades) */}
+              {'sell_decision_metrics' in selectedTrade && selectedTrade.sell_decision_metrics && (
+                <div className="mb-6 p-4 bg-gradient-to-r from-green-500/10 to-red-500/10 rounded-lg border border-gray-700">
+                  <h3 className="text-lg font-semibold text-white mb-3">Confidence Comparison</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-[#1a1d2e] p-3 rounded border border-blue-500/30">
+                      <div className="text-gray-400 text-xs mb-1">Buy Confidence</div>
+                      <div className="text-2xl font-bold text-blue-400">
+                        {((selectedTrade.buy_decision_metrics?.confidence || 0) * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">When position was opened</div>
+                    </div>
+                    <div className="bg-[#1a1d2e] p-3 rounded border border-purple-500/30">
+                      <div className="text-gray-400 text-xs mb-1">Sell Confidence</div>
+                      <div className="text-2xl font-bold text-purple-400">
+                        {((selectedTrade.sell_decision_metrics.confidence || 0) * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">When position was closed</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-gray-700">
+                    <div className="text-xs text-gray-400">
+                      <strong className="text-white">Note:</strong> Buy and sell confidences are independent evaluations. 
+                      A higher sell confidence means the ML model detected favorable conditions to exit at that moment, 
+                      not that the original buy was better. The model evaluates current market conditions (technical indicators, 
+                      momentum, volume) to determine the best time to sell, regardless of the original buy confidence.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Sell Decision Metrics (only for completed trades) */}
               {'sell_decision_metrics' in selectedTrade && selectedTrade.sell_decision_metrics && (
                 <div>
@@ -516,6 +681,123 @@ export default function TradeLogsPage() {
                       </div>
                     </div>
 
+                    {/* Technical Indicators */}
+                    {selectedTrade.sell_decision_metrics.indicators && Object.keys(selectedTrade.sell_decision_metrics.indicators).length > 0 && (
+                      <div className="mb-4">
+                        <div className="text-gray-500 text-sm mb-2">Technical Indicators</div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                          {selectedTrade.sell_decision_metrics.indicators.rsi !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">RSI</div>
+                              <div className={`font-bold ${
+                                selectedTrade.sell_decision_metrics.indicators.rsi > 70 
+                                  ? 'text-red-400' 
+                                  : selectedTrade.sell_decision_metrics.indicators.rsi < 30 
+                                    ? 'text-green-400' 
+                                    : 'text-white'
+                              }`}>
+                                {selectedTrade.sell_decision_metrics.indicators.rsi.toFixed(2)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {selectedTrade.sell_decision_metrics.indicators.rsi > 70 ? 'Overbought' : 
+                                 selectedTrade.sell_decision_metrics.indicators.rsi < 30 ? 'Oversold' : 'Neutral'}
+                              </div>
+                            </div>
+                          )}
+                          {selectedTrade.sell_decision_metrics.indicators.macd !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">MACD</div>
+                              <div className={`font-bold ${
+                                selectedTrade.sell_decision_metrics.indicators.macd > 0 
+                                  ? 'text-green-400' 
+                                  : 'text-red-400'
+                              }`}>
+                                {selectedTrade.sell_decision_metrics.indicators.macd.toFixed(4)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {selectedTrade.sell_decision_metrics.indicators.macd > 0 ? 'Bullish' : 'Bearish'}
+                              </div>
+                            </div>
+                          )}
+                          {selectedTrade.sell_decision_metrics.indicators.stochastic !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">Stochastic</div>
+                              <div className={`font-bold ${
+                                selectedTrade.sell_decision_metrics.indicators.stochastic > 80 
+                                  ? 'text-red-400' 
+                                  : selectedTrade.sell_decision_metrics.indicators.stochastic < 20 
+                                    ? 'text-green-400' 
+                                    : 'text-white'
+                              }`}>
+                                {selectedTrade.sell_decision_metrics.indicators.stochastic.toFixed(2)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {selectedTrade.sell_decision_metrics.indicators.stochastic > 80 ? 'Overbought' : 
+                                 selectedTrade.sell_decision_metrics.indicators.stochastic < 20 ? 'Oversold' : 'Neutral'}
+                              </div>
+                            </div>
+                          )}
+                          {selectedTrade.sell_decision_metrics.indicators.bb_position !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">BB Position</div>
+                              <div className={`font-bold ${
+                                selectedTrade.sell_decision_metrics.indicators.bb_position > 0.9 
+                                  ? 'text-red-400' 
+                                  : selectedTrade.sell_decision_metrics.indicators.bb_position < 0.1 
+                                    ? 'text-green-400' 
+                                    : 'text-white'
+                              }`}>
+                                {(selectedTrade.sell_decision_metrics.indicators.bb_position * 100).toFixed(1)}%
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {selectedTrade.sell_decision_metrics.indicators.bb_position > 0.9 ? 'Upper Band' : 
+                                 selectedTrade.sell_decision_metrics.indicators.bb_position < 0.1 ? 'Lower Band' : 'Mid Range'}
+                              </div>
+                            </div>
+                          )}
+                          {selectedTrade.sell_decision_metrics.indicators.volume_ratio !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">Volume Ratio</div>
+                              <div className={`font-bold ${
+                                selectedTrade.sell_decision_metrics.indicators.volume_ratio > 2 
+                                  ? 'text-green-400' 
+                                  : selectedTrade.sell_decision_metrics.indicators.volume_ratio < 0.5 
+                                    ? 'text-yellow-400' 
+                                    : 'text-white'
+                              }`}>
+                                {selectedTrade.sell_decision_metrics.indicators.volume_ratio.toFixed(2)}x
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {selectedTrade.sell_decision_metrics.indicators.volume_ratio > 2 ? 'High Volume' : 
+                                 selectedTrade.sell_decision_metrics.indicators.volume_ratio < 0.5 ? 'Low Volume' : 'Normal'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Model Probabilities */}
+                    {selectedTrade.sell_decision_metrics.probabilities && Object.keys(selectedTrade.sell_decision_metrics.probabilities).length > 0 && (
+                      <div className="mb-4">
+                        <div className="text-gray-500 text-sm mb-2">ML Model Probabilities</div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          {Object.entries(selectedTrade.sell_decision_metrics.probabilities).map(([action, prob]: [string, any]) => (
+                            <div key={action} className="bg-[#1a1d2e] p-2 rounded border border-gray-700 text-center">
+                              <div className="text-gray-400 text-xs mb-1 capitalize">{action}</div>
+                              <div className={`font-bold ${
+                                action === 'buy' ? 'text-green-400' : 
+                                action === 'sell' ? 'text-red-400' : 
+                                'text-gray-400'
+                              }`}>
+                                {(prob * 100).toFixed(1)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div className="text-center">
                         <div className="text-gray-500 mb-1">News Sentiment</div>
@@ -528,6 +810,11 @@ export default function TradeLogsPage() {
                         }`}>
                           {((selectedTrade.sell_decision_metrics.news_sentiment || 0) * 100).toFixed(1)}%
                         </div>
+                        {selectedTrade.sell_decision_metrics.sentiment_boost !== undefined && selectedTrade.sell_decision_metrics.sentiment_boost > 0 && (
+                          <div className="text-xs text-purple-400 mt-1">
+                            +{((selectedTrade.sell_decision_metrics.sentiment_boost) * 100).toFixed(1)}% boost
+                          </div>
+                        )}
                       </div>
                       <div className="text-center">
                         <div className="text-gray-500 mb-1">Market Risk</div>
@@ -562,6 +849,45 @@ export default function TradeLogsPage() {
                         </ul>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Trade Outcome (for completed trades) */}
+              {'sell_price' in selectedTrade && selectedTrade.sell_price && (
+                <div className="mt-6 p-4 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-lg border border-blue-500/30">
+                  <h3 className="text-lg font-semibold text-white mb-3">Trade Outcome</h3>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Buy Price</div>
+                      <div className="text-xl font-bold text-white">{formatCurrency(selectedTrade.buy_price)}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Sell Price</div>
+                      <div className="text-xl font-bold text-white">{formatCurrency(selectedTrade.sell_price)}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Profit/Loss</div>
+                      <div className={`text-2xl font-bold ${selectedTrade.profit_loss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatCurrency(selectedTrade.profit_loss)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Return %</div>
+                      <div className={`text-2xl font-bold ${selectedTrade.profit_loss_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {selectedTrade.profit_loss_percent >= 0 ? '+' : ''}{selectedTrade.profit_loss_percent.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-blue-500/30">
+                    <div className="text-xs text-gray-400">
+                      <strong className="text-white">Why did it sell?</strong> The ML model evaluates current market conditions independently for buy and sell decisions. 
+                      A sell confidence of {((selectedTrade.sell_decision_metrics?.confidence || 0) * 100).toFixed(1)}% means the model detected favorable conditions to exit the position at that moment, 
+                      {selectedTrade.profit_loss >= 0 
+                        ? ` resulting in a ${selectedTrade.profit_loss_percent.toFixed(2)}% gain.` 
+                        : ` resulting in a ${Math.abs(selectedTrade.profit_loss_percent).toFixed(2)}% loss.`}
+                      {' '}The sell decision is based on current technical indicators, not a comparison to the original buy confidence.
+                    </div>
                   </div>
                 </div>
               )}

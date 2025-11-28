@@ -1086,7 +1086,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         reasoning: s.reasoning || `ML ${s.action} signal`,
         news_sentiment: sentiment?.score || 0,
         news_headlines: sentiment?.headlines || [],
-        is_held: currentHoldings.includes(s.symbol)
+        is_held: currentHoldings.includes(s.symbol),
+        indicators: s.indicators || {},
+        probabilities: s.probabilities || {}
       }
     })
 
@@ -1212,14 +1214,32 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log('═══════════════════════════════════════════════════════════')
     
     console.log(`💰 Available Buying Power: $${availableCash.toFixed(2)}`)
-    const allocatedBuySignals = allocateCapital(buySignals, availableCash, marketRisk)
+    const allocationResult = await allocateCapital(buySignals, availableCash, marketRisk, positions, config, supabase, userId)
+    const allocatedBuySignals = allocationResult.signals
+    const forcedSells = allocationResult.forcedSells || []
+    
+    // Process forced sells first (before regular sells)
+    if (forcedSells.length > 0) {
+      console.log('═══════════════════════════════════════════════════════════')
+      console.log(`🔄 PROCESSING FORCED SELLS: ${forcedSells.length} position(s)`)
+      console.log('═══════════════════════════════════════════════════════════')
+      
+      for (const forcedSell of forcedSells) {
+        console.log(`📉 FORCED SELL ${forcedSell.symbol} @ $${forcedSell.price.toFixed(2)}`)
+        console.log(`   Reason: ${forcedSell.reasoning}`)
+        console.log(`   Making room for: ${forcedSell.replacement_symbol} (${(forcedSell.replacement_confidence * 100).toFixed(1)}% confidence)`)
+        
+        // Add to sellSignals (will be processed before buys)
+        sellSignals.push(forcedSell)
+      }
+    }
     
     if (buySignals.length > 0 && allocatedBuySignals.length < buySignals.length) {
       const skipped = buySignals.length - allocatedBuySignals.length
       console.log(`⚠️  ${skipped} BUY signal(s) skipped due to capital allocation limits`)
     }
     
-    // Combine all signals: SELLs (already configured) + allocated BUYs
+    // Combine all signals: SELLs (including forced) + allocated BUYs
     signals = [...sellSignals, ...allocatedBuySignals]
 
     console.log('═══════════════════════════════════════════════════════════')
@@ -1407,55 +1427,145 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
 }
 
 /**
- * Intelligent capital allocation based on confidence and market risk
+ * Intelligent capital allocation with forced sell for high-confidence opportunities
  */
-function allocateCapital(signals: any[], availableCash: number, marketRisk: number): any[] {
-  console.log(`💰 Allocating capital: $${availableCash.toFixed(2)} available`)
-  
-  // In high risk markets, reduce position sizes
-  const riskAdjustment = 1 - (marketRisk * 0.5)
-  const maxPositionPct = 0.15 * riskAdjustment // Max 15% per position, adjusted for risk
-  const maxTotalExposure = 0.7 * riskAdjustment // Max 70% deployed, adjusted for risk
-  
-  console.log(`   Risk Adjustment: ${(riskAdjustment * 100).toFixed(0)}%`)
-  console.log(`   Max Per Position: ${(maxPositionPct * 100).toFixed(1)}%`)
-  console.log(`   Max Total Exposure: ${(maxTotalExposure * 100).toFixed(1)}%`)
-  
-  const maxPositionSize = availableCash * maxPositionPct
-  const maxTotalCash = availableCash * maxTotalExposure
-
-  let totalAllocated = 0
-  const allocatedSignals = []
-
-  for (const signal of signals) {
-    // Calculate position size based on adjusted confidence
-    // Higher confidence = larger position
-    const confidenceWeight = signal.adjusted_confidence || signal.confidence
-    const baseAllocation = maxPositionSize * (confidenceWeight / 1.0)
-    const positionValue = Math.min(baseAllocation, maxPositionSize)
-
-    if (totalAllocated + positionValue > maxTotalCash) {
-      console.log(`   ⚠️  Capital limit reached at ${totalAllocated.toFixed(2)}, skipping ${signal.symbol}`)
-      break
-    }
-
-    const shares = Math.floor(positionValue / signal.price)
-    const actualValue = shares * signal.price
+function allocateCapital(
+  signals: any[], 
+  availableCash: number, 
+  marketRisk: number,
+  currentPositions: any[],  // Current positions for forced sell comparison
+  config: BotConfig,  // To get max_exposure setting
+  supabase: any,  // To fetch position confidence from trade_logs
+  userId: string  // To fetch position confidence from trade_logs
+): Promise<{ signals: any[], forcedSells: any[] }> {
+  return new Promise(async (resolve) => {
+    console.log(`💰 Allocating capital: $${availableCash.toFixed(2)} available`)
     
-    if (shares > 0 && actualValue > 0) {
-      allocatedSignals.push({
-        ...signal,
-        allocated_capital: actualValue,
-        shares,
-        allocation_pct: (actualValue / availableCash) * 100
-      })
-      totalAllocated += actualValue
-    }
-  }
+    // Get max exposure from settings (default 90%)
+    const maxExposurePct = (config.settings.max_exposure ?? 90) / 100
+    
+    // In high risk markets, reduce position sizes
+    const riskAdjustment = 1 - (marketRisk * 0.5)
+    const maxPositionPct = 0.15 * riskAdjustment // Max 15% per position, adjusted for risk
+    const maxTotalExposure = maxExposurePct * riskAdjustment // Use configurable max exposure
+    
+    console.log(`   Risk Adjustment: ${(riskAdjustment * 100).toFixed(0)}%`)
+    console.log(`   Max Per Position: ${(maxPositionPct * 100).toFixed(1)}%`)
+    console.log(`   Max Total Exposure: ${(maxTotalExposure * 100).toFixed(1)}% (configurable, default 90%)`)
+    
+    const maxPositionSize = availableCash * maxPositionPct
+    const maxTotalCash = availableCash * maxTotalExposure
 
-  console.log(`   ✅ Allocated $${totalAllocated.toFixed(2)} (${((totalAllocated / availableCash) * 100).toFixed(1)}%) across ${allocatedSignals.length} positions`)
-  
-  return allocatedSignals
+    // Fetch confidence for current positions from trade_logs
+    const positionConfidences: { [symbol: string]: number } = {}
+    if (currentPositions.length > 0) {
+      const positionSymbols = currentPositions.map(p => p.symbol)
+      const { data: tradeLogs } = await supabase
+        .from('trade_logs')
+        .select('symbol, buy_decision_metrics')
+        .eq('user_id', userId)
+        .eq('status', 'open')
+        .eq('action', 'buy')
+        .in('symbol', positionSymbols)
+      
+      if (tradeLogs) {
+        for (const log of tradeLogs) {
+          const confidence = log.buy_decision_metrics?.adjusted_confidence || log.buy_decision_metrics?.confidence || 0.5
+          positionConfidences[log.symbol] = confidence
+        }
+      }
+    }
+
+    let totalAllocated = 0
+    const allocatedSignals = []
+    const forcedSells: any[] = []
+
+    for (const signal of signals) {
+      const confidenceWeight = signal.adjusted_confidence || signal.confidence
+      const baseAllocation = maxPositionSize * (confidenceWeight / 1.0)
+      const positionValue = Math.min(baseAllocation, maxPositionSize)
+
+      if (totalAllocated + positionValue > maxTotalCash) {
+        // Check if this is a high-confidence opportunity worth forcing a sell
+        if (confidenceWeight > 0.75) {
+          console.log(`   🔥 High-confidence opportunity detected: ${signal.symbol} at ${(confidenceWeight * 100).toFixed(1)}%`)
+          
+          // Find lowest confidence position that could be replaced
+          let replaceablePosition: any | null = null
+          let lowestConfidence = 1.0
+          
+          for (const position of currentPositions) {
+            const positionConfidence = positionConfidences[position.symbol] || 0.5
+            
+            // Criteria: position confidence < 65% AND new signal is 15%+ higher
+            if (positionConfidence < 0.65 && (confidenceWeight - positionConfidence) >= 0.15) {
+              if (positionConfidence < lowestConfidence) {
+                lowestConfidence = positionConfidence
+                replaceablePosition = position
+              }
+            }
+          }
+          
+          if (replaceablePosition) {
+            const replaceableConfidence = positionConfidences[replaceablePosition.symbol] || 0.5
+            console.log(`   💡 Forcing sell of ${replaceablePosition.symbol} (${(replaceableConfidence * 100).toFixed(1)}%) to make room for ${signal.symbol} (${(confidenceWeight * 100).toFixed(1)}%)`)
+            
+            // Get position details for forced sell
+            const positionValue = Math.abs(parseFloat(replaceablePosition.market_value || replaceablePosition.cost_basis || 0))
+            const positionQty = Math.abs(parseInt(replaceablePosition.qty || 0))
+            const positionPrice = parseFloat(replaceablePosition.current_price || replaceablePosition.market_value / positionQty || 0)
+            
+            forcedSells.push({
+              symbol: replaceablePosition.symbol,
+              confidence: replaceableConfidence,
+              adjusted_confidence: replaceableConfidence,
+              price: positionPrice,
+              reasoning: `Forced sell to make room for higher-confidence opportunity (${signal.symbol} at ${(confidenceWeight * 100).toFixed(1)}%)`,
+              shares: positionQty,
+              allocated_capital: positionValue,
+              is_forced_sell: true,
+              replacement_symbol: signal.symbol,
+              replacement_confidence: confidenceWeight
+            })
+            
+            // Free up capital from the position we're going to sell
+            totalAllocated = Math.max(0, totalAllocated - positionValue)
+            console.log(`   💰 Freed $${positionValue.toFixed(2)} from ${replaceablePosition.symbol}, new available: $${(maxTotalCash - totalAllocated).toFixed(2)}`)
+          } else {
+            console.log(`   ⚠️  Capital limit reached, no suitable position to replace for ${signal.symbol}`)
+            break
+          }
+        } else {
+          console.log(`   ⚠️  Capital limit reached at ${totalAllocated.toFixed(2)}, skipping ${signal.symbol} (confidence: ${(confidenceWeight * 100).toFixed(1)}%)`)
+          break
+        }
+      }
+
+      const shares = Math.floor(positionValue / signal.price)
+      const actualValue = shares * signal.price
+      
+      if (shares > 0 && actualValue > 0) {
+        allocatedSignals.push({
+          ...signal,
+          allocated_capital: actualValue,
+          shares,
+          allocation_pct: (actualValue / availableCash) * 100
+        })
+        totalAllocated += actualValue
+      }
+    }
+
+    console.log(`   ✅ Allocated $${totalAllocated.toFixed(2)} (${((totalAllocated / availableCash) * 100).toFixed(1)}%) across ${allocatedSignals.length} positions`)
+    
+    if (forcedSells.length > 0) {
+      console.log(`   🔄 Forced sells triggered: ${forcedSells.map(p => `${p.symbol} (${(p.confidence * 100).toFixed(1)}%)`).join(', ')}`)
+    }
+    
+    resolve({
+      signals: allocatedSignals,
+      forcedSells: forcedSells
+    })
+  })
 }
 
 // Close all open positions (used during last 30 minutes of trading)
@@ -1657,7 +1767,11 @@ async function executeTradeSignal(
       price: signal.price,
       timestamp: new Date().toISOString(),
       alpaca_order_id: order.id,
-      order_status: order.status
+      order_status: order.status,
+      indicators: signal.indicators || {},
+      probabilities: signal.probabilities || {},
+      model_version: '2.0',
+      sentiment_boost: signal.adjusted_confidence - signal.confidence
     }
 
     if (signal.action === 'buy') {

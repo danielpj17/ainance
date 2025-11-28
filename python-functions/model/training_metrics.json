@@ -1,0 +1,60 @@
+{
+  "train_accuracy": 0.7644363762102351,
+  "test_accuracy": 0.607192254495159,
+  "cv_accuracy_mean": 0.6110823710923731,
+  "cv_accuracy_std": 0.0032415137961972714,
+  "feature_importances": [
+    {
+      "feature": "volatility_20",
+      "importance": 0.19603001070855852
+    },
+    {
+      "feature": "bb_width",
+      "importance": 0.12657139759659025
+    },
+    {
+      "feature": "price_change_1d",
+      "importance": 0.086531026862041
+    },
+    {
+      "feature": "volume_ratio",
+      "importance": 0.08545556241764367
+    },
+    {
+      "feature": "price_change_5d",
+      "importance": 0.07787825488625313
+    },
+    {
+      "feature": "price_change_10d",
+      "importance": 0.07717110582604456
+    },
+    {
+      "feature": "stochastic",
+      "importance": 0.0716761923975872
+    },
+    {
+      "feature": "macd",
+      "importance": 0.07043219514720916
+    },
+    {
+      "feature": "rsi",
+      "importance": 0.0692932626659979
+    },
+    {
+      "feature": "macd_histogram",
+      "importance": 0.06804168247415243
+    },
+    {
+      "feature": "bb_position",
+      "importance": 0.06488611009694578
+    },
+    {
+      "feature": "ema_trend",
+      "importance": 0.006033198920976367
+    },
+    {
+      "feature": "news_sentiment",
+      "importance": 0.0
+    }
+  ]
+}

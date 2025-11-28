@@ -57,6 +57,7 @@ export interface TradingSettings {
   daily_loss_limit: number
   take_profit: number
   stop_loss: number
+  max_exposure?: number  // Max total exposure % (default 90)
   cash_balance?: number
   buying_power?: number
 }

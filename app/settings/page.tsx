@@ -61,26 +61,40 @@ export default function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="bg-yellow-50 dark:bg-yellow-950 border-2 border-yellow-400 dark:border-yellow-600 rounded-lg p-4">
-                  <p className="text-sm text-yellow-900 dark:text-yellow-100 font-semibold mb-2">
-                    ⚠️ Important: This button does NOT train a real ML model
+                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <p className="text-sm text-blue-900 dark:text-blue-100 font-semibold mb-2">
+                    ℹ️ ML Model Status
                   </p>
-                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                    The "Re-Train Model" button below only updates metadata. It does <strong>not</strong> train a real machine learning model. 
-                    The app currently uses <strong>rule-based predictions</strong> (simple if/else logic), not ML predictions.
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    The trading bot is currently using a <strong>trained Random Forest ML model</strong> (scalping_model_v2.pkl) 
+                    for all trading predictions. The model uses technical indicators, news sentiment, and market data to generate 
+                    buy/sell signals with confidence scores.
                   </p>
                 </div>
 
                 <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
                   <p className="text-sm text-green-900 dark:text-green-100 font-semibold mb-2">
-                    ✅ For Real ML Training (Required):
+                    ✅ Model Information:
                   </p>
-                  <ol className="text-sm text-green-800 dark:text-green-200 list-decimal list-inside space-y-2">
+                  <ul className="text-sm text-green-800 dark:text-green-200 list-disc list-inside space-y-1">
+                    <li><strong>Model Type:</strong> Random Forest Classifier</li>
+                    <li><strong>Model File:</strong> <code className="bg-gray-800 px-1 rounded">scalping_model_v2.pkl</code></li>
+                    <li><strong>Test Accuracy:</strong> 60.72%</li>
+                    <li><strong>Train Accuracy:</strong> 76.44%</li>
+                    <li><strong>Status:</strong> Active and in use by trading bot</li>
+                  </ul>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <p className="text-sm text-gray-900 dark:text-gray-100 font-semibold mb-2">
+                    🔄 To Re-Train the Model:
+                  </p>
+                  <ol className="text-sm text-gray-800 dark:text-gray-200 list-decimal list-inside space-y-2">
                     <li>Install Python dependencies: <code className="bg-gray-800 px-1 rounded">pip install -r python-functions/requirements.txt</code></li>
                     <li>Set environment variables: <code className="bg-gray-800 px-1 rounded">SUPABASE_URL</code> and <code className="bg-gray-800 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code></li>
                     <li>Run the training script: <code className="bg-gray-800 px-1 rounded">python python-functions/model/train_with_real_data.py</code></li>
-                    <li>This will fetch 5 years of real historical data from Alpaca, train a Random Forest model, and upload the <code className="bg-gray-800 px-1 rounded">.pkl</code> file to Supabase Storage</li>
-                    <li>Once uploaded, the app will automatically use the trained model for predictions</li>
+                    <li>This will fetch 5 years of historical data from Alpaca, train a new Random Forest model, and save it as <code className="bg-gray-800 px-1 rounded">scalping_model_v2.pkl</code></li>
+                    <li>The trading bot will automatically use the newly trained model once it's available</li>
                   </ol>
                 </div>
                 

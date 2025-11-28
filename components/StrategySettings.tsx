@@ -19,6 +19,7 @@ interface UserSettings {
   take_profit: number
   stop_loss: number
   confidence_threshold?: number
+  max_exposure?: number  // Max total exposure % (default 90)
 }
 
 interface PerformanceMetrics {
@@ -43,7 +44,8 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
     max_trade_size: 5000,
     daily_loss_limit: -2,
     take_profit: 0.5,
-    stop_loss: 0.3
+    stop_loss: 0.3,
+    max_exposure: 90  // Default 90%
   })
 
   const [loading, setLoading] = useState(false)
@@ -92,7 +94,8 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
       if (result.success && result.data) {
         setSettings({
           ...result.data,
-          confidence_threshold: result.data.confidence_threshold ?? 0.55
+          confidence_threshold: result.data.confidence_threshold ?? 0.55,
+          max_exposure: result.data.max_exposure ?? 90
         })
       }
     } catch (error) {
@@ -319,6 +322,31 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
               <p><strong>Lower threshold (0.45-0.50):</strong> More trades, higher risk</p>
               <p><strong>Higher threshold (0.55-0.70):</strong> Fewer trades, lower risk</p>
               <p><strong>Recommended:</strong> Start at 0.50 (50%) and adjust based on performance</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Max Exposure */}
+        <div className="space-y-2 border-t pt-4">
+          <Label htmlFor="max_exposure">
+            Max Total Capital Exposure ({settings.max_exposure ?? 90}%)
+          </Label>
+          <div className="space-y-2">
+            <Input
+              id="max_exposure"
+              type="number"
+              step="1"
+              min="50"
+              max="100"
+              value={settings.max_exposure ?? 90}
+              onChange={(e) => updateSetting('max_exposure', Number(e.target.value))}
+              placeholder="90"
+            />
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Maximum percentage of capital that can be deployed across all positions.</p>
+              <p><strong>Lower (70-80%):</strong> More conservative, keeps cash reserves</p>
+              <p><strong>Higher (90-95%):</strong> More aggressive, maximizes capital usage</p>
+              <p><strong>Note:</strong> High-confidence opportunities (&gt;75%) may trigger forced sells of low-confidence positions (&lt;65%) to make room.</p>
             </div>
           </div>
         </div>

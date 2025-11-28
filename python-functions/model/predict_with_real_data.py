@@ -324,33 +324,68 @@ def predict_for_symbols(symbols):
 
 
 def main():
-    """Test prediction script"""
+    """Test prediction script - supports JSON input from stdin for API calls"""
     import sys
+    import json
     
-    # Get symbols from command line or use defaults
-    if len(sys.argv) > 1:
-        symbols = sys.argv[1].split(',')
+    # Check if input is coming from stdin (API call)
+    if not sys.stdin.isatty():
+        try:
+            input_data = json.load(sys.stdin)
+            symbols = input_data.get('symbols', [])
+            if not symbols:
+                print(json.dumps({'error': 'No symbols provided'}), file=sys.stderr)
+                sys.exit(1)
+        except json.JSONDecodeError:
+            print(json.dumps({'error': 'Invalid JSON input'}), file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(json.dumps({'error': str(e)}), file=sys.stderr)
+            sys.exit(1)
     else:
-        symbols = ['AAPL', 'TSLA', 'NVDA', 'SPY']
+        # Get symbols from command line or use defaults
+        if len(sys.argv) > 1:
+            symbols = sys.argv[1].split(',')
+        else:
+            symbols = ['AAPL', 'TSLA', 'NVDA', 'SPY']
     
-    signals = predict_for_symbols(symbols)
-    
-    # Print results
-    print("\n" + "=" * 70)
-    print("TRADING SIGNALS")
-    print("=" * 70)
-    
-    for signal in signals:
-        action_emoji = {'buy': '🟢', 'sell': '🔴', 'hold': '🟡'}.get(signal['action'], '⚪')
-        print(f"\n{action_emoji} {signal['symbol']}: {signal['action'].upper()}")
-        print(f"   Price: ${signal['price']:.2f}")
-        print(f"   Confidence: {signal['confidence']:.2%}")
-        print(f"   Reasoning: {signal['reasoning']}")
-        print(f"   Indicators:")
-        for key, value in signal['indicators'].items():
-            print(f"     - {key}: {value}")
-    
-    print("\n" + "=" * 70)
+    try:
+        signals = predict_for_symbols(symbols)
+        
+        # If called from API (stdin), output JSON
+        if not sys.stdin.isatty():
+            print(json.dumps({
+                'success': True,
+                'signals': signals,
+                'count': len(signals)
+            }))
+        else:
+            # Print results for CLI usage
+            print("\n" + "=" * 70)
+            print("TRADING SIGNALS")
+            print("=" * 70)
+            
+            for signal in signals:
+                action_emoji = {'buy': '🟢', 'sell': '🔴', 'hold': '🟡'}.get(signal['action'], '⚪')
+                print(f"\n{action_emoji} {signal['symbol']}: {signal['action'].upper()}")
+                print(f"   Price: ${signal['price']:.2f}")
+                print(f"   Confidence: {signal['confidence']:.2%}")
+                print(f"   Reasoning: {signal['reasoning']}")
+                print(f"   Indicators:")
+                for key, value in signal['indicators'].items():
+                    print(f"     - {key}: {value}")
+            
+            print("\n" + "=" * 70)
+    except Exception as e:
+        error_msg = str(e)
+        if not sys.stdin.isatty():
+            print(json.dumps({
+                'success': False,
+                'error': error_msg
+            }), file=sys.stderr)
+        else:
+            print(f"\n❌ Error: {error_msg}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -617,7 +617,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               const pl = (sell.price - buy.price) * buy.qty
               const plPercent = ((sell.price - buy.price) / buy.price) * 100
               const duration = new Date(sell.trade_timestamp).getTime() - new Date(buy.trade_timestamp).getTime()
-              const durationStr = `${Math.floor(duration / 3600000)}:${Math.floor((duration % 3600000) / 60000)}:${Math.floor((duration % 60000) / 1000)}`
+              // Calculate days, hours, minutes, seconds properly
+              const totalSeconds = Math.floor(duration / 1000)
+              const days = Math.floor(totalSeconds / 86400)
+              const hours = Math.floor((totalSeconds % 86400) / 3600)
+              const minutes = Math.floor((totalSeconds % 3600) / 60)
+              const seconds = totalSeconds % 60
+              // Format as PostgreSQL interval: "X days HH:MM:SS" or "HH:MM:SS" if no days
+              const durationStr = days > 0 
+                ? `${days} day${days > 1 ? 's' : ''} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 
               // Check if this pair is already in completedTrades
               const exists = completedTrades.some(ct => 
