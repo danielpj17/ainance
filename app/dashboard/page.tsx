@@ -200,13 +200,13 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Trading Dashboard</h1>
-          <p className="text-gray-400">Welcome back! Here's your portfolio overview</p>
+          <h1 className="text-3xl font-bold mb-2 text-white drop-shadow-lg">Trading Dashboard</h1>
+          <p className="text-white/90 font-medium drop-shadow-md">Welcome back! Here's your portfolio overview</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-sm text-gray-400">Portfolio Value</p>
-            <p className="text-2xl font-bold">${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}</p>
+          <div className="text-right bg-black/30 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
+            <p className="text-sm text-white/80 font-medium">Portfolio Value</p>
+            <p className="text-2xl font-bold text-white drop-shadow-lg">${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString() : '0.00'}</p>
           </div>
           <div className="flex gap-2">
             <Badge className="bg-blue-400 hover:bg-blue-500 text-white">High</Badge>

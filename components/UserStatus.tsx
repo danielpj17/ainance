@@ -5,6 +5,16 @@ import { createClient } from '@/utils/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Sparkles, User } from 'lucide-react'
 
+// Helper function to get user initials from email
+function getInitials(email: string | null): string {
+  if (!email) return 'U'
+  const parts = email.split('@')[0].split(/[._-]/)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return email.substring(0, 2).toUpperCase()
+}
+
 export default function UserStatus() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -52,7 +62,7 @@ export default function UserStatus() {
     return (
       <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/50">
         <User className="mr-1 h-3 w-3" />
-        {userEmail || 'Signed In'}
+        {getInitials(userEmail)}
       </Badge>
     )
   }

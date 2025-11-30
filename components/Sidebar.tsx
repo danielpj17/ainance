@@ -5,6 +5,17 @@ import Link from 'next/link'
 import { Home, Activity, TrendingUp, Settings, Brain, ListTree, LogOut, FileText } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import UserStatus from '@/components/UserStatus'
+import { useEffect, useState } from 'react'
+
+// Helper function to get user initials from email
+function getInitials(email: string | null): string {
+  if (!email) return 'A'
+  const parts = email.split('@')[0].split(/[._-]/)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return email.substring(0, 2).toUpperCase()
+}
 
 const navItems = [
   { icon: Home, href: '/dashboard', label: 'Dashboard' },
@@ -19,6 +30,36 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const [userInitials, setUserInitials] = useState('A')
+  const supabase = createClient()
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+        setUserInitials(getInitials(session.user.email))
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user && user.id !== '00000000-0000-0000-0000-000000000000') {
+          setUserInitials(getInitials(user.email))
+        } else {
+          setUserInitials('A')
+        }
+      }
+    }
+
+    checkAuth()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: any, session: any) => {
+      if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+        setUserInitials(getInitials(session.user.email))
+      } else {
+        setUserInitials('A')
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [supabase])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -30,10 +71,10 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 h-full w-20 bg-[#0f1117]/70 backdrop-blur-xl border-r border-blue-300/30 flex flex-col items-center py-6 z-50">
-      {/* Logo */}
+      {/* Logo with User Initials */}
       <Link href="/dashboard" className="mb-4">
         <div className="w-12 h-12 rounded-xl border-2 border-blue-400 flex items-center justify-center shadow-lg shadow-blue-400/40 bg-transparent">
-          <span className="text-blue-400 font-bold text-xl">A</span>
+          <span className="text-blue-400 font-bold text-xl">{userInitials}</span>
         </div>
       </Link>
 

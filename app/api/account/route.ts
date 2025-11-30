@@ -3,17 +3,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
 import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client'
 import { isDemoMode } from '@/lib/demo-user'
+import { createClient as createBrowserClient } from '@supabase/supabase-js'
 
 export async function GET(req: NextRequest) {
   try {
     console.log('Account API - Starting request')
     
-    const supabase = createServerClient()
+    // Create a client that can read cookies from the request
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
+    // Get the session from cookies
+    const cookieHeader = req.headers.get('cookie') || ''
+    
+    // Create a client that can use the session from cookies
+    const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: {
+        headers: {
+          cookie: cookieHeader,
+        },
+      },
+    })
     
     // Try to get real authenticated user first, then fall back to demo
     let userId: string
     let isAuthenticated = false
     
+    // Try to get user from session (will use cookies from headers)
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
