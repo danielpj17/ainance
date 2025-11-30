@@ -1,8 +1,7 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
-import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client'
-import { isDemoMode } from '@/lib/demo-user'
+import { createServerClient, getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
+import { createAlpacaClient } from '@/lib/alpaca-client'
 
 export interface TradeLog {
   id: bigint
@@ -88,21 +87,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const supabase = await createServerClient(req, {})
     console.log('[TRADE-LOGS] Supabase client created')
     
-    // In demo mode, always use demo user ID
-    let userId: string
-    if (isDemoMode()) {
-      console.log('[TRADE-LOGS] Using demo mode')
-      userId = getDemoUserIdServer()
-    } else {
-      console.log('[TRADE-LOGS] Getting authenticated user')
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        console.error('[TRADE-LOGS] Auth error:', userError)
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-      console.log('[TRADE-LOGS] User authenticated:', userId)
-    }
+    // Get user ID from request (checks Authorization header)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
+    console.log('[TRADE-LOGS] User detected:', { userId, isDemo })
 
     const { searchParams } = new URL(req.url)
     const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics'
