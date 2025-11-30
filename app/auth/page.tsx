@@ -26,15 +26,25 @@ export default function AuthPage() {
   const handleGoogleSignIn = async () => {
     setLoading(true)
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
         },
       })
-      if (error) throw error
-    } catch (error) {
+      
+      if (error) {
+        console.error('OAuth error:', error)
+        alert(`Sign in error: ${error.message}`)
+        setLoading(false)
+        return
+      }
+      
+      // OAuth redirect will happen automatically, so we don't need to do anything else
+      // The redirect will take the user to Google, then back to /dashboard
+    } catch (error: any) {
       console.error('Error signing in:', error)
+      alert(`Failed to sign in: ${error?.message || 'Unknown error'}`)
       setLoading(false)
     }
   }

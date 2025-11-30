@@ -101,7 +101,7 @@ export const createClient = () => {
     const originalGetSession = originalAuth.getSession.bind(originalAuth)
 
     // Override getUser to check for real user first, then fall back to demo
-    client.auth.getUser = async () => {
+    const customGetUser = async () => {
       try {
         // Try to get real user first
         const { data: { user }, error } = await originalGetUser()
@@ -119,7 +119,7 @@ export const createClient = () => {
     }
 
     // Override getSession to check for real session first, then fall back to demo
-    client.auth.getSession = async () => {
+    const customGetSession = async () => {
       try {
         // Try to get real session first
         const { data: { session }, error } = await originalGetSession()
@@ -137,8 +137,12 @@ export const createClient = () => {
     }
 
     // Keep other methods but allow OAuth to work
+    // IMPORTANT: Preserve signInWithOAuth so Google sign-in works
     client.auth = {
       ...originalAuth,
+      getUser: customGetUser, // Use our custom getUser
+      getSession: customGetSession, // Use our custom getSession
+      signInWithOAuth: originalAuth.signInWithOAuth.bind(originalAuth), // Preserve OAuth for Google sign-in
       signInWithPassword: async () => ({
         data: { user: getDemoUser(), session: null },
         error: null,
