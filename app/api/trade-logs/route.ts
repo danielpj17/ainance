@@ -275,8 +275,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             console.log('[TRADE-LOGS] Processing ' + trades.length + ' trades for ' + accountType + ' account with strategy ' + strategy)
             console.log('[TRADE-LOGS] Trade symbols: ' + trades.map(t => t.symbol).join(', '))
             
-            const alpacaKeys = getAlpacaKeys(keys, accountType as 'paper' | 'live', strategy)
-            console.log('[TRADE-LOGS] getAlpacaKeys returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
+            // Get Alpaca keys for this account type (strict: no demo fallback for authenticated users)
+            const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType as 'paper' | 'live')
+            console.log('[TRADE-LOGS] getAlpacaKeysForUser returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
             
             if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
               console.warn('[TRADE-LOGS] No API keys found for ' + accountType + ' account')
@@ -483,42 +484,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               }
             }
             
-            if (keys) {
-              const strategy = trade.strategy || 'cash'
-              console.log('[TRADE-LOGS] Fallback: Got keys object')
-              console.log('[TRADE-LOGS] Fallback: Keys object keys: ' + JSON.stringify(Object.keys(keys)))
-              console.log('[TRADE-LOGS] Fallback: alpaca_paper_key=' + (keys.alpaca_paper_key ? 'SET(' + keys.alpaca_paper_key.length + ' chars)' : 'NULL/EMPTY') + ', alpaca_paper_secret=' + (keys.alpaca_paper_secret ? 'SET(' + keys.alpaca_paper_secret.length + ' chars)' : 'NULL/EMPTY'))
-              console.log('[TRADE-LOGS] Fallback: alpaca_live_key=' + (keys.alpaca_live_key ? 'SET(' + keys.alpaca_live_key.length + ' chars)' : 'NULL/EMPTY') + ', alpaca_live_secret=' + (keys.alpaca_live_secret ? 'SET(' + keys.alpaca_live_secret.length + ' chars)' : 'NULL/EMPTY'))
-              console.log('[TRADE-LOGS] Fallback: Calling getAlpacaKeys(accountType=' + trade.account_type + ', strategy=' + strategy + ')')
-              const alpacaKeys = getAlpacaKeys(keys, trade.account_type as 'paper' | 'live', strategy)
-              
-              console.log('[TRADE-LOGS] Fallback: getAlpacaKeys returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
-              
-              if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-                console.log('[TRADE-LOGS] Fallback: API keys available, creating client')
-                const alpacaClient = createAlpacaClient({
-                  apiKey: alpacaKeys.apiKey,
-                  secretKey: alpacaKeys.secretKey,
-                  baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-                  paper: alpacaKeys.paper
-                })
+            // Get Alpaca keys for this trade's account type
+            const accountType = (trade.account_type as 'paper' | 'live') || 'paper'
+            console.log('[TRADE-LOGS] Fallback: Getting keys for accountType=' + accountType)
+            const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
+            
+            console.log('[TRADE-LOGS] Fallback: getAlpacaKeysForUser returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
+            
+            if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+              console.log('[TRADE-LOGS] Fallback: API keys available, creating client')
+              const alpacaClient = createAlpacaClient({
+                apiKey: alpacaKeys.apiKey,
+                secretKey: alpacaKeys.secretKey,
+                baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+                paper: alpacaKeys.paper
+              })
                 
-                await alpacaClient.initialize()
-                const success = await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
-                if (success) {
-                  console.log('[TRADE-LOGS] Successfully updated ' + trade.symbol + ' via quote fallback')
-                } else {
-                  console.error('[TRADE-LOGS] Quote fallback failed for ' + trade.symbol)
-                }
+              await alpacaClient.initialize()
+              const success = await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
+              if (success) {
+                console.log('[TRADE-LOGS] Successfully updated ' + trade.symbol + ' via quote fallback')
               } else {
-                console.warn('[TRADE-LOGS] No API keys available for quote fallback for ' + trade.symbol + ' - apiKey=' + !!alpacaKeys.apiKey + ', secretKey=' + !!alpacaKeys.secretKey)
-                if (keys) {
-                  const alpacaKeysInObject = Object.keys(keys).filter(k => k.includes('alpaca'))
-                  console.log('[TRADE-LOGS] Fallback: Keys object has: ' + JSON.stringify(alpacaKeysInObject))
-                }
+                console.error('[TRADE-LOGS] Quote fallback failed for ' + trade.symbol)
               }
             } else {
-              console.warn('[TRADE-LOGS] Fallback: No API keys returned from RPC for ' + trade.symbol)
+              console.warn('[TRADE-LOGS] No API keys available for quote fallback for ' + trade.symbol)
             }
           } catch (error: any) {
             console.error('[TRADE-LOGS] Error fetching quote fallback for ' + trade.symbol + ': ' + (error?.message || String(error)))
