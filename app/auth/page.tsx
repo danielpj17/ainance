@@ -26,10 +26,21 @@ export default function AuthPage() {
   const handleGoogleSignIn = async () => {
     setLoading(true)
     try {
+      // Get the current origin (works for both localhost and production)
+      const redirectUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/dashboard`
+        : '/dashboard'
+      
+      console.log('Initiating Google OAuth with redirect:', redirectUrl)
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       })
       
@@ -40,8 +51,12 @@ export default function AuthPage() {
         return
       }
       
-      // OAuth redirect will happen automatically, so we don't need to do anything else
-      // The redirect will take the user to Google, then back to /dashboard
+      // OAuth redirect will happen automatically via data.url
+      // The browser will navigate to Google, then back to /dashboard
+      if (data?.url) {
+        // Supabase returns a URL to redirect to
+        window.location.href = data.url
+      }
     } catch (error: any) {
       console.error('Error signing in:', error)
       alert(`Failed to sign in: ${error?.message || 'Unknown error'}`)

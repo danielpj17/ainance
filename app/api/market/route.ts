@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
     let alpacaApiKey: string | undefined
     let alpacaSecretKey: string | undefined
     
+    const isDemo = userId === '00000000-0000-0000-0000-000000000000'
+    
     const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: userId })
     const keys = apiKeys?.[0] || {}
     const alpacaKeys = getAlpacaKeys(keys, 'cash', 'cash')
@@ -35,10 +37,13 @@ export async function GET(req: NextRequest) {
     alpacaApiKey = alpacaKeys.apiKey
     alpacaSecretKey = alpacaKeys.secretKey
     
-    // Fallback to environment variables if no keys in database
+    // Only fallback to environment variables for demo user, not authenticated users
     if (!alpacaApiKey || !alpacaSecretKey) {
-      alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
-      alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
+      if (isDemo) {
+        // Demo mode - use environment variables
+        alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
+        alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
+      }
     }
     
     if (!alpacaApiKey || !alpacaSecretKey) {

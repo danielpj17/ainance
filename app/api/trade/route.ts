@@ -76,10 +76,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       }
     }
     
-    // Fallback to environment variables if no user keys found (or demo mode)
+    // Only fallback to environment variables for demo user, not authenticated users
     if (!alpacaApiKey || !alpacaSecretKey) {
-      alpacaApiKey = process.env.ALPACA_PAPER_KEY
-      alpacaSecretKey = process.env.ALPACA_PAPER_SECRET
+      if (isDemo) {
+        // Demo mode - use environment variables
+        alpacaApiKey = process.env.ALPACA_PAPER_KEY
+        alpacaSecretKey = process.env.ALPACA_PAPER_SECRET
+      }
     }
 
     // Final check to ensure keys are available

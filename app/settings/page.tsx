@@ -22,8 +22,20 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setIsDemo(!user || user.id === '00000000-0000-0000-0000-000000000000')
+      // Check for real session first (not just getUser which might return demo user)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      let isDemoUser = true
+      if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+        // Real authenticated user with valid session
+        isDemoUser = false
+      } else {
+        // Fallback to getUser check
+        const { data: { user } } = await supabase.auth.getUser()
+        isDemoUser = !user || user.id === '00000000-0000-0000-0000-000000000000'
+      }
+      
+      setIsDemo(isDemoUser)
     }
     checkAuth()
   }, [supabase])

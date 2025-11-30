@@ -38,11 +38,17 @@ export async function GET(req: NextRequest) {
     alpacaApiKey = alpacaKeys.apiKey
     alpacaSecretKey = alpacaKeys.secretKey
     
-    // Fallback to environment variables if no keys in database
+    // Only fallback to environment variables for demo user, not authenticated users
     if (!alpacaApiKey || !alpacaSecretKey) {
-      console.log('Account API - No DB keys, trying environment variables')
-      alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
-      alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
+      if (!isAuthenticated && userId === '00000000-0000-0000-0000-000000000000') {
+        // Demo mode - use environment variables
+        console.log('Account API - No DB keys, using demo environment variables')
+        alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
+        alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
+      } else {
+        // Authenticated user without keys - return error
+        console.log('Account API - Authenticated user has no API keys configured')
+      }
     }
     
     console.log('Account API - Keys available:', { 
@@ -52,10 +58,17 @@ export async function GET(req: NextRequest) {
     
     if (!alpacaApiKey || !alpacaSecretKey) {
       console.error('Account API - No API keys available')
-      return NextResponse.json(
-        { success: false, error: 'Alpaca API keys not configured. Please add them in Settings or set ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET environment variables.' },
-        { status: 400 }
-      )
+      if (isAuthenticated) {
+        return NextResponse.json(
+          { success: false, error: 'Alpaca API keys not configured. Please add your API keys in Settings.' },
+          { status: 400 }
+        )
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'Alpaca API keys not configured. Please add them in Settings or set ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET environment variables.' },
+          { status: 400 }
+        )
+      }
     }
     
     console.log('Account API - Creating Alpaca client')

@@ -12,20 +12,37 @@ export default function UserStatus() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user && user.id !== '00000000-0000-0000-0000-000000000000') {
+      // Check for real session first (not just getUser which might return demo user)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+        // Real authenticated user with valid session
         setIsAuthenticated(true)
-        setUserEmail(user.email || null)
+        setUserEmail(session.user.email || null)
       } else {
-        setIsAuthenticated(false)
-        setUserEmail(null)
+        // No real session - check getUser as fallback
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user && user.id !== '00000000-0000-0000-0000-000000000000') {
+          setIsAuthenticated(true)
+          setUserEmail(user.email || null)
+        } else {
+          setIsAuthenticated(false)
+          setUserEmail(null)
+        }
       }
     }
 
     checkAuth()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      checkAuth()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Check session directly from the callback
+      if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+        setIsAuthenticated(true)
+        setUserEmail(session.user.email || null)
+      } else {
+        setIsAuthenticated(false)
+        setUserEmail(null)
+      }
     })
 
     return () => subscription.unsubscribe()
