@@ -110,21 +110,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
         // Get current market prices for open positions
         try {
-          const { data: apiKeys } = await supabase.rpc('get_user_api_keys', {
-            user_uuid: userId
-          })
-
-          if (apiKeys?.[0]) {
-            const keys = apiKeys[0]
-            const alpacaKeys = getAlpacaKeys(keys, 'paper', 'cash')
+          // Get Alpaca keys for user (strict: no demo fallback for authenticated users)
+          const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, 'paper')
             
-            if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-              const alpacaClient = createAlpacaClient({
-                apiKey: alpacaKeys.apiKey,
-                secretKey: alpacaKeys.secretKey,
-                baseUrl: 'https://paper-api.alpaca.markets',
-                paper: true
-              })
+          if (apiKey && secretKey) {
+            const alpacaClient = createAlpacaClient({
+              apiKey,
+              secretKey,
+              baseUrl: 'https://paper-api.alpaca.markets',
+              paper: true
+            })
 
               await alpacaClient.initialize()
 
@@ -150,7 +145,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 }
               }
             }
-          }
         } catch (error) {
           console.error('Error fetching current prices:', error)
           // Continue without current prices
