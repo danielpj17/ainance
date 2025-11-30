@@ -4,13 +4,15 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, AlertTriangle, Shield } from 'lucide-react'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface Trade {
   id: number
@@ -18,19 +20,38 @@ interface Trade {
   action: string
   qty: number
   price: number
-  timestamp: string
+  trade_timestamp: string
   strategy: string
   account_type: string
   created_at: string
 }
 
-interface PortfolioSummary {
-  total_trades: number
-  total_pnl: number
-  win_rate: number
-  avg_trade_size: number
-  last_trade_date: string
-  active_strategy: string
+interface AlpacaAccount {
+  id: string
+  account_number: string
+  status: string
+  currency: string
+  buying_power: string
+  cash: string
+  portfolio_value: string
+  equity: string
+  last_equity: string
+  long_market_value: string
+  short_market_value: string
+  initial_margin: string
+  maintenance_margin: string
+  daytrade_count: number
+  daytrading_buying_power: string
+  pattern_day_trader: boolean
+}
+
+interface PortfolioHistory {
+  timestamp: number[]
+  equity: number[]
+  profit_loss: number[]
+  profit_loss_pct: number[]
+  base_value: number
+  timeframe: string
 }
 
 interface CurrentPosition {
@@ -52,12 +73,15 @@ interface CurrentPosition {
 
 export default function LiveTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])
-  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
+  const [account, setAccount] = useState<AlpacaAccount | null>(null)
+  const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null)
-  const [hasApiKeys, setHasApiKeys] = useState(false)
+  const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
+  const [chartData, setChartData] = useState<any[]>([])
   const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
   const [positionsLoading, setPositionsLoading] = useState(false)
+  const [hasApiKeys, setHasApiKeys] = useState(false)
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -66,19 +90,22 @@ export default function LiveTradingPage() {
     checkApiKeys()
     loadData()
     
-    // Set up realtime subscriptions
-    const sb = supabaseRef.current
-    const tradesChannel = sb
-      .channel('live-trades')
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'trades' },
-        (payload: { new: { account_type: string } }) => {
-          if (payload.new.account_type === 'live') {
-            loadData()
-          }
-        }
-      )
-      .subscribe()
+    // Set up realtime subscriptions for trades
+    let tradesChannel: any = null
+    if (supabaseRef.current) {
+      tradesChannel = supabaseRef.current
+        .channel('live-trades')
+        .on('postgres_changes', 
+          { event: 'INSERT', schema: 'public', table: 'trades', filter: 'account_type=eq.live' },
+          () => loadData()
+        )
+        .subscribe()
+    }
+
+    // Refresh account data every 30 seconds
+    const accountInterval = setInterval(() => {
+      loadAccountData()
+    }, 30000)
 
     // Refresh positions every 30 seconds
     const positionsInterval = setInterval(() => {
@@ -87,9 +114,14 @@ export default function LiveTradingPage() {
 
     return () => {
       tradesChannel?.unsubscribe()
+      clearInterval(accountInterval)
       clearInterval(positionsInterval)
     }
   }, [])
+
+  useEffect(() => {
+    loadPortfolioHistory()
+  }, [chartPeriod])
 
   const checkApiKeys = async () => {
     try {
@@ -118,36 +150,10 @@ export default function LiveTradingPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-
-      // Load live trades only
-      const sb = supabaseRef.current
-      if (!sb) return
-      const { data: tradesData, error: tradesError } = await sb
-        .from('trades')
-        .select('*')
-        .eq('account_type', 'live')
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (tradesError) throw tradesError
-
-      // Load portfolio summary for live trades
-      const { data: { user } } = await sb.auth.getUser()
-      if (user) {
-        const { data: summaryData, error: summaryError } = await sb
-          .rpc('get_portfolio_summary', { user_uuid: user.id })
-
-        if (summaryError) throw summaryError
-
-        setTrades(tradesData || [])
-        setPortfolioSummary(summaryData?.[0] || null)
-      }
-
-      // Load current positions
-      await loadCurrentPositions()
+      await Promise.all([loadAccountData(), loadTradesData(), loadCurrentPositions()])
     } catch (error) {
       console.error('Error loading data:', error)
-      setMessage({ type: 'error', text: 'Failed to load live trading data' })
+      setMessage({ type: 'error', text: 'Failed to load data' })
     } finally {
       setLoading(false)
     }
@@ -180,11 +186,133 @@ export default function LiveTradingPage() {
     }
   }
 
-  const formatCurrency = (amount: number) => {
+  const loadAccountData = async () => {
+    try {
+      const response = await authFetch('/api/account?account_type=live')
+      const result = await response.json()
+      
+      console.log('Live Account API response:', result)
+      
+      if (result.success && result.data) {
+        console.log('Live Account data:', result.data)
+        setAccount(result.data)
+        // Clear any previous error messages if we got data (even if zeros)
+        if (message?.type === 'error') {
+          setMessage(null)
+        }
+      } else {
+        console.error('Failed to load live account data:', result.error)
+        // Set account to zeros if API returns error for authenticated user
+        setAccount({
+          id: 'N/A',
+          account_number: 'N/A',
+          status: 'INACTIVE',
+          currency: 'USD',
+          buying_power: '0.00',
+          cash: '0.00',
+          portfolio_value: '0.00',
+          equity: '0.00',
+          last_equity: '0.00',
+          long_market_value: '0.00',
+          short_market_value: '0.00',
+          initial_margin: '0.00',
+          maintenance_margin: '0.00',
+          daytrade_count: 0,
+          daytrading_buying_power: '0.00',
+          pattern_day_trader: false
+        })
+        // Only show error if it's not about missing keys (which is expected)
+        if (result.error && !result.error.includes('API keys not configured')) {
+          setMessage({ type: 'error', text: `Account error: ${result.error}` })
+        }
+      }
+    } catch (error) {
+      console.error('Error loading live account data:', error)
+      // Set account to zeros on error
+      setAccount({
+        id: 'N/A',
+        account_number: 'N/A',
+        status: 'INACTIVE',
+        currency: 'USD',
+        buying_power: '0.00',
+        cash: '0.00',
+        portfolio_value: '0.00',
+        equity: '0.00',
+        last_equity: '0.00',
+        long_market_value: '0.00',
+        short_market_value: '0.00',
+        initial_margin: '0.00',
+        maintenance_margin: '0.00',
+        daytrade_count: 0,
+        daytrading_buying_power: '0.00',
+        pattern_day_trader: false
+      })
+    }
+  }
+
+  const loadTradesData = async () => {
+    try {
+      const sb = supabaseRef.current
+      if (!sb) return
+
+      const { data: tradesData, error: tradesError } = await sb
+        .from('trades')
+        .select('*')
+        .eq('account_type', 'live')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (tradesError) throw tradesError
+      setTrades(tradesData || [])
+    } catch (error) {
+      console.error('Error loading trades data:', error)
+    }
+  }
+
+  const loadPortfolioHistory = async () => {
+    try {
+      const timeframeMap = {
+        '1D': '5Min',
+        '1W': '1H',
+        '1M': '1D',
+        '1A': '1W'
+      }
+      
+      const response = await authFetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}&account_type=live`)
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        setPortfolioHistory(result.data)
+        
+        // Transform data for chart
+        const timestamps = result.data.timestamp || []
+        const equity = result.data.equity || []
+        
+        const transformed = timestamps.map((ts: number, idx: number) => ({
+          time: new Date(ts * 1000).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: chartPeriod === '1D' ? 'numeric' : undefined,
+            minute: chartPeriod === '1D' ? '2-digit' : undefined
+          }),
+          value: equity[idx] || 0
+        }))
+        
+        setChartData(transformed)
+      }
+    } catch (error) {
+      console.error('Error loading portfolio history:', error)
+    }
+  }
+
+  const formatCurrency = (amount: number | string) => {
+    const value = typeof amount === 'string' ? parseFloat(amount) : amount
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
-    }).format(amount)
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value)
   }
 
   const formatDuration = (duration: string) => {
@@ -222,9 +350,27 @@ export default function LiveTradingPage() {
     return new Date(dateString).toLocaleString()
   }
 
+  const calculateProfitLoss = () => {
+    if (!account) return { amount: 0, percentage: 0 }
+    
+    const equity = parseFloat(account.equity || '0')
+    const lastEquity = parseFloat(account.last_equity || account.equity || '0')
+    const amount = equity - lastEquity
+    const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
+    
+    return { amount, percentage }
+  }
+
+  const profitLoss = calculateProfitLoss()
+
+  const getAccountValue = (field: keyof AlpacaAccount, defaultValue: string = '0') => {
+    if (!account) return defaultValue
+    return account[field] || defaultValue
+  }
+
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="min-h-screen text-white p-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin" />
           <span className="ml-2">Loading live trading data...</span>
@@ -234,101 +380,132 @@ export default function LiveTradingPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Live Trading Dashboard</h1>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Shield className="h-4 w-4" />
-          <span>Real money trading</span>
+    <div className="min-h-screen text-white p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+            Live Trading Dashboard
+            <Badge className="bg-red-600 hover:bg-red-700">
+              <Shield className="h-3 w-3 mr-1" />
+              LIVE
+            </Badge>
+          </h1>
+          <p className="text-gray-400">Real money trading - Connected to Alpaca Live Account</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-sm text-gray-400">Portfolio Value</p>
+            <p className="text-2xl font-bold">
+              {account ? formatCurrency(account.equity) : '$0.00'}
+            </p>
+          </div>
+          <Badge className={profitLoss.amount >= 0 ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}>
+            {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
+            {profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%
+          </Badge>
         </div>
       </div>
 
       {message && (
-        <Alert className={
-          message.type === 'error' ? 'border-red-200 bg-red-50' : 
-          message.type === 'warning' ? 'border-yellow-200 bg-yellow-50' : 
-          'border-blue-200 bg-blue-50'
-        }>
+        <Alert className={`mb-6 ${
+          message.type === 'error' ? 'border-red-500 bg-red-950' : 
+          message.type === 'warning' ? 'border-yellow-500 bg-yellow-950' :
+          'border-green-500 bg-green-950'
+        }`}>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className={
-            message.type === 'error' ? 'text-red-700' : 
-            message.type === 'warning' ? 'text-yellow-700' : 
-            'text-blue-700'
+            message.type === 'error' ? 'text-red-200' : 
+            message.type === 'warning' ? 'text-yellow-200' :
+            'text-green-200'
           }>
             {message.text}
           </AlertDescription>
         </Alert>
       )}
 
-      {!hasApiKeys && (
-        <Alert className="border-yellow-200 bg-yellow-50">
+      {!hasApiKeys && !loading && (
+        <Alert className="mb-6 border-yellow-500 bg-yellow-950">
           <AlertTriangle className="h-4 w-4" />
-          <AlertDescription className="text-yellow-700">
+          <AlertDescription className="text-yellow-200">
             <strong>Live Trading Setup Required:</strong> You need to configure your Alpaca live trading API keys 
             to use this dashboard. Go to Settings to add your live trading credentials.
           </AlertDescription>
         </Alert>
       )}
 
-      {/* Portfolio Summary */}
-      {portfolioSummary && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="glass-card">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Live Trades</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{portfolioSummary.total_trades}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="glass-card">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Real P&L</CardTitle>
-              {portfolioSummary.total_pnl >= 0 ? 
-                <TrendingUp className="h-4 w-4 text-blue-600" /> : 
-                <TrendingDown className="h-4 w-4 text-red-600" />
-              }
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${portfolioSummary.total_pnl >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {formatCurrency(portfolioSummary.total_pnl)}
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="glass-card">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {(portfolioSummary.win_rate * 100).toFixed(1)}%
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="glass-card">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Trade Size</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(portfolioSummary.avg_trade_size)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Risk Warning */}
+      <Alert className="mb-6 border-red-500 bg-red-950/50">
+        <AlertTriangle className="h-4 w-4 text-red-400" />
+        <AlertDescription className="text-red-200">
+          <strong>Risk Warning:</strong> Live trading involves real money and significant risk of loss. 
+          Past performance does not guarantee future results. Only trade with money you can afford to lose.
+        </AlertDescription>
+      </Alert>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <Card className="glass-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
+            <DollarSign className="h-5 w-5 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.equity) : '$0.00'}
+            </div>
+            <p className={`text-xs flex items-center gap-1 mt-1 ${profitLoss.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              {profitLoss.amount >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+              {formatCurrency(profitLoss.amount)} today
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Cash Balance</CardTitle>
+            <Wallet className="h-5 w-5 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.cash) : '$0.00'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Available cash</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Buying Power</CardTitle>
+            <TrendingUp className="h-5 w-5 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.buying_power) : '$0.00'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Day trades: {account?.daytrade_count || 0}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Position Value</CardTitle>
+            <Activity className="h-5 w-5 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {account ? formatCurrency(account.long_market_value) : '$0.00'}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Long positions</p>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Current Positions */}
       <div className="mb-8">
         <Card className="glass-card">
           <CardHeader>
-            <CardTitle className="text-white">Current Live Positions</CardTitle>
+            <CardTitle className="text-white">Current Positions</CardTitle>
             <CardDescription className="text-gray-400">
               Active live trading positions with real-time P&L
             </CardDescription>
@@ -342,7 +519,7 @@ export default function LiveTradingPage() {
             ) : currentPositions.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>No current live positions</p>
+                <p>No current positions</p>
                 <p className="text-sm mt-1">Start the trading bot to see positions here</p>
               </div>
             ) : (
@@ -355,7 +532,7 @@ export default function LiveTradingPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="text-2xl font-bold text-white">{position.symbol}</div>
-                        <Badge className="bg-red-600">LIVE</Badge>
+                        <Badge className="bg-green-600">BUY</Badge>
                         <Badge variant="outline" className="border-gray-600 text-gray-400">
                           {position.qty} shares
                         </Badge>
@@ -411,121 +588,161 @@ export default function LiveTradingPage() {
       </div>
 
       {/* Trading Bot */}
-      {hasApiKeys && <TradingBot mode="live" />}
+      <div className="mb-8">
+        {hasApiKeys ? (
+          <TradingBot mode="live" />
+        ) : (
+          <Card className="glass-card opacity-50">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                Trading Bot
+                <Badge className="bg-gray-600">Disabled</Badge>
+              </CardTitle>
+              <CardDescription className="text-gray-400">
+                Configure your live trading API keys in Settings to enable the trading bot.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
+      </div>
 
-      {/* Risk Warning */}
-      <Alert className="border-red-200 bg-red-50">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription className="text-red-700">
-          <strong>Risk Warning:</strong> Live trading involves real money and significant risk of loss. 
-          Past performance does not guarantee future results. Only trade with money you can afford to lose.
-        </AlertDescription>
-      </Alert>
-
-      {/* Manual Trade Execution (Disabled for Live Trading) */}
-      <Card className="opacity-50 glass-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Manual Trade Execution
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          </CardTitle>
-          <CardDescription>
-            Manual trading is disabled for live accounts. Use the AI trading system for automated execution.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">
-              For safety, manual trading is disabled on live accounts. 
-              Configure your AI strategy settings to enable automated trading.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recent Live Trades */}
-      <Card className="glass-card">
-        <CardHeader>
-          <CardTitle>Live Trading History</CardTitle>
-          <CardDescription>
-            Your real money trading activity
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Strategy</TableHead>
-                <TableHead>Time</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {trades.map((trade) => (
-                <TableRow key={trade.id}>
-                  <TableCell className="font-medium">{trade.symbol}</TableCell>
-                  <TableCell>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      trade.action === 'buy' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {trade.action.toUpperCase()}
-                    </span>
-                  </TableCell>
-                  <TableCell>{trade.qty}</TableCell>
-                  <TableCell>{formatCurrency(trade.price)}</TableCell>
-                  <TableCell>{formatCurrency(trade.qty * trade.price)}</TableCell>
-                  <TableCell>{trade.strategy}</TableCell>
-                  <TableCell>{formatDate(trade.created_at)}</TableCell>
-                </TableRow>
-              ))}
-              {trades.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    No live trades yet. Configure your live trading API keys and AI strategy to start.
-                  </TableCell>
-                </TableRow>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Portfolio Chart */}
+        <Card className="lg:col-span-2 glass-card">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white text-xl">Portfolio Performance</CardTitle>
+                <CardDescription className="text-gray-400">Track your live trading account value</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant={chartPeriod === '1D' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1D')}
+                  className={chartPeriod === '1D' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Day
+                </Button>
+                <Button 
+                  variant={chartPeriod === '1W' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1W')}
+                  className={chartPeriod === '1W' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Week
+                </Button>
+                <Button 
+                  variant={chartPeriod === '1M' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1M')}
+                  className={chartPeriod === '1M' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Month
+                </Button>
+                <Button 
+                  variant={chartPeriod === '1A' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChartPeriod('1A')}
+                  className={chartPeriod === '1A' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                >
+                  Year
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="livePortfolioGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="time" 
+                      stroke="#9ca3af" 
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis 
+                      stroke="#9ca3af" 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
+                      labelStyle={{ color: '#fff' }}
+                      formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="value" 
+                      stroke="#ef4444" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#livePortfolioGradient)" 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="text-center">
+                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>No portfolio data available for selected period</p>
+                  </div>
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Trading Guidelines */}
-      <Card className="glass-card">
-        <CardHeader>
-          <CardTitle>Live Trading Guidelines</CardTitle>
-          <CardDescription>
-            Important information for live trading
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h4 className="font-semibold mb-2">Before You Start:</h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Configure your Alpaca live trading API keys</li>
-                <li>• Set appropriate risk management parameters</li>
-                <li>• Start with small position sizes</li>
-                <li>• Test your strategy thoroughly with paper trading</li>
-              </ul>
+        {/* Recent Trades Widget */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-white">Recent Trades</CardTitle>
+            <CardDescription className="text-gray-400">Latest trading activity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {trades.length > 0 ? (
+                trades.slice(0, 10).map((trade) => (
+                  <div key={trade.id} className="p-3 bg-red-500/10 backdrop-blur-sm rounded-lg border border-red-500/20">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={trade.action === 'buy' ? 'default' : 'destructive'} 
+                          className={trade.action === 'buy' ? 'bg-green-600' : 'bg-red-600'}
+                        >
+                          {trade.action.toUpperCase()}
+                        </Badge>
+                        <span className="font-bold text-white">{trade.symbol}</span>
+                      </div>
+                      <span className="text-sm text-gray-400">{trade.qty} shares</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-400">{formatCurrency(trade.price)}</span>
+                      <span className="text-gray-500">{formatDate(trade.created_at)}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                  <p>No trades yet</p>
+                  <p className="text-xs mt-1">Start the bot to execute trades</p>
+                </div>
+              )}
             </div>
-            <div>
-              <h4 className="font-semibold mb-2">Risk Management:</h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Never risk more than you can afford to lose</li>
-                <li>• Use stop-loss orders</li>
-                <li>• Monitor your positions regularly</li>
-                <li>• Keep detailed trading records</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

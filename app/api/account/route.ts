@@ -7,18 +7,23 @@ export async function GET(req: NextRequest) {
   try {
     console.log('Account API - Starting request')
     
+    // Get account type from query params (default to paper for backwards compatibility)
+    const { searchParams } = new URL(req.url)
+    const accountType = (searchParams.get('account_type') || 'paper') as 'paper' | 'live'
+    
     // Get user ID from request cookies (strict: demo keys only for demo user)
     const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('Account API - User:', { userId, isDemo })
+    console.log('Account API - User:', { userId, isDemo, accountType })
     
     // Get Alpaca keys (strict: no demo fallback for authenticated users)
-    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey } = await getAlpacaKeysForUser(userId, isDemo, 'paper')
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType)
     
     console.log('Account API - Keys available:', { 
       hasApiKey: !!alpacaApiKey, 
       hasSecretKey: !!alpacaSecretKey,
       isDemo,
-      userId
+      userId,
+      accountType
     })
     
     // If authenticated user has no keys, return zeros/N/A (NO demo fallback)
@@ -43,12 +48,14 @@ export async function GET(req: NextRequest) {
       })
     }
     
-    console.log('Account API - Creating Alpaca client')
+    const baseUrl = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
+    
+    console.log('Account API - Creating Alpaca client for', accountType, 'with baseUrl:', baseUrl)
     const alpaca = createAlpacaClient({
       apiKey: alpacaApiKey,
       secretKey: alpacaSecretKey,
-      baseUrl: 'https://paper-api.alpaca.markets',
-      paper: true
+      baseUrl,
+      paper
     })
     
     console.log('Account API - Initializing Alpaca client')

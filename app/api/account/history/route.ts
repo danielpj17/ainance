@@ -9,13 +9,16 @@ export async function GET(req: NextRequest) {
     const { userId, isDemo } = await getUserIdFromRequest(req)
     console.log('Account History API - User:', { userId, isDemo })
 
-    // Get period from query params
+    // Get period and account type from query params
     const { searchParams } = new URL(req.url)
     const period = searchParams.get('period') || '1D' // 1D, 1W, 1M, 1A
     const timeframe = searchParams.get('timeframe') || '1Min'
+    const accountType = (searchParams.get('account_type') || 'paper') as 'paper' | 'live'
 
     // Get Alpaca keys (strict: no demo fallback for authenticated users)
-    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey } = await getAlpacaKeysForUser(userId, isDemo, 'paper')
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType)
+    
+    console.log('Account History API - Account type:', accountType)
     
     // If no keys, return empty history (NO demo fallback)
     if (!alpacaApiKey || !alpacaSecretKey) {
@@ -33,11 +36,13 @@ export async function GET(req: NextRequest) {
       })
     }
     
+    const baseUrl = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
+    
     const alpaca = createAlpacaClient({
       apiKey: alpacaApiKey,
       secretKey: alpacaSecretKey,
-      baseUrl: 'https://paper-api.alpaca.markets',
-      paper: true
+      baseUrl,
+      paper
     });
     await alpaca.initialize()
     
