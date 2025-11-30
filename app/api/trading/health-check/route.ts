@@ -111,9 +111,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         
         const isDemo = isDemoMode() && userId === '00000000-0000-0000-0000-000000000000'
         
+        // Declare apiKeys outside the if block so it's accessible later
+        let apiKeys: any[] | null = null
+        
         // For authenticated users, always try database first (user-specific Alpaca keys only)
         if (!isDemo) {
-          const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
+          const { data: fetchedApiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
             user_uuid: userId
           })
 
@@ -126,6 +129,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             })
             continue
           }
+
+          apiKeys = fetchedApiKeys
 
           if (apiKeys?.[0]) {
             const userKeys = apiKeys[0]
