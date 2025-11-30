@@ -63,29 +63,16 @@ export const createClient = () => {
     }
   }
 
-  // In demo mode, use a custom fetch that removes Authorization headers
-  // This prevents JWT validation errors when using invalid demo tokens
-  const customFetch: typeof fetch = isDemoMode() && typeof window !== 'undefined'
-    ? async (input, init) => {
-        // Remove Authorization header if present
-        if (init?.headers) {
-          const headers = new Headers(init.headers)
-          headers.delete('Authorization')
-          init.headers = headers
-        }
-        return fetch(input, init)
-      }
-    : fetch
-
+  // Don't use customFetch that removes headers - it breaks real authentication
+  // Let Supabase handle headers normally - our getUser/getSession overrides will handle demo mode
   const client = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true, // Always persist - we'll check for real sessions
       autoRefreshToken: true,
       detectSessionInUrl: true,
     },
-    global: {
-      fetch: customFetch,
-    },
+    // Don't use customFetch - it was breaking real authentication
+    // Supabase will handle headers correctly for both demo and real users
   })
 
   // Cache the instance (client-side only)
