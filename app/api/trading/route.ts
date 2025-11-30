@@ -297,8 +297,6 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     let alpacaSecretKey: string | undefined;
     const newsApiKey: string | undefined = process.env.NEWS_API_KEY; // Always use shared key
     
-    const isDemo = userId === '00000000-0000-0000-0000-000000000000';
-    
     // Get all user API keys from database (both paper and live)
     let userApiKeys: any = null
     
