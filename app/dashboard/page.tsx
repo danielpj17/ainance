@@ -99,8 +99,13 @@ export default function DashboardPage() {
           if (lastValue > 0 && currentValue !== lastValue) {
             const changePercent = ((currentValue - lastValue) / lastValue) * 100
             setPortfolioChange(changePercent)
+          } else {
+            setPortfolioChange(0)
           }
         }
+      } else {
+        // If account fetch fails, set account to null so UI shows zeros
+        setAccount(null)
       }
 
       const tradesRes = await fetch('/api/trade?limit=10')
@@ -206,7 +211,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4">
           <div className="text-right bg-black/30 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
             <p className="text-sm text-white/80 font-medium">Portfolio Value</p>
-            <p className="text-2xl font-bold text-white drop-shadow-lg">${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString() : '0.00'}</p>
+            <p className="text-2xl font-bold text-white drop-shadow-lg">${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</p>
           </div>
           <div className="flex gap-2">
             <Badge className="bg-blue-400 hover:bg-blue-500 text-white">High</Badge>
@@ -225,7 +230,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
-              ${account ? parseFloat(account.portfolio_value).toLocaleString() : '100,000'}
+              ${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
             </div>
             <p className={`text-xs flex items-center gap-1 mt-1 ${portfolioChange >= 0 ? 'text-blue-300' : 'text-red-400'}`}>
               {portfolioChange >= 0 ? (

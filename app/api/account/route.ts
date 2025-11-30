@@ -38,17 +38,27 @@ export async function GET(req: NextRequest) {
     let isAuthenticated = false
     
     // Try to get user from session (will use cookies from headers)
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    // First try getSession to get the full session with access token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
-    if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
-      // Real authenticated user
-      userId = user.id
+    if (!sessionError && session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+      // Real authenticated user with valid session
+      userId = session.user.id
       isAuthenticated = true
-      console.log('Account API - Using authenticated user:', userId)
+      console.log('Account API - Using authenticated user from session:', userId)
     } else {
-      // Fall back to demo mode
-      userId = getDemoUserIdServer()
-      console.log('Account API - Using demo user ID')
+      // Fallback: try getUser
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
+        userId = user.id
+        isAuthenticated = true
+        console.log('Account API - Using authenticated user from getUser:', userId)
+      } else {
+        // Fall back to demo mode
+        userId = getDemoUserIdServer()
+        isAuthenticated = false
+        console.log('Account API - Using demo user ID')
+      }
     }
 
     // Try to get keys from database first
@@ -70,29 +80,42 @@ export async function GET(req: NextRequest) {
         alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
         alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
       } else {
-        // Authenticated user without keys - return error
-        console.log('Account API - Authenticated user has no API keys configured')
+        // Authenticated user without keys - return zeros/N/A
+        console.log('Account API - Authenticated user has no API keys configured, returning zeros')
+        return NextResponse.json({ 
+          success: true, 
+          data: {
+            equity: '0.00',
+            cash: '0.00',
+            buying_power: '0.00',
+            portfolio_value: '0.00',
+            day_trading_buying_power: '0.00',
+            pattern_day_trader: false,
+            trading_blocked: false,
+            account_blocked: false,
+            long_market_value: '0.00',
+            short_market_value: '0.00',
+            account_number: 'N/A',
+            status: 'ACTIVE'
+          }
+        })
       }
     }
     
     console.log('Account API - Keys available:', { 
       hasApiKey: !!alpacaApiKey, 
-      hasSecretKey: !!alpacaSecretKey 
+      hasSecretKey: !!alpacaSecretKey,
+      isAuthenticated,
+      userId
     })
     
     if (!alpacaApiKey || !alpacaSecretKey) {
       console.error('Account API - No API keys available')
-      if (isAuthenticated) {
-        return NextResponse.json(
-          { success: false, error: 'Alpaca API keys not configured. Please add your API keys in Settings.' },
-          { status: 400 }
-        )
-      } else {
-        return NextResponse.json(
-          { success: false, error: 'Alpaca API keys not configured. Please add them in Settings or set ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET environment variables.' },
-          { status: 400 }
-        )
-      }
+      // For demo mode, return error. For authenticated users, we already returned zeros above
+      return NextResponse.json(
+        { success: false, error: 'Alpaca API keys not configured. Please add them in Settings or set ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET environment variables.' },
+        { status: 400 }
+      )
     }
     
     console.log('Account API - Creating Alpaca client')
