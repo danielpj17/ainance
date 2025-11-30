@@ -165,13 +165,55 @@ export default function PaperTradingPage() {
       if (result.success && result.data) {
         console.log('Account data:', result.data)
         setAccount(result.data)
+        // Clear any previous error messages if we got data (even if zeros)
+        setMessage(null)
       } else {
         console.error('Failed to load account data:', result.error)
-        setMessage({ type: 'error', text: `Account error: ${result.error || 'Unable to fetch account data'}` })
+        // Set account to zeros if API returns error for authenticated user
+        setAccount({
+          id: 'N/A',
+          account_number: 'N/A',
+          status: 'INACTIVE',
+          currency: 'USD',
+          buying_power: '0.00',
+          cash: '0.00',
+          portfolio_value: '0.00',
+          equity: '0.00',
+          last_equity: '0.00',
+          long_market_value: '0.00',
+          short_market_value: '0.00',
+          initial_margin: '0.00',
+          maintenance_margin: '0.00',
+          daytrade_count: 0,
+          daytrading_buying_power: '0.00',
+          pattern_day_trader: false
+        })
+        // Only show error if it's not about missing keys (which is expected)
+        if (result.error && !result.error.includes('API keys not configured')) {
+          setMessage({ type: 'error', text: `Account error: ${result.error}` })
+        }
       }
     } catch (error) {
       console.error('Error loading account data:', error)
-      setMessage({ type: 'error', text: 'Failed to connect to account API' })
+      // Set account to zeros on error
+      setAccount({
+        id: 'N/A',
+        account_number: 'N/A',
+        status: 'INACTIVE',
+        currency: 'USD',
+        buying_power: '0.00',
+        cash: '0.00',
+        portfolio_value: '0.00',
+        equity: '0.00',
+        last_equity: '0.00',
+        long_market_value: '0.00',
+        short_market_value: '0.00',
+        initial_margin: '0.00',
+        maintenance_margin: '0.00',
+        daytrade_count: 0,
+        daytrading_buying_power: '0.00',
+        pattern_day_trader: false
+      })
     }
   }
 

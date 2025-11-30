@@ -51,9 +51,26 @@ export default function TradeTerminalPage() {
     try {
       const res = await fetch('/api/account')
       const data = await res.json()
-      if (data.success) setAccount(data.data)
+      if (data.success) {
+        setAccount(data.data)
+      } else {
+        // Set account to zeros if API returns error for authenticated user
+        setAccount({
+          portfolio_value: '0.00',
+          cash: '0.00',
+          buying_power: '0.00',
+          equity: '0.00'
+        })
+      }
     } catch (e) {
       console.error('Failed to fetch account', e)
+      // Set account to zeros on error
+      setAccount({
+        portfolio_value: '0.00',
+        cash: '0.00',
+        buying_power: '0.00',
+        equity: '0.00'
+      })
     }
   }
 
@@ -184,7 +201,7 @@ export default function TradeTerminalPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-white">
-              ${account ? parseFloat(account.portfolio_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+              ${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
             </div>
             <p className="text-xs text-gray-500 mt-1">Total equity</p>
           </CardContent>
@@ -197,7 +214,7 @@ export default function TradeTerminalPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-white">
-              ${account ? parseFloat(account.cash).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+              ${account ? parseFloat(account.cash || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
             </div>
             <p className="text-xs text-gray-500 mt-1">Available</p>
           </CardContent>
@@ -210,7 +227,7 @@ export default function TradeTerminalPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-white">
-              ${account ? parseFloat(account.buying_power).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+              ${account ? parseFloat(account.buying_power || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
             </div>
             <p className="text-xs text-gray-500 mt-1">Max capacity</p>
           </CardContent>
