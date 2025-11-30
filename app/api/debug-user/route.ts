@@ -8,7 +8,11 @@ export const runtime = 'nodejs'
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    // Get user ID from request cookies
+    // Check what headers we received
+    const authHeader = req.headers.get('authorization')
+    const cookieHeader = req.headers.get('cookie')
+    
+    // Get user ID from request
     const { userId, isDemo } = await getUserIdFromRequest(req)
     
     const supabase = createServerClient()
@@ -33,6 +37,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         userId,
         isDemo,
         isDemoUserId: userId === '00000000-0000-0000-0000-000000000000',
+        requestInfo: {
+          hasAuthHeader: !!authHeader,
+          authHeaderPreview: authHeader ? `${authHeader.substring(0, 20)}...` : null,
+          hasCookies: !!cookieHeader,
+          cookiesPreview: cookieHeader ? `${cookieHeader.substring(0, 50)}...` : null,
+        },
         hasUserSettings: !!settings && !settingsError,
         userSettings: settings || null,
         settingsError: settingsError?.message || null,
@@ -43,7 +53,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         },
         keysError: keysError?.message || null,
         message: isDemo 
-          ? 'You are in DEMO mode - using shared demo API keys'
+          ? 'You are in DEMO mode - using shared demo API keys. Make sure to call this endpoint with Authorization header.'
           : hasApiKeys 
             ? 'You are AUTHENTICATED and have API keys configured'
             : 'You are AUTHENTICATED but need to add your API keys in Settings'
