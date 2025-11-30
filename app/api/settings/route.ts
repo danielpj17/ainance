@@ -1,7 +1,6 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
-import { isDemoMode } from '@/lib/demo-user'
+import { createServerClient, getUserIdFromRequest } from '@/utils/supabase/server'
 
 export interface UserSettings {
   strategy: 'cash' | '25k_plus'
@@ -25,17 +24,9 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
   try {
     const supabase = createServerClient(req, {})
     
-    // Get user ID (support demo mode)
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request (checks Authorization header)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
+    console.log('[SETTINGS GET] User detected:', { userId, isDemo })
 
     // Fetch user settings
     const { data: settings, error } = await supabase
@@ -77,17 +68,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
   try {
     const supabase = createServerClient(req, {})
     
-    // Get user ID (support demo mode)
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request (checks Authorization header)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
+    console.log('[SETTINGS POST] User detected:', { userId, isDemo })
 
     const body = await req.json()
     const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold, max_exposure } = body

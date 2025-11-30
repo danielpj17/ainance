@@ -1,9 +1,8 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
+import { createServerClient, getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
 import { isMarketOpen, startBot, executeTradingLoop } from '../route'
 import { BotConfig } from '../route'
-import { isDemoMode } from '@/lib/demo-user'
 
 // Enhanced health check endpoint that:
 // 1. Checks if bots should be running

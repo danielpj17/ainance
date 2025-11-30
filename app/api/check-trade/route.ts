@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
-import { isDemoMode } from '@/lib/demo-user'
+import { createServerClient, getUserIdFromRequest } from '@/utils/supabase/server'
 
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createServerClient(req, {})
     
-    // Get user
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request (checks Authorization header)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
+    console.log('[CHECK-TRADE] User detected:', { userId, isDemo })
 
     const { searchParams } = new URL(req.url)
     const symbol = searchParams.get('symbol') || 'SPXS'
