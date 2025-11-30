@@ -749,17 +749,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     
-    // In demo mode, always use demo user ID
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request (checks Authorization header)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
+    console.log('[TRADE-LOGS POST] User detected:', { userId, isDemo })
 
     const body = await req.json()
     const { action, symbol, qty, price, decision_metrics, strategy, account_type, alpaca_order_id, order_status, trade_pair_id } = body

@@ -108,7 +108,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         let alpacaSecretKey: string | undefined
         const newsApiKey: string | undefined = process.env.NEWS_API_KEY // Always use shared key
         
-        const isDemo = isDemoMode() && userId === '00000000-0000-0000-0000-000000000000'
+        const isDemo = userId === '00000000-0000-0000-0000-000000000000'
         
         // Declare apiKeys outside the if block so it's accessible later
         let apiKeys: any[] | null = null
@@ -229,20 +229,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 // Helper function to check and run bot for current user (fallback)
 async function checkAndRunCurrentUser(supabase: any, req: NextRequest): Promise<NextResponse> {
-  // In demo mode, always use demo user ID
-  let userId: string
-  if (isDemoMode()) {
-    userId = getDemoUserIdServer()
-  } else {
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Unauthorized' 
-      }, { status: 401 })
-    }
-    userId = user.id
-  }
+  // Get user ID from request (checks Authorization header)
+  const { userId, isDemo } = await getUserIdFromRequest(req)
+  console.log('[HEALTH-CHECK] checkAndRunCurrentUser - User detected:', { userId, isDemo })
 
   // Get bot state from database
   const { data: botStateData } = await supabase.rpc('get_bot_state', {

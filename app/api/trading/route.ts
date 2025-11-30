@@ -258,7 +258,7 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     }
 
     // Verify user exists in auth.users (skip for demo mode)
-    const isDemo = isDemoMode() && userId === '00000000-0000-0000-0000-000000000000'
+    const isDemo = userId === '00000000-0000-0000-0000-000000000000'
     if (!isDemo) {
       try {
         const { data: userData, error: userCheckError } = await supabase.auth.admin.getUserById(userId)
