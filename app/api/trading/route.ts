@@ -2,7 +2,7 @@ export const runtime = 'nodejs'
 // Increase timeout for Vercel Pro plan (Hobby plan has 10s limit)
 export const maxDuration = 30
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
+import { createServerClient, getDemoUserIdServer, getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
 import { tradingModel, TradingSignal, TradingSettings } from '@/lib/trading-model'
 import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
 import { initializeNewsAnalyzer, getNewsAnalyzer } from '@/lib/news-sentiment'
@@ -146,22 +146,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }, { status: 500 })
     }
     
-    // Try to get real authenticated user first, then fall back to demo
+    // Get user ID from request cookies (strict: demo keys only for demo user)
     let userId: string
+    let isDemo: boolean
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
-        // Real authenticated user
-        userId = user.id
-      } else {
-        // Fall back to demo mode
-        userId = getDemoUserIdServer()
-      }
+      const userInfo = await getUserIdFromRequest(req)
+      userId = userInfo.userId
+      isDemo = userInfo.isDemo
+      console.log('📥 POST /api/trading - User detected:', { userId, isDemo })
     } catch (authError: any) {
       console.error('Error getting user:', authError)
       // On error, fall back to demo mode instead of failing
       userId = getDemoUserIdServer()
+      isDemo = true
     }
 
     let body
@@ -220,17 +217,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     
-    // In demo mode, always use demo user ID
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request cookies (strict: demo keys only for demo user)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
+    console.log('📥 GET /api/trading - User detected:', { userId, isDemo })
 
     const status = await getBotStatus(supabase, userId)
 

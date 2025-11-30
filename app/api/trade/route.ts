@@ -1,8 +1,7 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
-import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
-import { isDemoMode } from '@/lib/demo-user'
+import { createServerClient, getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
+import { createAlpacaClient } from '@/lib/alpaca-client'
 
 export interface TradeRequest {
   symbol: string
@@ -26,17 +25,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
   try {
     const supabase = await createServerClient(req, {})
     
-    // In demo mode, always use demo user ID
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request cookies (strict: demo keys only for demo user)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
 
     const body = await req.json()
     const { symbol, side, qty, type, time_in_force, limit_price, strategy, account_type }: TradeRequest = body
@@ -49,47 +39,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       }, { status: 400 })
     }
 
-    // Get Alpaca credentials - prioritize user-specific keys from database
-    // For authenticated users: use their saved keys
-    // For demo mode: fallback to environment variables
-    let alpacaApiKey: string | undefined
-    let alpacaSecretKey: string | undefined
-    let isPaper = true
-    
-    const isDemo = userId === '00000000-0000-0000-0000-000000000000'
-    
-    // For authenticated users, always try database first (user-specific keys)
-    if (!isDemo) {
-      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-        user_uuid: userId
-      })
+    // Get Alpaca keys (strict: no demo fallback for authenticated users)
+    const alpacaAccountType = account_type === 'live' ? 'live' : 'paper'
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper: isPaper } = await getAlpacaKeysForUser(userId, isDemo, alpacaAccountType)
 
-      if (!keysError && apiKeys?.[0]) {
-        const keys = apiKeys[0]
-        const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
-        
-        if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-          alpacaApiKey = alpacaKeys.apiKey;
-          alpacaSecretKey = alpacaKeys.secretKey;
-          isPaper = alpacaKeys.paper;
-        }
-      }
-    }
-    
-    // Only fallback to environment variables for demo user, not authenticated users
-    if (!alpacaApiKey || !alpacaSecretKey) {
-      if (isDemo) {
-        // Demo mode - use environment variables
-        alpacaApiKey = process.env.ALPACA_PAPER_KEY
-        alpacaSecretKey = process.env.ALPACA_PAPER_SECRET
-      }
-    }
-
-    // Final check to ensure keys are available
+    // Final check to ensure keys are available (NO demo fallback)
     if (!alpacaApiKey || !alpacaSecretKey) {
       return NextResponse.json({ 
         success: false, 
-        error: 'API keys not found. Please configure your Alpaca API keys in environment variables or database.' 
+        error: 'API keys not found. Please configure your Alpaca API keys in Settings.' 
       }, { status: 400 })
     }
 
@@ -189,17 +147,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     
-    // In demo mode, always use demo user ID
-    let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
-    }
+    // Get user ID from request cookies (strict: demo keys only for demo user)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
 
     const { searchParams } = new URL(req.url)
     const limit = parseInt(searchParams.get('limit') || '50')

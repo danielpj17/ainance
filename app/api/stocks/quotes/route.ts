@@ -5,8 +5,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/utils/supabase/server';
-import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client';
+import { getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server';
+import { createAlpacaClient } from '@/lib/alpaca-client';
 
 export const runtime = 'nodejs';
 
@@ -16,11 +16,8 @@ export const runtime = 'nodejs';
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const supabase = await createServerClient();
-    
-    // TEMPORARY: Skip auth check for testing
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+    // Get user ID from request cookies (strict: demo keys only for demo user)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
     
     const { searchParams } = new URL(req.url);
     const symbolsParam = searchParams.get('symbols');
@@ -41,38 +38,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
     
-    // Get Alpaca credentials - prioritize user-specific keys from database
-    // For authenticated users: use their saved keys
-    // For demo mode: fallback to environment variables
-    let alpacaApiKey: string | undefined
-    let alpacaSecretKey: string | undefined
-    
-    const isDemo = userId === '00000000-0000-0000-0000-000000000000'
-    
-    // For authenticated users, always try database first (user-specific keys)
-    if (!isDemo) {
-      const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: userId });
-      const keys = apiKeys?.[0] || {};
-      
-      if (keys.alpaca_paper_key && keys.alpaca_paper_secret) {
-        alpacaApiKey = keys.alpaca_paper_key;
-        alpacaSecretKey = keys.alpaca_paper_secret;
-      }
-    }
-    
-    // Only fallback to environment variables for demo user, not authenticated users
-    if (!alpacaApiKey || !alpacaSecretKey) {
-      if (isDemo) {
-        // Demo mode - use environment variables
-        alpacaApiKey = process.env.ALPACA_PAPER_KEY;
-        alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
-      }
-    }
+    // Get Alpaca keys (strict: no demo fallback for authenticated users)
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey } = await getAlpacaKeysForUser(userId, isDemo, 'paper')
     
     // Final check to ensure keys are available
     if (!alpacaApiKey || !alpacaSecretKey) {
       return NextResponse.json(
-        { success: false, error: 'Alpaca API keys not configured. Please add ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET to your Vercel environment variables.' },
+        { success: false, error: 'Alpaca API keys not configured. Please add your API keys in Settings.' },
         { status: 400 }
       );
     }

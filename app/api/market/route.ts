@@ -1,54 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getDemoUserIdServer } from '@/utils/supabase/server'
-import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client'
-import { isDemoMode } from '@/lib/demo-user'
+import { getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
+import { createAlpacaClient } from '@/lib/alpaca-client'
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createServerClient()
-    
-    // Try to get real authenticated user first, then fall back to demo
-    let userId: string
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
-      // Real authenticated user
-      userId = user.id
-    } else {
-      // Fall back to demo mode
-      userId = getDemoUserIdServer()
-    }
+    // Get user ID from request cookies (strict: demo keys only for demo user)
+    const { userId, isDemo } = await getUserIdFromRequest(req)
 
     const { searchParams } = new URL(req.url)
     const symbol = (searchParams.get('symbol') || 'AAPL').toUpperCase()
     const timeframe = (searchParams.get('timeframe') as any) || '1Min'
     const limit = parseInt(searchParams.get('limit') || '300')
 
-    // Try to get keys from database first
-    let alpacaApiKey: string | undefined
-    let alpacaSecretKey: string | undefined
-    
-    const isDemo = userId === '00000000-0000-0000-0000-000000000000'
-    
-    const { data: apiKeys } = await supabase.rpc('get_user_api_keys', { user_uuid: userId })
-    const keys = apiKeys?.[0] || {}
-    const alpacaKeys = getAlpacaKeys(keys, 'cash', 'cash')
-    
-    alpacaApiKey = alpacaKeys.apiKey
-    alpacaSecretKey = alpacaKeys.secretKey
-    
-    // Only fallback to environment variables for demo user, not authenticated users
-    if (!alpacaApiKey || !alpacaSecretKey) {
-      if (isDemo) {
-        // Demo mode - use environment variables
-        alpacaApiKey = process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY
-        alpacaSecretKey = process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET
-      }
-    }
+    // Get Alpaca keys (strict: no demo fallback for authenticated users)
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey } = await getAlpacaKeysForUser(userId, isDemo, 'paper')
     
     if (!alpacaApiKey || !alpacaSecretKey) {
       return NextResponse.json(
-        { success: false, error: 'Alpaca API keys not configured' },
+        { success: false, error: 'Alpaca API keys not configured. Please add your API keys in Settings.' },
         { status: 400 }
       )
     }
