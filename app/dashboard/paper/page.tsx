@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -157,7 +158,7 @@ export default function PaperTradingPage() {
 
   const loadAccountData = async () => {
     try {
-      const response = await fetch('/api/account')
+      const response = await authFetch('/api/account')
       const result = await response.json()
       
       console.log('Account API response:', result)
@@ -245,7 +246,7 @@ export default function PaperTradingPage() {
         '1A': '1W'
       }
       
-      const response = await fetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}`)
+      const response = await authFetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}`)
       const result = await response.json()
       
       if (result.success && result.data) {

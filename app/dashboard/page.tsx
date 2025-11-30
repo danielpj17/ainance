@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { TrendingUp, TrendingDown, Activity, DollarSign, AlertTriangle, CheckCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { authFetch } from '@/lib/api-client'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 
 export const dynamic = 'force-dynamic'
@@ -87,7 +88,8 @@ export default function DashboardPage() {
 
   const fetchData = async () => {
     try {
-      const accountRes = await fetch('/api/account')
+      // Use authFetch to include Authorization header
+      const accountRes = await authFetch('/api/account')
       if (accountRes.ok) {
         const accountData = await accountRes.json()
         if (accountData.success) {
@@ -108,13 +110,13 @@ export default function DashboardPage() {
         setAccount(null)
       }
 
-      const tradesRes = await fetch('/api/trade?limit=10')
+      const tradesRes = await authFetch('/api/trade?limit=10')
       if (tradesRes.ok) {
         const tradesData = await tradesRes.json()
         if (tradesData.success) setTrades(tradesData.data || [])
       }
 
-      const signalsRes = await fetch('/api/trading')
+      const signalsRes = await authFetch('/api/trading')
       if (signalsRes.ok) {
         const signalsData = await signalsRes.json()
         if (signalsData.success && signalsData.status?.currentSignals) {
@@ -131,7 +133,7 @@ export default function DashboardPage() {
       }
 
       // Fetch trade metrics for win rate calculation and total trades
-      const logsRes = await fetch('/api/logs?view=all')
+      const logsRes = await authFetch('/api/logs?view=all')
       if (logsRes.ok) {
         const logsData = await logsRes.json()
         if (logsData.success) {

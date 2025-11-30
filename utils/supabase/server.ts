@@ -38,7 +38,8 @@ export const createServerClient = (_req?: any, _res?: any) => createClient()
 export const getDemoUserIdServer = () => getDemoUserId()
 
 /**
- * Get the authenticated user ID from request cookies.
+ * Get the authenticated user ID from request.
+ * Checks Authorization header (Bearer token) first, then cookies.
  * Returns the real user ID if authenticated, or the demo user ID if not.
  * Also returns whether this is a demo user (for strict API key separation).
  */
@@ -51,44 +52,71 @@ export async function getUserIdFromRequest(req: NextRequest): Promise<{ userId: 
     return { userId: DEMO_USER_ID, isDemo: true }
   }
   
-  // Get cookies from request
-  const cookieHeader = req.headers.get('cookie') || ''
-  
-  // Create a client that can use the session from cookies
+  // Create a Supabase client
   const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
-    global: {
-      headers: {
-        cookie: cookieHeader,
-      },
-    },
   })
   
   try {
-    // Try to get session first
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    
-    if (!sessionError && session && session.user && session.user.id !== DEMO_USER_ID) {
-      console.log('getUserIdFromRequest - Found authenticated user from session:', session.user.id)
-      return { userId: session.user.id, isDemo: false }
+    // Method 1: Check Authorization header (Bearer token)
+    const authHeader = req.headers.get('authorization')
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7) // Remove 'Bearer ' prefix
+      console.log('getUserIdFromRequest - Found Authorization header, validating token...')
+      
+      // Validate the token and get user
+      const { data: { user }, error } = await supabase.auth.getUser(token)
+      
+      if (!error && user && user.id !== DEMO_USER_ID) {
+        console.log('getUserIdFromRequest - Authenticated user from token:', user.id, user.email)
+        return { userId: user.id, isDemo: false }
+      } else if (error) {
+        console.log('getUserIdFromRequest - Token validation error:', error.message)
+      }
     }
     
-    // Fallback: try getUser
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (!userError && user && user.id !== DEMO_USER_ID) {
-      console.log('getUserIdFromRequest - Found authenticated user from getUser:', user.id)
-      return { userId: user.id, isDemo: false }
+    // Method 2: Check cookies (for browser requests)
+    const cookieHeader = req.headers.get('cookie') || ''
+    if (cookieHeader) {
+      // Look for Supabase auth token in cookies
+      const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || ''
+      const tokenCookieName = `sb-${projectRef}-auth-token`
+      
+      // Parse cookies
+      const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=')
+        if (key && value) acc[key] = decodeURIComponent(value)
+        return acc
+      }, {} as Record<string, string>)
+      
+      // Try to find and parse the auth token cookie
+      const authTokenCookie = cookies[tokenCookieName]
+      if (authTokenCookie) {
+        try {
+          const tokenData = JSON.parse(authTokenCookie)
+          if (tokenData.access_token) {
+            console.log('getUserIdFromRequest - Found auth cookie, validating...')
+            const { data: { user }, error } = await supabase.auth.getUser(tokenData.access_token)
+            
+            if (!error && user && user.id !== DEMO_USER_ID) {
+              console.log('getUserIdFromRequest - Authenticated user from cookie:', user.id, user.email)
+              return { userId: user.id, isDemo: false }
+            }
+          }
+        } catch (e) {
+          console.log('getUserIdFromRequest - Could not parse auth cookie')
+        }
+      }
     }
   } catch (e) {
     console.error('getUserIdFromRequest - Error checking auth:', e)
   }
   
   // Fall back to demo user
-  console.log('getUserIdFromRequest - Using demo user')
+  console.log('getUserIdFromRequest - No valid auth found, using demo user')
   return { userId: DEMO_USER_ID, isDemo: true }
 }
 
