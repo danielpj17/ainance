@@ -34,7 +34,7 @@ export default function UserStatus() {
 
     checkAuth()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: any, session: any) => {
       // Check session directly from the callback
       if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
         setIsAuthenticated(true)
