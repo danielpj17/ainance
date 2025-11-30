@@ -391,7 +391,13 @@ export default function LiveTradingPage() {
               LIVE
             </Badge>
           </h1>
-          <p className="text-gray-400">Real money trading - Connected to Alpaca Live Account</p>
+          <div className="flex items-center gap-3">
+            <p className="text-gray-400">Real money trading - Connected to Alpaca Live Account</p>
+            <span className="text-xs text-red-400 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Trading involves risk of loss
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
@@ -423,25 +429,6 @@ export default function LiveTradingPage() {
           </AlertDescription>
         </Alert>
       )}
-
-      {!hasApiKeys && !loading && (
-        <Alert className="mb-6 border-yellow-500 bg-yellow-950">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription className="text-yellow-200">
-            <strong>Live Trading Setup Required:</strong> You need to configure your Alpaca live trading API keys 
-            to use this dashboard. Go to Settings to add your live trading credentials.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Risk Warning */}
-      <Alert className="mb-6 border-red-500 bg-red-950/50">
-        <AlertTriangle className="h-4 w-4 text-red-400" />
-        <AlertDescription className="text-red-200">
-          <strong>Risk Warning:</strong> Live trading involves real money and significant risk of loss. 
-          Past performance does not guarantee future results. Only trade with money you can afford to lose.
-        </AlertDescription>
-      </Alert>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
