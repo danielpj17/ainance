@@ -1,17 +1,32 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ApiKeysForm from '@/components/ApiKeysForm'
 import StrategySettings from '@/components/StrategySettings'
 import TrainModelButton from '@/components/TrainModelButton'
 import ModelStatus from '@/components/ModelStatus'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Settings, Key, TrendingUp, Brain } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Settings, Key, TrendingUp, Brain, Sparkles } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
+import Link from 'next/link'
 
 // Ensure this page is rendered dynamically, not statically
 export const dynamic = 'force-dynamic'
 
 export default function SettingsPage() {
+  const [isDemo, setIsDemo] = useState(false)
+  const supabase = createClient()
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setIsDemo(!user || user.id === '00000000-0000-0000-0000-000000000000')
+    }
+    checkAuth()
+  }, [supabase])
   return (
     <div className="min-h-screen text-white pl-20">
       <div className="container mx-auto px-6 py-8 max-w-6xl">
@@ -24,6 +39,19 @@ export default function SettingsPage() {
             Configure your API keys and trading strategy parameters
           </p>
         </div>
+
+        {isDemo && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800">
+            <Sparkles className="h-4 w-4" />
+            <AlertTitle>Demo Mode Active</AlertTitle>
+            <AlertDescription>
+              You're currently using demo mode with shared API keys. To use your own Alpaca API keys,{' '}
+              <Link href="/auth" className="underline font-semibold">
+                sign in with Google
+              </Link>.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Tabs defaultValue="api-keys" className="space-y-6">
           <TabsList className="glass-card">

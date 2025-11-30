@@ -49,27 +49,37 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       }, { status: 400 })
     }
 
-    // Get Alpaca credentials from environment variables first, fallback to database
-    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY
-    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET
+    // Get Alpaca credentials - prioritize user-specific keys from database
+    // For authenticated users: use their saved keys
+    // For demo mode: fallback to environment variables
+    let alpacaApiKey: string | undefined
+    let alpacaSecretKey: string | undefined
     let isPaper = true
     
-    // If not in environment, try to get from database
-    if (!alpacaApiKey || !alpacaSecretKey) {
+    const isDemo = userId === '00000000-0000-0000-0000-000000000000'
+    
+    // For authenticated users, always try database first (user-specific keys)
+    if (!isDemo) {
       const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
         user_uuid: userId
       })
 
-        if (!keysError && apiKeys?.[0]) {
-          const keys = apiKeys[0]
-          const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
-          
-          if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-            alpacaApiKey = alpacaKeys.apiKey;
-            alpacaSecretKey = alpacaKeys.secretKey;
-            isPaper = alpacaKeys.paper;
-          }
+      if (!keysError && apiKeys?.[0]) {
+        const keys = apiKeys[0]
+        const alpacaKeys = getAlpacaKeys(keys, account_type, strategy)
+        
+        if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
+          alpacaApiKey = alpacaKeys.apiKey;
+          alpacaSecretKey = alpacaKeys.secretKey;
+          isPaper = alpacaKeys.paper;
         }
+      }
+    }
+    
+    // Fallback to environment variables if no user keys found (or demo mode)
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      alpacaApiKey = process.env.ALPACA_PAPER_KEY
+      alpacaSecretKey = process.env.ALPACA_PAPER_SECRET
     }
 
     // Final check to ensure keys are available

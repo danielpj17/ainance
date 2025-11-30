@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Home, Activity, TrendingUp, Settings, Brain, ListTree, LogOut, FileText } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import UserStatus from '@/components/UserStatus'
 
 const navItems = [
   { icon: Home, href: '/dashboard', label: 'Dashboard' },
@@ -21,18 +22,25 @@ export default function Sidebar() {
 
   const handleLogout = async () => {
     const supabase = createClient()
+    // Sign out real session if exists
     await supabase.auth.signOut()
+    // Redirect to auth page
     router.push('/auth')
   }
 
   return (
     <aside className="fixed left-0 top-0 h-full w-20 bg-[#0f1117]/70 backdrop-blur-xl border-r border-blue-300/30 flex flex-col items-center py-6 z-50">
       {/* Logo */}
-      <Link href="/dashboard" className="mb-8">
+      <Link href="/dashboard" className="mb-4">
         <div className="w-12 h-12 rounded-xl border-2 border-blue-400 flex items-center justify-center shadow-lg shadow-blue-400/40 bg-transparent">
           <span className="text-blue-400 font-bold text-xl">A</span>
         </div>
       </Link>
+
+      {/* User Status */}
+      <div className="mb-6 px-2">
+        <UserStatus />
+      </div>
 
       {/* Navigation */}
       <nav className="flex-1 flex flex-col gap-2 w-full px-3">

@@ -7,7 +7,7 @@ export interface ApiKeysRequest {
   alpacaPaperSecret: string
   alpacaLiveKey?: string
   alpacaLiveSecret?: string
-  newsApiKey: string
+  // newsApiKey removed - News API uses shared environment variable
 }
 
 export interface ApiKeysResponse {
@@ -20,37 +20,38 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiKeysRespon
   try {
     const supabase = createServerClient()
     
-    // In demo mode, always use demo user ID
+    // Try to get real authenticated user first, then fall back to demo
     let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
+      // Real authenticated user
       userId = user.id
+    } else {
+      // Fall back to demo mode
+      userId = getDemoUserIdServer()
     }
 
     const body = await req.json()
-    const { alpacaPaperKey, alpacaPaperSecret, alpacaLiveKey, alpacaLiveSecret, newsApiKey }: ApiKeysRequest = body
+    const { alpacaPaperKey, alpacaPaperSecret, alpacaLiveKey, alpacaLiveSecret }: ApiKeysRequest = body
 
-    // Validate required keys
-    if (!alpacaPaperKey || !alpacaPaperSecret || !newsApiKey) {
+    // Validate required keys (News API is shared from environment, not user-specific)
+    if (!alpacaPaperKey || !alpacaPaperSecret) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Paper trading keys and NewsAPI key are required' 
+        error: 'Paper trading keys are required' 
       }, { status: 400 })
     }
 
     // Use the encrypted API key update function
+    // News API key is always null - it's shared from environment variables
     const { error } = await supabase.rpc('update_user_api_keys', {
       user_uuid: userId,
       p_alpaca_paper_key: alpacaPaperKey,
       p_alpaca_paper_secret: alpacaPaperSecret,
       p_alpaca_live_key: alpacaLiveKey || null,
       p_alpaca_live_secret: alpacaLiveSecret || null,
-      p_news_api_key: newsApiKey
+      p_news_api_key: null // News API is shared, not user-specific
     })
 
     if (error) {
@@ -81,16 +82,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = createServerClient()
     
-    // In demo mode, always use demo user ID
+    // Try to get real authenticated user first, then fall back to demo
     let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
+      // Real authenticated user
       userId = user.id
+    } else {
+      // Fall back to demo mode
+      userId = getDemoUserIdServer()
     }
 
     // Get encrypted API keys (for testing - in production, you might not want to expose this)

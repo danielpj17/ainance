@@ -79,9 +79,9 @@ export const createClient = () => {
 
   const client = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: !isDemoMode(), // Don't persist session in demo mode
-      autoRefreshToken: !isDemoMode(), // Don't auto-refresh in demo mode
-      detectSessionInUrl: !isDemoMode(), // Don't detect session in demo mode
+      persistSession: true, // Always persist - we'll check for real sessions
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
     },
     global: {
       fetch: customFetch,
@@ -93,23 +93,52 @@ export const createClient = () => {
     clientInstance = client
   }
 
-  // In demo mode, override auth methods and clear any existing session
+  // In demo mode, we need to support both real auth and demo mode
+  // Check for real sessions first, then fall back to demo
   if (isDemoMode()) {
-    // Clear any existing session to prevent invalid token errors
-    client.auth.signOut().catch(() => {}) // Ignore errors
-    
     const originalAuth = client.auth
+    const originalGetUser = originalAuth.getUser.bind(originalAuth)
+    const originalGetSession = originalAuth.getSession.bind(originalAuth)
 
-    client.auth = {
-      ...originalAuth,
-      getUser: async () => ({
+    // Override getUser to check for real user first, then fall back to demo
+    client.auth.getUser = async () => {
+      try {
+        // Try to get real user first
+        const { data: { user }, error } = await originalGetUser()
+        if (user && !error && user.id !== '00000000-0000-0000-0000-000000000000') {
+          return { data: { user }, error: null } // Real user signed in
+        }
+      } catch (e) {
+        // If there's an error getting real user, fall through to demo
+      }
+      // Fall back to demo user
+      return {
         data: { user: getDemoUser() },
         error: null,
-      }),
-      getSession: async () => ({
-        data: { session: null }, // Return null session so client doesn't use token
+      }
+    }
+
+    // Override getSession to check for real session first, then fall back to demo
+    client.auth.getSession = async () => {
+      try {
+        // Try to get real session first
+        const { data: { session }, error } = await originalGetSession()
+        if (session && !error && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+          return { data: { session }, error: null } // Real session exists
+        }
+      } catch (e) {
+        // If there's an error getting real session, fall through to demo
+      }
+      // Return null session for demo mode
+      return {
+        data: { session: null },
         error: null,
-      }),
+      }
+    }
+
+    // Keep other methods but allow OAuth to work
+    client.auth = {
+      ...originalAuth,
       signInWithPassword: async () => ({
         data: { user: getDemoUser(), session: null },
         error: null,
@@ -119,6 +148,12 @@ export const createClient = () => {
         error: null,
       }),
       signOut: async () => {
+        // Try to sign out real session first
+        try {
+          await originalAuth.signOut()
+        } catch (e) {
+          // Ignore errors
+        }
         // Clear session storage
         if (typeof window !== 'undefined') {
           localStorage.removeItem(`sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`)
@@ -126,11 +161,17 @@ export const createClient = () => {
         return { error: null }
       },
       onAuthStateChange: (callback: any) => {
-        // Immediately call with signed in state (but no session token)
-        callback('SIGNED_IN', null)
-        return {
-          data: { subscription: { unsubscribe: () => {} } },
-        }
+        // Listen for real auth changes
+        const { data: { subscription } } = originalAuth.onAuthStateChange((event, session) => {
+          if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
+            // Real user signed in
+            callback(event, session)
+          } else {
+            // Demo mode - call with demo user but no session
+            callback('SIGNED_IN', null)
+          }
+        })
+        return { data: { subscription } }
       },
     } as any
   }

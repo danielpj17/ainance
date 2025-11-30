@@ -10,17 +10,21 @@ export async function GET(req: NextRequest) {
     
     const supabase = createServerClient()
     
-    // In demo mode, always use demo user ID
+    // Try to get real authenticated user first, then fall back to demo
     let userId: string
-    if (isDemoMode()) {
+    let isAuthenticated = false
+    
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
+      // Real authenticated user
+      userId = user.id
+      isAuthenticated = true
+      console.log('Account API - Using authenticated user:', userId)
+    } else {
+      // Fall back to demo mode
       userId = getDemoUserIdServer()
       console.log('Account API - Using demo user ID')
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = user.id
     }
 
     // Try to get keys from database first

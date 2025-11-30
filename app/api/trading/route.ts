@@ -146,24 +146,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }, { status: 500 })
     }
     
-    // In demo mode, always use demo user ID
+    // Try to get real authenticated user first, then fall back to demo
     let userId: string
     try {
-      if (isDemoMode()) {
-        userId = getDemoUserIdServer()
-      } else {
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
-        if (userError || !user) {
-          return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-        }
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
+        // Real authenticated user
         userId = user.id
+      } else {
+        // Fall back to demo mode
+        userId = getDemoUserIdServer()
       }
     } catch (authError: any) {
       console.error('Error getting user:', authError)
-      return NextResponse.json({ 
-        success: false, 
-        error: `Authentication error: ${authError.message || 'Failed to authenticate'}` 
-      }, { status: 401 })
+      // On error, fall back to demo mode instead of failing
+      userId = getDemoUserIdServer()
     }
 
     let body
@@ -291,25 +289,38 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       console.log('ℹ️ Demo mode: Skipping user verification')
     }
 
-    // Get Alpaca credentials from environment variables first, fallback to database
-    let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY;
-    let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET;
-    let newsApiKey: string | undefined = process.env.NEWS_API_KEY;
+    // Get Alpaca credentials - prioritize user-specific keys from database
+    // For authenticated users: use their saved keys
+    // For demo mode: fallback to environment variables
+    // News API key is always shared from environment (not user-specific)
+    let alpacaApiKey: string | undefined;
+    let alpacaSecretKey: string | undefined;
+    const newsApiKey: string | undefined = process.env.NEWS_API_KEY; // Always use shared key
     
-    // If not in environment, try to get from database (only if we have a real user ID)
-    if (!alpacaApiKey || !alpacaSecretKey) {
-      if (userId && userId !== '00000000-0000-0000-0000-000000000000') {
-        const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
-          user_uuid: userId
-        })
+    const isDemo = userId === '00000000-0000-0000-0000-000000000000';
+    
+    // Get all user API keys from database (both paper and live)
+    let userApiKeys: any = null
+    
+    // For authenticated users, always try database first (user-specific Alpaca keys only)
+    if (!isDemo) {
+      const { data: apiKeys, error: keysError } = await supabase.rpc('get_user_api_keys', {
+        user_uuid: userId
+      })
 
-        if (!keysError && apiKeys?.[0]) {
-          const keys = apiKeys[0]
-          alpacaApiKey = keys.alpaca_paper_key;
-          alpacaSecretKey = keys.alpaca_paper_secret;
-          newsApiKey = keys.news_api_key;
-        }
+      if (!keysError && apiKeys?.[0]) {
+        userApiKeys = apiKeys[0]
+        // Set paper keys as default for initial check
+        alpacaApiKey = userApiKeys.alpaca_paper_key;
+        alpacaSecretKey = userApiKeys.alpaca_paper_secret;
+        // Note: newsApiKey is always from environment, not user-specific
       }
+    }
+    
+    // Fallback to environment variables if no user keys found (or demo mode)
+    if (!alpacaApiKey || !alpacaSecretKey) {
+      alpacaApiKey = process.env.ALPACA_PAPER_KEY;
+      alpacaSecretKey = process.env.ALPACA_PAPER_SECRET;
     }
 
     // Final check to ensure Alpaca keys are available
@@ -320,13 +331,13 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       }, { status: 400 })
     }
 
-    // Create a keys object for backward compatibility
+    // Create a keys object with both paper and live keys (for getAlpacaKeys function)
     const keys = {
-      alpaca_paper_key: alpacaApiKey,
-      alpaca_paper_secret: alpacaSecretKey,
-      news_api_key: newsApiKey || null,
-      alpaca_live_key: null,
-      alpaca_live_secret: null
+      alpaca_paper_key: userApiKeys?.alpaca_paper_key || alpacaApiKey,
+      alpaca_paper_secret: userApiKeys?.alpaca_paper_secret || alpacaSecretKey,
+      alpaca_live_key: userApiKeys?.alpaca_live_key || process.env.ALPACA_LIVE_KEY || null,
+      alpaca_live_secret: userApiKeys?.alpaca_live_secret || process.env.ALPACA_LIVE_SECRET || null,
+      news_api_key: newsApiKey || null
     }
     
     // Initialize news analyzer if NewsAPI key exists

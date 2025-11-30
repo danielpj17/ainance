@@ -101,15 +101,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // Execute trading loop directly (this keeps the bot running)
         console.log(`🔄 Health check: Executing trading loop for user ${userId} (Always-On: ${user.always_on})`)
         
-        // Get API keys - use environment variables first, then fallback to database
-        // This matches the logic in startBot
-        let alpacaApiKey: string | undefined = process.env.ALPACA_PAPER_KEY
-        let alpacaSecretKey: string | undefined = process.env.ALPACA_PAPER_SECRET
-        let newsApiKey: string | undefined = process.env.NEWS_API_KEY
+        // Get API keys - prioritize user-specific keys from database
+        // For authenticated users: use their saved Alpaca keys
+        // For demo mode: fallback to environment variables
+        // News API key is always shared from environment (not user-specific)
+        let alpacaApiKey: string | undefined
+        let alpacaSecretKey: string | undefined
+        const newsApiKey: string | undefined = process.env.NEWS_API_KEY // Always use shared key
         
-        // If not in environment, try to get from database (skip for demo user)
         const isDemo = isDemoMode() && userId === '00000000-0000-0000-0000-000000000000'
-        if ((!alpacaApiKey || !alpacaSecretKey) && !isDemo) {
+        
+        // For authenticated users, always try database first (user-specific Alpaca keys only)
+        if (!isDemo) {
           const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
             user_uuid: userId
           })
@@ -125,10 +128,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           }
 
           if (apiKeys?.[0]) {
-            alpacaApiKey = apiKeys[0].alpaca_paper_key
-            alpacaSecretKey = apiKeys[0].alpaca_paper_secret
-            newsApiKey = apiKeys[0].news_api_key
+            const userKeys = apiKeys[0]
+            alpacaApiKey = userKeys.alpaca_paper_key
+            alpacaSecretKey = userKeys.alpaca_paper_secret
+            // Note: newsApiKey is always from environment, not user-specific
           }
+        }
+        
+        // Fallback to environment variables if no user keys found (or demo mode)
+        if (!alpacaApiKey || !alpacaSecretKey) {
+          alpacaApiKey = process.env.ALPACA_PAPER_KEY
+          alpacaSecretKey = process.env.ALPACA_PAPER_SECRET
         }
 
         // Final check to ensure Alpaca keys are available
@@ -142,12 +152,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           continue
         }
 
+        // Get all user keys (both paper and live) for getAlpacaKeys function
+        const userKeys = !isDemo && apiKeys?.[0] ? apiKeys[0] : null
+        
+        // Create a keys object with both paper and live keys (for getAlpacaKeys function)
         const keys = {
-          alpaca_paper_key: alpacaApiKey,
-          alpaca_paper_secret: alpacaSecretKey,
-          news_api_key: newsApiKey || null,
-          alpaca_live_key: null,
-          alpaca_live_secret: null
+          alpaca_paper_key: userKeys?.alpaca_paper_key || alpacaApiKey,
+          alpaca_paper_secret: userKeys?.alpaca_paper_secret || alpacaSecretKey,
+          alpaca_live_key: userKeys?.alpaca_live_key || process.env.ALPACA_LIVE_KEY || null,
+          alpaca_live_secret: userKeys?.alpaca_live_secret || process.env.ALPACA_LIVE_SECRET || null,
+          news_api_key: newsApiKey || null
         }
 
         // Execute trading loop directly

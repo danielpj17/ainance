@@ -1,26 +1,57 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Key, Shield, AlertTriangle } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Loader2, Key, Shield, AlertTriangle, Sparkles } from 'lucide-react'
+import Link from 'next/link'
 
 export default function ApiKeysForm() {
   const [loading, setLoading] = useState(false)
+  const [loadingKeys, setLoadingKeys] = useState(true)
   const [message, setMessage] = useState<string>('')
+  const [isDemo, setIsDemo] = useState(false)
+  const [hasExistingKeys, setHasExistingKeys] = useState(false)
   const [apiKeys, setApiKeys] = useState({
     alpacaPaperKey: '',
     alpacaPaperSecret: '',
     alpacaLiveKey: '',
-    alpacaLiveSecret: '',
-    newsApiKey: ''
+    alpacaLiveSecret: ''
   })
 
   const supabase = createClient()
+  const router = useRouter()
+
+  useEffect(() => {
+    const checkAuthAndLoadKeys = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      const isDemoUser = !user || user.id === '00000000-0000-0000-0000-000000000000'
+      setIsDemo(isDemoUser)
+      
+      // Load existing keys if user is authenticated
+      if (!isDemoUser) {
+        try {
+          const response = await fetch('/api/settings/api-keys')
+          const result = await response.json()
+          
+          if (result.success && result.data) {
+            setHasExistingKeys(true)
+            // Keys are masked, so we'll just show that they exist
+            // Users can update them by entering new values
+          }
+        } catch (error) {
+          console.error('Error loading existing keys:', error)
+        }
+      }
+      setLoadingKeys(false)
+    }
+    checkAuthAndLoadKeys()
+  }, [supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,8 +59,8 @@ export default function ApiKeysForm() {
     setMessage('')
 
     try {
-      if (!apiKeys.alpacaPaperKey || !apiKeys.alpacaPaperSecret || !apiKeys.newsApiKey) {
-        setMessage('Paper trading keys and NewsAPI key are required')
+      if (!apiKeys.alpacaPaperKey || !apiKeys.alpacaPaperSecret) {
+        setMessage('Paper trading keys are required')
         return
       }
 
@@ -50,11 +81,25 @@ export default function ApiKeysForm() {
       }
 
       setMessage('API keys saved successfully')
+      setHasExistingKeys(true)
+      // Optionally reload the page or show success state
     } catch (err: any) {
       setMessage(err.message || 'Failed to save API keys')
     } finally {
       setLoading(false)
     }
+  }
+
+  if (loadingKeys) {
+    return (
+      <Card className="glass-card">
+        <CardContent className="py-8">
+          <div className="flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -69,6 +114,28 @@ export default function ApiKeysForm() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {isDemo && (
+          <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800">
+            <Sparkles className="h-4 w-4" />
+            <AlertTitle>Demo Mode</AlertTitle>
+            <AlertDescription>
+              You're currently using demo mode with shared API keys.{' '}
+              <Link href="/auth" className="underline font-semibold">
+                Sign in with Google
+              </Link>{' '}
+              to use your own Alpaca API keys.
+            </AlertDescription>
+          </Alert>
+        )}
+        {hasExistingKeys && !isDemo && (
+          <Alert className="border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-800">
+            <Shield className="h-4 w-4" />
+            <AlertTitle>API Keys Saved</AlertTitle>
+            <AlertDescription>
+              Your API keys are already saved and encrypted. You can update them below if needed.
+            </AlertDescription>
+          </Alert>
+        )}
         <Alert>
           <Shield className="h-4 w-4" />
           <AlertDescription>
@@ -104,12 +171,11 @@ export default function ApiKeysForm() {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">News Sentiment (Required)</h3>
-            <div>
-              <Label htmlFor="newsApiKey">NewsAPI Key</Label>
-              <Input id="newsApiKey" value={apiKeys.newsApiKey} onChange={(e) => setApiKeys(p => ({ ...p, newsApiKey: e.target.value }))} placeholder="Your NewsAPI key" />
-              <p className="text-xs text-muted-foreground mt-1">
-                Get a free key at <a href="https://newsapi.org" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">newsapi.org</a>
+            <h3 className="text-lg font-semibold">News Sentiment</h3>
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <p className="text-sm text-blue-900 dark:text-blue-100">
+                <strong>ℹ️ News API Key:</strong> The News API key is shared across all users and configured via environment variables. 
+                You don't need to provide your own News API key.
               </p>
             </div>
           </div>

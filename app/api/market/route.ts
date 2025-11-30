@@ -7,16 +7,16 @@ export async function GET(req: NextRequest) {
   try {
     const supabase = createServerClient()
     
-    // In demo mode, always use demo user ID
+    // Try to get real authenticated user first, then fall back to demo
     let userId: string
-    if (isDemoMode()) {
-      userId = getDemoUserIdServer()
-    } else {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-      }
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (!userError && user && user.id !== '00000000-0000-0000-0000-000000000000') {
+      // Real authenticated user
       userId = user.id
+    } else {
+      // Fall back to demo mode
+      userId = getDemoUserIdServer()
     }
 
     const { searchParams } = new URL(req.url)
