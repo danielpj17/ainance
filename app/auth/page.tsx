@@ -16,7 +16,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     // Check if user is already signed in
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
       if (user && user.id !== '00000000-0000-0000-0000-000000000000') {
         router.push('/dashboard')
       }
