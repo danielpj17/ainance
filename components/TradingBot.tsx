@@ -38,10 +38,8 @@ export interface BotConfig {
   settings: {
     strategy: 'cash' | '25k_plus'
     account_type: 'cash' | 'margin'
-    max_trade_size: number
-    daily_loss_limit: number
-    take_profit: number
-    stop_loss: number
+    confidence_threshold?: number
+    max_exposure?: number
   }
   accountType: string
   strategy: string
@@ -66,10 +64,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
     settings: {
       strategy: mode === 'paper' ? 'cash' : '25k_plus',
       account_type: 'cash',
-      max_trade_size: 2,
-      daily_loss_limit: -100,
-      take_profit: 5,
-      stop_loss: -3
+      max_exposure: 90
     },
     accountType: mode,
     strategy: mode === 'paper' ? 'cash' : '25k_plus'

@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const result = await tradingModel.backtest(
       startDate,
       endDate,
-      { strategy: narrowedStrategy, account_type: narrowedAccountType, cash_balance: 100000, max_trade_size: 5000, daily_loss_limit: -2000, take_profit: 0.5, stop_loss: 0.3 },
+      { strategy: narrowedStrategy, account_type: narrowedAccountType, cash_balance: 100000 },
       historicalData,
       newsSentimentData
     );
