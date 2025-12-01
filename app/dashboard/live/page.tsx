@@ -386,7 +386,7 @@ export default function LiveTradingPage() {
         <div>
           <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
             Live Trading Dashboard
-            <Badge className="bg-red-600 hover:bg-red-700">
+            <Badge className="bg-green-600 hover:bg-green-700">
               <Shield className="h-3 w-3 mr-1" />
               LIVE
             </Badge>
@@ -435,7 +435,7 @@ export default function LiveTradingPage() {
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
-            <DollarSign className="h-5 w-5 text-red-500" />
+            <DollarSign className="h-5 w-5 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
@@ -514,7 +514,7 @@ export default function LiveTradingPage() {
                 {currentPositions.map((position) => (
                   <div
                     key={position.id.toString()}
-                    className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-red-500 transition-all"
+                    className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-green-500 transition-all"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
@@ -561,7 +561,7 @@ export default function LiveTradingPage() {
                         <div>
                           Bought: {new Date(position.buy_timestamp).toLocaleString()}
                         </div>
-                        <div className="text-red-400">
+                        <div className="text-green-400">
                           Strategy: {position.strategy}
                         </div>
                       </div>
@@ -607,7 +607,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1D' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1D')}
-                  className={chartPeriod === '1D' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1D' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
                 >
                   Day
                 </Button>
@@ -615,7 +615,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1W' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1W')}
-                  className={chartPeriod === '1W' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1W' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
                 >
                   Week
                 </Button>
@@ -623,7 +623,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1M' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1M')}
-                  className={chartPeriod === '1M' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1M' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
                 >
                   Month
                 </Button>
@@ -631,7 +631,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1A' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1A')}
-                  className={chartPeriod === '1A' ? 'bg-red-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1A' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
                 >
                   Year
                 </Button>
@@ -645,8 +645,8 @@ export default function LiveTradingPage() {
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="livePortfolioGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -671,7 +671,7 @@ export default function LiveTradingPage() {
                     <Area 
                       type="monotone" 
                       dataKey="value" 
-                      stroke="#ef4444" 
+                      stroke="#22c55e" 
                       strokeWidth={3} 
                       fillOpacity={1} 
                       fill="url(#livePortfolioGradient)" 
@@ -700,7 +700,7 @@ export default function LiveTradingPage() {
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {trades.length > 0 ? (
                 trades.slice(0, 10).map((trade) => (
-                  <div key={trade.id} className="p-3 bg-red-500/10 backdrop-blur-sm rounded-lg border border-red-500/20">
+                  <div key={trade.id} className="p-3 bg-green-500/10 backdrop-blur-sm rounded-lg border border-green-500/20">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <Badge 

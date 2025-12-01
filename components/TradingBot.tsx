@@ -945,7 +945,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
           <CardContent>
             <div className="space-y-3">
               {botStatus.currentSignals.map((signal, index) => (
-                <div key={index} className="p-4 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-blue-500/20 hover:border-purple-500 transition-colors">
+                <div key={index} className="p-4 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-blue-500/20 hover:border-blue-400 transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <Badge 

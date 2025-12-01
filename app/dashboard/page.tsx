@@ -215,11 +215,6 @@ export default function DashboardPage() {
             <p className="text-sm text-white/80 font-medium">Portfolio Value</p>
             <p className="text-2xl font-bold text-white drop-shadow-lg">${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</p>
           </div>
-          <div className="flex gap-2">
-            <Badge className="bg-blue-400 hover:bg-blue-500 text-white">High</Badge>
-            <Badge variant="outline" className="text-gray-300 border-gray-500">Medium</Badge>
-            <Badge variant="outline" className="text-gray-300 border-gray-500">Low</Badge>
-          </div>
         </div>
       </div>
 
@@ -227,7 +222,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Total Value</CardTitle>
+            <CardTitle className="text-sm font-medium text-white/80">Total Value</CardTitle>
             <DollarSign className="h-5 w-5 text-blue-300" />
           </CardHeader>
           <CardContent>
@@ -247,12 +242,12 @@ export default function DashboardPage() {
 
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Total Trades</CardTitle>
+            <CardTitle className="text-sm font-medium text-white/80">Total Trades</CardTitle>
             <Activity className="h-5 w-5 text-blue-300" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">{totalTrades}</div>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-white/70 mt-1">
               {tradeMetrics ? `${tradeMetrics.open_positions || 0} open, ${tradeMetrics.closed_positions || 0} closed` : 'No trades yet'}
             </p>
           </CardContent>
@@ -260,14 +255,14 @@ export default function DashboardPage() {
 
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Win Rate</CardTitle>
+            <CardTitle className="text-sm font-medium text-white/80">Win Rate</CardTitle>
             <TrendingUp className="h-5 w-5 text-blue-300" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
               {winRate.toFixed(1)}%
             </div>
-            <p className={`text-xs mt-1 ${winRate > 0 ? 'text-blue-300' : 'text-gray-400'}`}>
+            <p className={`text-xs mt-1 ${winRate > 0 ? 'text-blue-300' : 'text-white/70'}`}>
               {tradeMetrics ? `${tradeMetrics.closed_positions} closed trades` : 'No trades yet'}
             </p>
           </CardContent>
@@ -275,12 +270,12 @@ export default function DashboardPage() {
 
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">AI Signals</CardTitle>
+            <CardTitle className="text-sm font-medium text-white/80">AI Signals</CardTitle>
             <Activity className="h-5 w-5 text-yellow-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">{signals.length}</div>
-            <p className="text-xs text-gray-400 mt-1">Active recommendations</p>
+            <p className="text-xs text-white/70 mt-1">Active recommendations</p>
           </CardContent>
         </Card>
       </div>
@@ -292,7 +287,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <CardTitle className="text-white text-xl">Portfolio Trend</CardTitle>
-                <CardDescription className="text-gray-400">
+                <CardDescription className="text-white/70">
                   {chartPeriod === 'week' && 'Performance over the last 7 days'}
                   {chartPeriod === 'month' && 'Performance over the last 30 days'}
                   {chartPeriod === 'year' && 'Performance over the last year'}
@@ -301,11 +296,11 @@ export default function DashboardPage() {
               <div className="flex gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-blue-300"></div>
-                  <span className="text-gray-300">Your Portfolio</span>
+                  <span className="text-white/90">Your Portfolio</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-blue-400"></div>
-                  <span className="text-gray-300">Benchmark</span>
+                  <span className="text-white/90">Benchmark</span>
                 </div>
               </div>
             </div>
@@ -377,7 +372,7 @@ export default function DashboardPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">Recent Activity</CardTitle>
-            <CardDescription className="text-gray-400">Latest trading actions</CardDescription>
+            <CardDescription className="text-white/70">Latest trading actions</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -391,7 +386,7 @@ export default function DashboardPage() {
                     )}
                     <div>
                       <p className="text-white font-medium">{activity.action}</p>
-                      <p className="text-xs text-gray-300">{activity.time}</p>
+                      <p className="text-xs text-white/70">{activity.time}</p>
                     </div>
                   </div>
                   <Badge variant={activity.status === 'completed' ? 'default' : 'outline'} className={activity.status === 'completed' ? 'bg-blue-400 text-white' : 'border-yellow-400 text-yellow-400'}>
@@ -399,8 +394,8 @@ export default function DashboardPage() {
                   </Badge>
                 </div>
               )) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <div className="text-center py-8 text-white/50">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-30" />
                   <p>No recent activity</p>
                 </div>
               )}
@@ -414,7 +409,7 @@ export default function DashboardPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">Portfolio Distribution</CardTitle>
-            <CardDescription className="text-gray-400">Open positions by symbol</CardDescription>
+            <CardDescription className="text-white/70">Open positions by symbol</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-64">
@@ -432,9 +427,9 @@ export default function DashboardPage() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="flex items-center justify-center h-full text-white/50">
                   <div className="text-center">
-                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-30" />
                     <p>No open positions to display</p>
                   </div>
                 </div>
@@ -446,7 +441,7 @@ export default function DashboardPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-white">AI Trading Signals</CardTitle>
-            <CardDescription className="text-gray-400">Latest recommendations from AI</CardDescription>
+            <CardDescription className="text-white/70">Latest recommendations from AI</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -459,13 +454,13 @@ export default function DashboardPage() {
                       </Badge>
                       <span className="font-bold text-white">{signal.symbol}</span>
                     </div>
-                    <span className="text-sm text-gray-400">{(signal.confidence * 100).toFixed(0)}%</span>
+                    <span className="text-sm text-white/80">{(signal.confidence * 100).toFixed(0)}%</span>
                   </div>
-                  <p className="text-xs text-gray-400">{signal.reasoning}</p>
+                  <p className="text-xs text-white/70">{signal.reasoning}</p>
                 </div>
               )) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <div className="text-center py-8 text-white/50">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-30" />
                   <p>Start the trading bot to see AI signals</p>
                 </div>
               )}

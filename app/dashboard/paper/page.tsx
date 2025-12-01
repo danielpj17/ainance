@@ -390,7 +390,7 @@ export default function PaperTradingPage() {
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
-            <DollarSign className="h-5 w-5 text-purple-500" />
+            <DollarSign className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
@@ -548,7 +548,7 @@ export default function PaperTradingPage() {
                   variant={chartPeriod === '1D' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1D')}
-                  className={chartPeriod === '1D' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1D' ? 'bg-blue-600' : 'border-gray-600 text-gray-400'}
                 >
                   Day
                 </Button>
@@ -556,7 +556,7 @@ export default function PaperTradingPage() {
                   variant={chartPeriod === '1W' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1W')}
-                  className={chartPeriod === '1W' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1W' ? 'bg-blue-600' : 'border-gray-600 text-gray-400'}
                 >
                   Week
                 </Button>
@@ -564,7 +564,7 @@ export default function PaperTradingPage() {
                   variant={chartPeriod === '1M' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1M')}
-                  className={chartPeriod === '1M' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1M' ? 'bg-blue-600' : 'border-gray-600 text-gray-400'}
                 >
                   Month
                 </Button>
@@ -572,7 +572,7 @@ export default function PaperTradingPage() {
                   variant={chartPeriod === '1A' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1A')}
-                  className={chartPeriod === '1A' ? 'bg-purple-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1A' ? 'bg-blue-600' : 'border-gray-600 text-gray-400'}
                 >
                   Year
                 </Button>
@@ -586,8 +586,8 @@ export default function PaperTradingPage() {
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -612,7 +612,7 @@ export default function PaperTradingPage() {
                     <Area 
                       type="monotone" 
                       dataKey="value" 
-                      stroke="#a855f7" 
+                      stroke="#60a5fa" 
                       strokeWidth={3} 
                       fillOpacity={1} 
                       fill="url(#portfolioGradient)" 

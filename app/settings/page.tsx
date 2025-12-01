@@ -8,8 +8,9 @@ import StrategySettings from '@/components/StrategySettings'
 import TrainModelButton from '@/components/TrainModelButton'
 import ModelStatus from '@/components/ModelStatus'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Settings, Key, TrendingUp, Brain, Sparkles } from 'lucide-react'
+import { Settings, Key, TrendingUp, Brain, Sparkles, FlaskConical, User, LogOut } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 
@@ -17,7 +18,11 @@ import Link from 'next/link'
 export const dynamic = 'force-dynamic'
 
 export default function SettingsPage() {
+  const router = useRouter()
   const [isDemo, setIsDemo] = useState(false)
+  const [userName, setUserName] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userAvatar, setUserAvatar] = useState<string | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -29,16 +34,29 @@ export default function SettingsPage() {
       if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
         // Real authenticated user with valid session
         isDemoUser = false
+        setUserName(session.user.user_metadata?.full_name || session.user.user_metadata?.name || null)
+        setUserEmail(session.user.email || null)
+        setUserAvatar(session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture || null)
       } else {
         // Fallback to getUser check
         const { data: { user } } = await supabase.auth.getUser()
         isDemoUser = !user || user.id === '00000000-0000-0000-0000-000000000000'
+        if (user && user.id !== '00000000-0000-0000-0000-000000000000') {
+          setUserName(user.user_metadata?.full_name || user.user_metadata?.name || null)
+          setUserEmail(user.email || null)
+          setUserAvatar(user.user_metadata?.avatar_url || user.user_metadata?.picture || null)
+        }
       }
       
       setIsDemo(isDemoUser)
     }
     checkAuth()
   }, [supabase])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/auth')
+  }
   return (
     <div className="min-h-screen text-white pl-20">
       <div className="container mx-auto px-6 py-8 max-w-6xl">
@@ -65,8 +83,12 @@ export default function SettingsPage() {
           </Alert>
         )}
 
-        <Tabs defaultValue="api-keys" className="space-y-6">
+        <Tabs defaultValue="account" className="space-y-6">
           <TabsList className="glass-card">
+            <TabsTrigger value="account" className="flex items-center gap-2">
+              <User className="h-4 w-4" />
+              Account
+            </TabsTrigger>
             <TabsTrigger value="api-keys" className="flex items-center gap-2">
               <Key className="h-4 w-4" />
               API Keys
@@ -80,6 +102,79 @@ export default function SettingsPage() {
               AI Model
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="account" className="space-y-6">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5 text-blue-500" />
+                  Account Details
+                </CardTitle>
+                <CardDescription>
+                  Your account information and session management
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {isDemo ? (
+                  <div className="text-center py-8">
+                    <div className="w-20 h-20 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center mx-auto mb-4">
+                      <Sparkles className="h-10 w-10 text-blue-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-white mb-2">Demo Mode</h3>
+                    <p className="text-white/70 mb-6">
+                      You're using the app in demo mode with shared API keys.
+                    </p>
+                    <Link href="/auth">
+                      <Button className="bg-blue-600 hover:bg-blue-700">
+                        Sign in with Google
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-4">
+                      {userAvatar ? (
+                        <img 
+                          src={userAvatar} 
+                          alt="Profile" 
+                          className="w-16 h-16 rounded-full border-2 border-blue-400"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center">
+                          <User className="h-8 w-8 text-blue-400" />
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="text-xl font-semibold text-white">{userName || 'User'}</h3>
+                        <p className="text-white/70">{userEmail || 'No email'}</p>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-gray-700">
+                      <div className="flex items-center justify-between p-4 bg-green-500/10 rounded-lg border border-green-500/30">
+                        <div>
+                          <p className="text-green-400 font-medium">Signed In</p>
+                          <p className="text-sm text-white/60">Your account is connected via Google</p>
+                        </div>
+                        <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-gray-700">
+                      <Button 
+                        onClick={handleLogout}
+                        variant="destructive"
+                        className="w-full bg-red-600 hover:bg-red-700"
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sign Out
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="api-keys" className="space-y-6">
             <ApiKeysForm />
@@ -158,6 +253,31 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500 mb-2">Metadata Update Only (Not Real Training):</p>
                   <TrainModelButton />
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* ML Testing Card */}
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FlaskConical className="h-5 w-5 text-blue-500" />
+                  ML Model Testing
+                </CardTitle>
+                <CardDescription>
+                  Test your trained model with real-time stock predictions
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-white/70 mb-4">
+                  Enter stock symbols and get real ML predictions from your trained Random Forest model. 
+                  View confidence scores, technical indicators, and AI reasoning for each prediction.
+                </p>
+                <Link href="/test-ml">
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                    <FlaskConical className="mr-2 h-4 w-4" />
+                    Open ML Testing
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </TabsContent>
