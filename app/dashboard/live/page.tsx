@@ -392,7 +392,7 @@ export default function LiveTradingPage() {
             </Badge>
           </h1>
           <div className="flex items-center gap-3">
-            <p className="text-gray-400">Real money trading - Connected to Alpaca Live Account</p>
+            <p className="text-white/80">Real money trading - Connected to Alpaca Live Account</p>
             <span className="text-xs text-red-400 flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
               Trading involves risk of loss

@@ -175,7 +175,7 @@ export default function TradeTerminalPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold mb-2">Trade Terminal</h1>
-          <p className="text-gray-400">AI-powered trading with live market data</p>
+          <p className="text-white/80">AI-powered trading with live market data</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge className="bg-blue-600 text-white px-4 py-2">Paper Trading</Badge>

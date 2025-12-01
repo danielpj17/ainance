@@ -149,7 +149,7 @@ export default function TradeLogsPage() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Trade Logs</h1>
-        <p className="text-gray-400">Comprehensive trading history with decision metrics</p>
+        <p className="text-white/80">Comprehensive trading history with decision metrics</p>
       </div>
 
       {/* Statistics Cards */}

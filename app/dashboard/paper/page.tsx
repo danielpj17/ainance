@@ -353,7 +353,7 @@ export default function PaperTradingPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold mb-2">Paper Trading Dashboard</h1>
-          <p className="text-gray-400">Practice trading with virtual money - Connected to Alpaca Paper Account</p>
+          <p className="text-white/80">Practice trading with virtual money - Connected to Alpaca Paper Account</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">

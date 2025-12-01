@@ -77,7 +77,7 @@ export default function AuthPage() {
             <Sparkles className="h-8 w-8 text-white" />
           </div>
           <CardTitle className="text-white text-2xl">Welcome to Ainance</CardTitle>
-          <CardDescription className="text-gray-400">
+          <CardDescription className="text-white/80">
             Choose how you'd like to get started
           </CardDescription>
         </CardHeader>

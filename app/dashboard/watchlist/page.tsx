@@ -304,7 +304,7 @@ export default function WatchlistPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold mb-2">Watchlist</h1>
-          <p className="text-gray-400">Track your favorite stocks and monitor their performance</p>
+          <p className="text-white/80">Track your favorite stocks and monitor their performance</p>
         </div>
       </div>
 

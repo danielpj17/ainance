@@ -65,7 +65,7 @@ export default function SettingsPage() {
             <Settings className="h-8 w-8 text-purple-500" />
             Settings
           </h1>
-          <p className="text-gray-400">
+          <p className="text-white/80">
             Configure your API keys and trading strategy parameters
           </p>
         </div>
