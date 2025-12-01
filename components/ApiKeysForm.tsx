@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Loader2, Key, Shield, AlertTriangle, Sparkles } from 'lucide-react'
+import { Loader2, Key, Shield, AlertTriangle, Sparkles, ChevronDown, ChevronUp, HelpCircle, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 
 export default function ApiKeysForm() {
@@ -17,6 +17,7 @@ export default function ApiKeysForm() {
   const [message, setMessage] = useState<string>('')
   const [isDemo, setIsDemo] = useState(false)
   const [hasExistingKeys, setHasExistingKeys] = useState(false)
+  const [showInstructions, setShowInstructions] = useState(false)
   const [apiKeys, setApiKeys] = useState({
     alpacaPaperKey: '',
     alpacaPaperSecret: '',
@@ -50,13 +51,18 @@ export default function ApiKeysForm() {
           const response = await fetch('/api/settings/api-keys')
           const result = await response.json()
           
-          if (result.success && result.data) {
+          // Only set hasExistingKeys if there are actually keys saved
+          if (result.success && result.data && 
+              (result.data.alpaca_paper_key || result.data.alpaca_live_key)) {
             setHasExistingKeys(true)
             // Keys are masked, so we'll just show that they exist
             // Users can update them by entering new values
+          } else {
+            setHasExistingKeys(false)
           }
         } catch (error) {
           console.error('Error loading existing keys:', error)
+          setHasExistingKeys(false)
         }
       }
       setLoadingKeys(false)
@@ -153,6 +159,71 @@ export default function ApiKeysForm() {
             We use pgcrypto to encrypt keys in `user_settings`. Never share your keys publicly.
           </AlertDescription>
         </Alert>
+
+        {/* Instructions Dropdown */}
+        <div className="border border-blue-500/30 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="w-full flex items-center justify-between p-4 bg-blue-500/10 hover:bg-blue-500/20 transition-colors text-left"
+          >
+            <div className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5 text-blue-400" />
+              <span className="font-medium text-white">How to get Alpaca API Keys</span>
+            </div>
+            {showInstructions ? (
+              <ChevronUp className="h-5 w-5 text-blue-400" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-blue-400" />
+            )}
+          </button>
+          
+          {showInstructions && (
+            <div className="p-4 bg-blue-500/5 border-t border-blue-500/30 space-y-4">
+              <ol className="list-decimal list-inside space-y-3 text-sm text-white/80">
+                <li>
+                  Go to{' '}
+                  <a 
+                    href="https://alpaca.markets" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 underline inline-flex items-center gap-1"
+                  >
+                    alpaca.markets
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </li>
+                <li>
+                  Once logged in, set up the multi-factor authentication in a third-party app 
+                  (you can use apps like Duo, Microsoft Entra, Google, or Apple)
+                </li>
+                <li>
+                  On the bottom right of the account's home page, click <strong className="text-white">"Generate New Keys"</strong>
+                </li>
+                <li>
+                  Copy both the <strong className="text-white">Key</strong> and <strong className="text-white">Secret Key</strong> and paste them into this page
+                </li>
+                <li>
+                  Click <strong className="text-white">"Save API Keys"</strong>
+                </li>
+              </ol>
+              
+              <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <p className="text-sm text-yellow-200">
+                  <strong>⚠️ Important:</strong> The Secret Key is only shown once when you generate it. 
+                  Make sure to copy it immediately! If you lose it, you'll need to generate a new key pair.
+                </p>
+              </div>
+
+              <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <p className="text-sm text-green-200">
+                  <strong>💡 Tip:</strong> Start with Paper Trading keys to test the bot risk-free with virtual money. 
+                  You can add Live Trading keys later when you're ready to trade with real money.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
