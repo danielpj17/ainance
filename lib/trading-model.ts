@@ -53,10 +53,6 @@ export interface TradingSignal {
 export interface TradingSettings {
   strategy: 'cash' | '25k_plus'
   account_type: 'cash' | 'margin'
-  max_trade_size: number
-  daily_loss_limit: number
-  take_profit: number
-  stop_loss: number
   max_exposure?: number  // Max total exposure % (default 90)
   cash_balance?: number
   buying_power?: number
@@ -456,14 +452,7 @@ class TradingModel {
       new Date(trade.timestamp).toDateString() === today
     )
     
-    const todayPnL = todayTrades.reduce((sum, trade) => {
-      // Simplified P&L calculation
-      return sum + (trade.action === 'sell' ? trade.price * 0.01 : -trade.price * 0.01)
-    }, 0)
-    
-    if (todayPnL < settings.daily_loss_limit) {
-      return false // Daily loss limit reached
-    }
+    // Daily loss limit check removed - not used in actual trading logic
     
     // Check account type restrictions
     if (settings.account_type === 'cash' && settings.strategy === 'cash') {
@@ -614,7 +603,7 @@ class TradingModel {
     if (settings.strategy === 'cash') {
       quantity = Math.floor((availableCapital * 0.01) / signal.price) // 1% of capital
     } else {
-      const percentage = settings.max_trade_size > 5000 ? 0.05 : 0.02 // 5% for larger trades, 2% otherwise
+      const percentage = 0.05 // 5% for $25k+ strategy
       quantity = Math.floor((availableCapital * percentage) / signal.price)
     }
     

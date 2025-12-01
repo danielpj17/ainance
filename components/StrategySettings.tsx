@@ -14,10 +14,6 @@ import { Loader2, AlertTriangle } from 'lucide-react'
 interface UserSettings {
   strategy: 'cash' | '25k_plus'
   account_type: 'cash' | 'margin'
-  max_trade_size: number
-  daily_loss_limit: number
-  take_profit: number
-  stop_loss: number
   confidence_threshold?: number
   max_exposure?: number  // Max total exposure % (default 90)
 }
@@ -41,10 +37,6 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
   const [settings, setSettings] = useState<UserSettings>({
     strategy: 'cash',
     account_type: 'cash',
-    max_trade_size: 5000,
-    daily_loss_limit: -2,
-    take_profit: 0.5,
-    stop_loss: 0.3,
     max_exposure: 90  // Default 90%
   })
 
@@ -160,7 +152,6 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
 
   // Validation warnings
   const showMarginWarning = settings.account_type === 'margin' && settings.strategy === 'cash'
-  const showTradeSizeWarning = settings.strategy === '25k_plus' && settings.max_trade_size < 5000
 
   if (loading) {
     return (
@@ -245,60 +236,6 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
               </AlertDescription>
             </Alert>
           )}
-        </div>
-
-        {/* Risk Management Parameters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="max_trade_size">Max Trade Size ($)</Label>
-            <Input
-              id="max_trade_size"
-              type="number"
-              value={settings.max_trade_size}
-              onChange={(e) => updateSetting('max_trade_size', Number(e.target.value))}
-              placeholder="5000"
-            />
-            {showTradeSizeWarning && (
-              <p className="text-xs text-destructive">
-                $25k+ strategy requires max trade size ≥ $5,000
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="daily_loss_limit">Daily Loss Limit (%)</Label>
-            <Input
-              id="daily_loss_limit"
-              type="number"
-              value={settings.daily_loss_limit}
-              onChange={(e) => updateSetting('daily_loss_limit', Number(e.target.value))}
-              placeholder="-2"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="take_profit">Take Profit (%)</Label>
-            <Input
-              id="take_profit"
-              type="number"
-              step="0.1"
-              value={settings.take_profit}
-              onChange={(e) => updateSetting('take_profit', Number(e.target.value))}
-              placeholder="0.5"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="stop_loss">Stop Loss (%)</Label>
-            <Input
-              id="stop_loss"
-              type="number"
-              step="0.1"
-              value={settings.stop_loss}
-              onChange={(e) => updateSetting('stop_loss', Number(e.target.value))}
-              placeholder="0.3"
-            />
-          </div>
         </div>
 
         {/* Confidence Threshold */}
@@ -418,7 +355,7 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
         <div className="flex gap-3 pt-4">
           <Button 
             onClick={() => saveSettings(true)}
-            disabled={saving || showTradeSizeWarning}
+            disabled={saving}
             className="flex-1"
           >
             {saving ? (
@@ -450,7 +387,7 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
         {/* Strategy Info */}
         <div className="text-xs text-muted-foreground space-y-1">
           <p><strong>Cash Trading:</strong> Max 3 trades per 5-day period, T+2 settlement</p>
-          <p><strong>$25k+ Rules:</strong> No trade limits, requires min $5k trade size</p>
+          <p><strong>$25k+ Rules:</strong> No trade limits, higher frequency trading</p>
           <p><strong>Margin Account:</strong> Allows borrowing, but watch for PDT rules</p>
         </div>
       </CardContent>

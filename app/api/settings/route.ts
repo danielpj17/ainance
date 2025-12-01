@@ -5,10 +5,6 @@ import { createServerClient, getUserIdFromRequest } from '@/utils/supabase/serve
 export interface UserSettings {
   strategy: 'cash' | '25k_plus'
   account_type: 'cash' | 'margin'
-  max_trade_size: number
-  daily_loss_limit: number
-  take_profit: number
-  stop_loss: number
   confidence_threshold?: number
   max_exposure?: number  // Max total exposure % (default 90)
 }
@@ -44,10 +40,6 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
     const defaultSettings: UserSettings = {
       strategy: 'cash',
       account_type: 'cash',
-      max_trade_size: 5000,
-      daily_loss_limit: -2,
-      take_profit: 0.5,
-      stop_loss: 0.3,
       confidence_threshold: 0.55,
       max_exposure: 90
     }
@@ -73,16 +65,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     console.log('[SETTINGS POST] User detected:', { userId, isDemo })
 
     const body = await req.json()
-    const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold, max_exposure } = body
+    const { strategy, account_type, confidence_threshold, max_exposure } = body
 
     // Validate input
     const validationError = validateSettings({
       strategy,
       account_type,
-      max_trade_size,
-      daily_loss_limit,
-      take_profit,
-      stop_loss,
       confidence_threshold,
       max_exposure
     })
@@ -96,10 +84,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
       user_id: userId,
       strategy,
       account_type,
-      max_trade_size: Number(max_trade_size),
-      daily_loss_limit: Number(daily_loss_limit),
-      take_profit: Number(take_profit),
-      stop_loss: Number(stop_loss),
       updated_at: new Date().toISOString()
     }
     
@@ -139,10 +123,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
       data: {
         strategy: data.strategy,
         account_type: data.account_type,
-        max_trade_size: data.max_trade_size,
-        daily_loss_limit: data.daily_loss_limit,
-        take_profit: data.take_profit,
-        stop_loss: data.stop_loss,
         confidence_threshold: data.confidence_threshold ?? 0.55,
         max_exposure: data.max_exposure ?? 90
       }
@@ -156,7 +136,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
 
 // Validation function
 function validateSettings(settings: any): string | null {
-  const { strategy, account_type, max_trade_size, daily_loss_limit, take_profit, stop_loss, confidence_threshold, max_exposure } = settings
+  const { strategy, account_type, confidence_threshold, max_exposure } = settings
 
   // Validate strategy
   if (!strategy || !['cash', '25k_plus'].includes(strategy)) {
@@ -166,28 +146,6 @@ function validateSettings(settings: any): string | null {
   // Validate account type
   if (!account_type || !['cash', 'margin'].includes(account_type)) {
     return 'Invalid account type. Must be "cash" or "margin"'
-  }
-
-  // Validate numeric values
-  if (!max_trade_size || max_trade_size <= 0) {
-    return 'Max trade size must be greater than 0'
-  }
-
-  if (!daily_loss_limit || daily_loss_limit >= 0) {
-    return 'Daily loss limit must be negative'
-  }
-
-  if (!take_profit || take_profit <= 0) {
-    return 'Take profit must be greater than 0'
-  }
-
-  if (!stop_loss || stop_loss <= 0) {
-    return 'Stop loss must be greater than 0'
-  }
-
-  // Validate $25k+ rules
-  if (strategy === '25k_plus' && max_trade_size < 5000) {
-    return 'For $25k+ strategy, max trade size must be at least $5,000'
   }
 
   // Validate confidence threshold if provided
