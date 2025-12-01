@@ -7,14 +7,27 @@ import { createClient } from '@/utils/supabase/client'
 import UserStatus from '@/components/UserStatus'
 import { useEffect, useState } from 'react'
 
-// Helper function to get user initials from email
-function getInitials(email: string | null): string {
-  if (!email) return 'A'
-  const parts = email.split('@')[0].split(/[._-]/)
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase()
+// Helper function to get user initials from name or email
+function getInitials(name: string | null, email: string | null): string {
+  // Try to use the full name first (first letter of first name + first letter of last name)
+  if (name) {
+    const nameParts = name.trim().split(/\s+/)
+    if (nameParts.length >= 2) {
+      return (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+    }
+    if (nameParts.length === 1 && nameParts[0].length >= 1) {
+      return nameParts[0][0].toUpperCase()
+    }
   }
-  return email.substring(0, 2).toUpperCase()
+  // Fallback to email
+  if (email) {
+    const parts = email.split('@')[0].split(/[._-]/)
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase()
+    }
+    return email.substring(0, 2).toUpperCase()
+  }
+  return 'A'
 }
 
 const navItems = [
@@ -37,11 +50,13 @@ export default function Sidebar() {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
-        setUserInitials(getInitials(session.user.email))
+        const userName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || null
+        setUserInitials(getInitials(userName, session.user.email || null))
       } else {
         const { data: { user } } = await supabase.auth.getUser()
         if (user && user.id !== '00000000-0000-0000-0000-000000000000') {
-          setUserInitials(getInitials(user.email))
+          const userName = user.user_metadata?.full_name || user.user_metadata?.name || null
+          setUserInitials(getInitials(userName, user.email || null))
         } else {
           setUserInitials('A')
         }
@@ -52,7 +67,8 @@ export default function Sidebar() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: any, session: any) => {
       if (session && session.user && session.user.id !== '00000000-0000-0000-0000-000000000000') {
-        setUserInitials(getInitials(session.user.email))
+        const userName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || null
+        setUserInitials(getInitials(userName, session.user.email || null))
       } else {
         setUserInitials('A')
       }
