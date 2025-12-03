@@ -688,6 +688,14 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         .eq('user_id', userId)
         .single()
       
+      console.log(`🔍 Fetching user settings for ${userId}...`)
+      console.log(`   Query result:`, { 
+        hasData: !!userSettings, 
+        error: settingsError ? { message: settingsError.message, code: settingsError.code } : null,
+        confidence_threshold: userSettings?.confidence_threshold,
+        sell_confidence_threshold: userSettings?.sell_confidence_threshold
+      })
+      
       if (settingsError) {
         if (settingsError.code === 'PGRST116') {
           // No rows found - user has no settings yet
@@ -696,13 +704,24 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
           console.warn('⚠️  Error fetching user settings:', settingsError.message, settingsError.code)
         }
       } else if (userSettings) {
-        // Settings found - check if confidence_threshold exists
-        if (userSettings.confidence_threshold !== null && userSettings.confidence_threshold !== undefined) {
-          baseConfidenceThreshold = parseFloat(String(userSettings.confidence_threshold))
-          console.log(`✅ Using confidence threshold from settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        // Settings found - check if confidence_threshold exists and is a valid number
+        const confThreshold = userSettings.confidence_threshold
+        const sellConfThreshold = userSettings.sell_confidence_threshold
+        
+        if (confThreshold !== null && confThreshold !== undefined && !isNaN(Number(confThreshold))) {
+          baseConfidenceThreshold = Number(confThreshold)
+          console.log(`✅ Using confidence threshold from settings: ${baseConfidenceThreshold} (${(baseConfidenceThreshold * 100).toFixed(1)}%)`)
         } else {
-          console.log(`⚠️  User settings exist but confidence_threshold is null/undefined, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
-          console.log(`   Full user settings:`, JSON.stringify(userSettings, null, 2))
+          console.log(`⚠️  User settings exist but confidence_threshold is invalid:`, confThreshold)
+          console.log(`   Using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        }
+        
+        if (sellConfThreshold !== null && sellConfThreshold !== undefined && !isNaN(Number(sellConfThreshold))) {
+          baseSellConfidenceThreshold = Number(sellConfThreshold)
+          console.log(`✅ Using sell confidence threshold from settings: ${baseSellConfidenceThreshold} (${(baseSellConfidenceThreshold * 100).toFixed(1)}%)`)
+        } else {
+          console.log(`⚠️  User settings exist but sell_confidence_threshold is invalid:`, sellConfThreshold)
+          console.log(`   Using default: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
         }
       } else {
         console.log(`ℹ️  No user settings returned, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
@@ -720,6 +739,24 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     
     // Log the final values being used for diagnostics
     console.log(`📊 DIAGNOSTICS VALUES: Confidence=${(baseConfidenceThreshold * 100).toFixed(1)}%, Sell=${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
+    
+    // Double-check: Query again with full select to see what's actually in the database
+    try {
+      const { data: verifySettings } = await supabase
+        .from('user_settings')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
+      if (verifySettings) {
+        console.log(`🔍 VERIFICATION - Full user_settings from DB:`, {
+          confidence_threshold: verifySettings.confidence_threshold,
+          sell_confidence_threshold: verifySettings.sell_confidence_threshold,
+          updated_at: verifySettings.updated_at
+        })
+      }
+    } catch (verifyError) {
+      console.warn('Could not verify settings:', verifyError)
+    }
 
     // STEP 2: Get FRED Economic Indicators (fetch even when market is closed for accurate diagnostics)
     let fredIndicators: any = null
