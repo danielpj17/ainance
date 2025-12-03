@@ -659,46 +659,6 @@ export default function LiveTradingPage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Recent Trades Widget */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-white">Recent Trades</CardTitle>
-            <CardDescription className="text-gray-400">Latest trading activity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {trades.length > 0 ? (
-                trades.slice(0, 10).map((trade) => (
-                  <div key={trade.id} className="p-3 bg-green-500/10 backdrop-blur-sm rounded-lg border border-green-500/20">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <Badge 
-                          variant={trade.action === 'buy' ? 'default' : 'destructive'} 
-                          className={trade.action === 'buy' ? 'bg-green-400' : 'bg-red-600'}
-                        >
-                          {trade.action.toUpperCase()}
-                        </Badge>
-                        <span className="font-bold text-white">{trade.symbol}</span>
-                      </div>
-                      <span className="text-sm text-gray-400">{trade.qty} shares</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-400">{formatCurrency(trade.price)}</span>
-                      <span className="text-gray-500">{formatDate(trade.created_at)}</span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                  <p>No trades yet</p>
-                  <p className="text-xs mt-1">Start the bot to execute trades</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Current Positions */}

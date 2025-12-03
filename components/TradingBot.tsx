@@ -542,7 +542,27 @@ export default function TradingBot({ mode }: TradingBotProps) {
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return 'Never'
-    return new Date(timestamp).toLocaleTimeString()
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    
+    // If less than 1 minute ago, show "Just now"
+    if (diffMins < 1) return 'Just now'
+    // If less than 60 minutes ago, show minutes
+    if (diffMins < 60) return `${diffMins} min ago`
+    // If today, show time
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    }
+    // Otherwise show date and time
+    return date.toLocaleString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: 'numeric', 
+      minute: '2-digit', 
+      hour12: true 
+    })
   }
 
   const getStatusIcon = () => {
@@ -600,6 +620,14 @@ export default function TradingBot({ mode }: TradingBotProps) {
             </Alert>
           )}
 
+          {/* Last Run Time */}
+          {botStatus?.lastRun && (
+            <div className="text-sm text-gray-400">
+              <span className="text-gray-500">Last Run:</span>{' '}
+              <span className="text-white font-medium">{formatTime(botStatus.lastRun)}</span>
+            </div>
+          )}
+
           {/* Control Buttons */}
           <div className="flex gap-3 flex-wrap">
             {!botStatus?.isRunning ? (
@@ -639,18 +667,6 @@ export default function TradingBot({ mode }: TradingBotProps) {
             >
               <Activity className="h-5 w-5" />
               Always-On {botStatus?.alwaysOn ? 'ON' : 'OFF'}
-            </Button>
-            
-            {/* Test Signals Button */}
-            <Button 
-              onClick={generateTestSignals} 
-              disabled={isLoading || botStatus?.isRunning}
-              variant="outline"
-              size="lg"
-              className="flex items-center gap-2"
-            >
-              <Activity className="h-5 w-5" />
-              {isLoading ? 'Generating...' : 'Test Signals'}
             </Button>
           </div>
           
