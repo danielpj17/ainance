@@ -291,17 +291,17 @@ export default function TradingBot({ mode }: TradingBotProps) {
       const completedCount = completedTrades?.length || 0
       
       // Calculate win rate
-      const winningTrades = completedTrades?.filter(t => t.profit_loss > 0) || []
+      const winningTrades = completedTrades?.filter((t: { profit_loss: number | null; profit_loss_percent: number | null }) => t.profit_loss && t.profit_loss > 0) || []
       const winRate = completedCount > 0 ? (winningTrades.length / completedCount) * 100 : 0
 
       // Calculate average win amount ($ and %)
       let avgWinAmount = 0
       let avgWinPercent = 0
       if (winningTrades.length > 0) {
-        const totalWinAmount = winningTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0)
+        const totalWinAmount = winningTrades.reduce((sum: number, t: { profit_loss: number | null }) => sum + (t.profit_loss || 0), 0)
         avgWinAmount = totalWinAmount / winningTrades.length
         
-        const totalWinPercent = winningTrades.reduce((sum, t) => sum + (t.profit_loss_percent || 0), 0)
+        const totalWinPercent = winningTrades.reduce((sum: number, t: { profit_loss_percent: number | null }) => sum + (t.profit_loss_percent || 0), 0)
         avgWinPercent = totalWinPercent / winningTrades.length
       }
 
@@ -309,9 +309,9 @@ export default function TradingBot({ mode }: TradingBotProps) {
       let avgHoldTime = '0h'
       if (completedTrades && completedTrades.length > 0) {
         const durations = completedTrades
-          .map(t => t.holding_duration)
-          .filter(d => d)
-          .map(d => {
+          .map((t: { holding_duration: string | null }) => t.holding_duration)
+          .filter((d: string | null): d is string => d !== null && d !== undefined)
+          .map((d: string) => {
             // Parse PostgreSQL interval format (e.g., "2 days 06:30:00" or "06:30:00")
             const daysMatch = d.match(/(\d+)\s+days?/i)
             const days = daysMatch ? parseInt(daysMatch[1]) : 0
