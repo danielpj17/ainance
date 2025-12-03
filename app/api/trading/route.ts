@@ -682,11 +682,24 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     let baseConfidenceThreshold = 0.55 // Default for BUY
     let baseSellConfidenceThreshold = 0.50 // Default for SELL (lower for easier exits)
     try {
-      const { data: userSettings, error: settingsError } = await supabase
+      // First try to get both columns, but handle case where sell_confidence_threshold doesn't exist
+      let { data: userSettings, error: settingsError } = await supabase
         .from('user_settings')
         .select('confidence_threshold, sell_confidence_threshold')
         .eq('user_id', userId)
         .single()
+      
+      // If error is due to missing column, try again with just confidence_threshold
+      if (settingsError && settingsError.code === '42703') {
+        console.log('⚠️  sell_confidence_threshold column does not exist, fetching only confidence_threshold')
+        const { data: settingsWithoutSell, error: errorWithoutSell } = await supabase
+          .from('user_settings')
+          .select('confidence_threshold')
+          .eq('user_id', userId)
+          .single()
+        userSettings = settingsWithoutSell
+        settingsError = errorWithoutSell
+      }
       
       console.log(`🔍 Fetching user settings for ${userId}...`)
       console.log(`   Query result:`, { 
@@ -720,18 +733,11 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
           baseSellConfidenceThreshold = Number(sellConfThreshold)
           console.log(`✅ Using sell confidence threshold from settings: ${baseSellConfidenceThreshold} (${(baseSellConfidenceThreshold * 100).toFixed(1)}%)`)
         } else {
-          console.log(`⚠️  User settings exist but sell_confidence_threshold is invalid:`, sellConfThreshold)
+          console.log(`⚠️  User settings exist but sell_confidence_threshold is invalid or missing:`, sellConfThreshold)
           console.log(`   Using default: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
         }
       } else {
         console.log(`ℹ️  No user settings returned, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
-      }
-      
-      if (userSettings?.sell_confidence_threshold !== null && userSettings?.sell_confidence_threshold !== undefined) {
-        baseSellConfidenceThreshold = parseFloat(String(userSettings.sell_confidence_threshold))
-        console.log(`✅ Using sell confidence threshold from settings: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
-      } else {
-        console.log(`ℹ️  No sell confidence threshold in settings, using default: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
       }
     } catch (error) {
       console.warn('⚠️  Could not fetch confidence threshold from settings, using default:', error)
