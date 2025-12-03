@@ -249,9 +249,24 @@ export default function TradingBot({ mode }: TradingBotProps) {
     setStatsLoading(true)
     try {
       const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
-      if (!session) {
+      if (sessionError) {
+        console.error('Error getting session:', sessionError)
+        setStatsLoading(false)
+        return
+      }
+      
+      if (!session || !session.user) {
+        console.log('No session found, setting empty stats')
+        setQuickStats({
+          completedTrades: 0,
+          openTrades: 0,
+          winRate: 0,
+          avgHoldTime: '0h',
+          avgWinAmount: 0,
+          avgWinPercent: 0
+        })
         setStatsLoading(false)
         return
       }
@@ -261,6 +276,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
       const startDate = statsPeriod === 'today' 
         ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
         : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+      
+      console.log('Fetching stats for period:', statsPeriod, 'from:', startDate.toISOString(), 'mode:', mode)
       
       // Fetch current trades (open)
       const { data: currentTrades, error: currentError } = await supabase
@@ -281,11 +298,28 @@ export default function TradingBot({ mode }: TradingBotProps) {
         .eq('account_type', mode)
         .gte('sell_timestamp', startDate.toISOString())
 
+      if (currentError) {
+        console.error('Error fetching current trades:', currentError)
+      }
+      if (completedError) {
+        console.error('Error fetching completed trades:', completedError)
+      }
+      
       if (currentError || completedError) {
-        console.error('Error fetching stats:', currentError || completedError)
+        // Set empty stats on error
+        setQuickStats({
+          completedTrades: 0,
+          openTrades: 0,
+          winRate: 0,
+          avgHoldTime: '0h',
+          avgWinAmount: 0,
+          avgWinPercent: 0
+        })
         setStatsLoading(false)
         return
       }
+      
+      console.log('Stats fetched - open:', currentTrades?.length || 0, 'completed:', completedTrades?.length || 0)
 
       const openCount = currentTrades?.length || 0
       const completedCount = completedTrades?.length || 0
@@ -344,6 +378,15 @@ export default function TradingBot({ mode }: TradingBotProps) {
       })
     } catch (error) {
       console.error('Error fetching quick stats:', error)
+      // Set empty stats on error
+      setQuickStats({
+        completedTrades: 0,
+        openTrades: 0,
+        winRate: 0,
+        avgHoldTime: '0h',
+        avgWinAmount: 0,
+        avgWinPercent: 0
+      })
     } finally {
       setStatsLoading(false)
     }
