@@ -323,7 +323,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
           })
         
         if (durations.length > 0) {
-          const avgHours = durations.reduce((a, b) => a + b, 0) / durations.length
+          const avgHours = durations.reduce((a: number, b: number) => a + b, 0) / durations.length
           if (avgHours < 24) {
             avgHoldTime = `${Math.round(avgHours)}h`
           } else {
