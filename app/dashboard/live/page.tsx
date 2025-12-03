@@ -120,8 +120,10 @@ export default function LiveTradingPage() {
   }, [])
 
   useEffect(() => {
-    loadPortfolioHistory()
-  }, [chartPeriod])
+    if (account) {
+      loadPortfolioHistory()
+    }
+  }, [chartPeriod, account])
 
   const checkApiKeys = async () => {
     try {
@@ -351,12 +353,20 @@ export default function LiveTradingPage() {
   }
 
   const calculateProfitLoss = () => {
-    if (!account) return { amount: 0, percentage: 0 }
+    if (!account || !portfolioHistory) {
+      // Fallback to today's change if no history
+      if (!account) return { amount: 0, percentage: 0 }
+      const equity = parseFloat(account.equity || '0')
+      const lastEquity = parseFloat(account.last_equity || account.equity || '0')
+      const amount = equity - lastEquity
+      const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
+      return { amount, percentage }
+    }
     
-    const equity = parseFloat(account.equity || '0')
-    const lastEquity = parseFloat(account.last_equity || account.equity || '0')
-    const amount = equity - lastEquity
-    const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
+    const currentValue = parseFloat(account.equity || '0')
+    const baseValue = portfolioHistory.base_value || currentValue
+    const amount = currentValue - baseValue
+    const percentage = baseValue > 0 ? (amount / baseValue) * 100 : 0
     
     return { amount, percentage }
   }
@@ -406,10 +416,47 @@ export default function LiveTradingPage() {
               {account ? formatCurrency(account.equity) : '$0.00'}
             </p>
           </div>
-          <Badge className={profitLoss.amount >= 0 ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}>
-            {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
-            {profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%
-          </Badge>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-2">
+              <Button
+                variant={chartPeriod === '1D' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setChartPeriod('1D')}
+                className={chartPeriod === '1D' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+              >
+                Today
+              </Button>
+              <Button
+                variant={chartPeriod === '1W' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setChartPeriod('1W')}
+                className={chartPeriod === '1W' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+              >
+                Week
+              </Button>
+              <Button
+                variant={chartPeriod === '1M' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setChartPeriod('1M')}
+                className={chartPeriod === '1M' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+              >
+                Month
+              </Button>
+              <Button
+                variant={chartPeriod === '1A' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setChartPeriod('1A')}
+                className={chartPeriod === '1A' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+              >
+                Year
+              </Button>
+            </div>
+            <Badge className={profitLoss.amount >= 0 ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}>
+              {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
+              <span className="mr-1">{formatCurrency(profitLoss.amount)}</span>
+              <span>({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)</span>
+            </Badge>
+          </div>
         </div>
       </div>
 
@@ -443,7 +490,7 @@ export default function LiveTradingPage() {
             </div>
             <p className={`text-xs flex items-center gap-1 mt-1 ${profitLoss.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {profitLoss.amount >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-              {formatCurrency(profitLoss.amount)} today
+              {formatCurrency(profitLoss.amount)} ({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)
             </p>
           </CardContent>
         </Card>
@@ -609,7 +656,7 @@ export default function LiveTradingPage() {
                   onClick={() => setChartPeriod('1D')}
                   className={chartPeriod === '1D' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
                 >
-                  Day
+                  Today
                 </Button>
                 <Button 
                   variant={chartPeriod === '1W' ? 'default' : 'outline'}

@@ -357,17 +357,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   if (newCurrentPrice && !isNaN(newCurrentPrice) && isFinite(newCurrentPrice) && newCurrentPrice > 0) {
                     const oldCurrentPrice = trade.current_price
                     trade.current_price = newCurrentPrice
-                    trade.current_value = parseFloat(position.market_value) || (trade.qty * newCurrentPrice)
                     
-                    // Use Alpaca's P&L if available (it's more accurate), otherwise calculate manually
-                    const alpacaUnrealizedPl = position.unrealized_pl != null ? parseFloat(position.unrealized_pl) : null
+                    // Calculate position value based on THIS trade's quantity, not the aggregated Alpaca position
+                    // When multiple trades exist for the same symbol, Alpaca returns aggregated values
+                    // but we need to calculate per-trade values
+                    trade.current_value = trade.qty * newCurrentPrice
+                    
+                    // Calculate P&L based on THIS trade's quantity and entry price
+                    // Don't use Alpaca's aggregated unrealized_pl since it's for the entire position
+                    trade.unrealized_pl = (newCurrentPrice - preservedBuyPrice) * trade.qty
+                    
+                    // Percentage is the same for all trades of the same symbol (based on price change)
+                    // So we can use Alpaca's percentage if available, otherwise calculate it
                     const alpacaUnrealizedPlPercent = position.unrealized_plpc != null ? parseFloat(position.unrealized_plpc) * 100 : null
-                    
-                    if (alpacaUnrealizedPl != null && !isNaN(alpacaUnrealizedPl)) {
-                      trade.unrealized_pl = alpacaUnrealizedPl
-                    } else {
-                      trade.unrealized_pl = (newCurrentPrice - preservedBuyPrice) * trade.qty
-                    }
                     
                     if (alpacaUnrealizedPlPercent != null && !isNaN(alpacaUnrealizedPlPercent)) {
                       trade.unrealized_pl_percent = alpacaUnrealizedPlPercent

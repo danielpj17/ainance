@@ -18,63 +18,64 @@ export default function DashboardPage() {
   const [tradeMetrics, setTradeMetrics] = useState<any>(null)
   const [winRate, setWinRate] = useState<number>(0)
   const [trendData, setTrendData] = useState<any[]>([])
-  const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'year'>('week')
+  const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
   const [totalTrades, setTotalTrades] = useState<number>(0)
   const [recentActivity, setRecentActivity] = useState<any[]>([])
   const [portfolioChange, setPortfolioChange] = useState<number>(0)
-  
-  // Generate trend data dynamically based on period
-  const generateTrendData = (period: 'week' | 'month' | 'year') => {
-    const data = []
-    const today = new Date()
-    const baseValue = account ? parseFloat(account.portfolio_value) : 100000
-    
-    let days: number
-    let dateFormat: Intl.DateTimeFormatOptions
-    
-    switch (period) {
-      case 'week':
-        days = 7
-        dateFormat = { month: 'short', day: 'numeric' }
-        break
-      case 'month':
-        days = 30
-        dateFormat = { month: 'short', day: 'numeric' }
-        break
-      case 'year':
-        days = 365
-        dateFormat = { month: 'short' }
-        break
-    }
-    
-    // For year view, sample every 7 days to keep chart readable
-    const step = period === 'year' ? 7 : 1
-    
-    for (let i = days - 1; i >= 0; i -= step) {
-      const date = new Date(today)
-      date.setDate(date.getDate() - i)
-      
-      // Generate realistic variation
-      const dayVariation = (Math.random() - 0.5) * 0.04 // -2% to +2% per day
-      const cumulativeGrowth = period === 'year' ? 0.05 : period === 'month' ? 0.02 : 0.01 // Expected growth
-      const portfolioValue = baseValue * (1 + cumulativeGrowth * ((days - i) / days) + dayVariation)
-      const benchmarkValue = baseValue * (1 + cumulativeGrowth * 0.8 * ((days - i) / days) + dayVariation * 0.8)
-      
-      data.push({
-        date: date.toLocaleDateString('en-US', dateFormat),
-        portfolio: Math.round(portfolioValue),
-        benchmark: Math.round(benchmarkValue)
-      })
-    }
-    
-    return data
-  }
+  const [portfolioChangeAmount, setPortfolioChangeAmount] = useState<number>(0)
+  const [portfolioHistory, setPortfolioHistory] = useState<any>(null)
   
   useEffect(() => {
     if (account) {
-      setTrendData(generateTrendData(chartPeriod))
+      loadPortfolioHistory()
     }
   }, [account, chartPeriod])
+
+  const loadPortfolioHistory = async () => {
+    try {
+      const timeframeMap = {
+        '1D': '5Min',
+        '1W': '1H',
+        '1M': '1D',
+        '1A': '1W'
+      }
+      
+      const response = await authFetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}`)
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        setPortfolioHistory(result.data)
+        
+        // Calculate profit/loss for the selected period
+        const currentValue = account ? parseFloat(account.portfolio_value || account.equity || '0') : 0
+        const baseValue = result.data.base_value || currentValue
+        const amount = currentValue - baseValue
+        const percentage = baseValue > 0 ? (amount / baseValue) * 100 : 0
+        
+        setPortfolioChange(percentage)
+        setPortfolioChangeAmount(amount)
+        
+        // Transform data for chart
+        const timestamps = result.data.timestamp || []
+        const equity = result.data.equity || []
+        
+        const transformed = timestamps.map((ts: number, idx: number) => ({
+          date: new Date(ts * 1000).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: chartPeriod === '1D' ? 'numeric' : undefined,
+            minute: chartPeriod === '1D' ? '2-digit' : undefined
+          }),
+          portfolio: equity[idx] || 0,
+          benchmark: baseValue * (1 + (equity[idx] - baseValue) / baseValue * 0.8) // Simulated benchmark
+        }))
+        
+        setTrendData(transformed)
+      }
+    } catch (error) {
+      console.error('Error loading portfolio history:', error)
+    }
+  }
 
   // This will be populated with real data if we have open positions
   const [riskData, setRiskData] = useState([
@@ -95,15 +96,7 @@ export default function DashboardPage() {
         if (accountData.success) {
           setAccount(accountData.data)
           
-          // Calculate portfolio change percentage
-          const currentValue = parseFloat(accountData.data.portfolio_value || accountData.data.equity || '0')
-          const lastValue = parseFloat(accountData.data.last_equity || accountData.data.equity || currentValue)
-          if (lastValue > 0 && currentValue !== lastValue) {
-            const changePercent = ((currentValue - lastValue) / lastValue) * 100
-            setPortfolioChange(changePercent)
-          } else {
-            setPortfolioChange(0)
-          }
+          // Portfolio change will be calculated from portfolio history
         }
       } else {
         // If account fetch fails, set account to null so UI shows zeros
@@ -215,6 +208,55 @@ export default function DashboardPage() {
             <p className="text-sm text-white/80 font-medium">Portfolio Value</p>
             <p className="text-2xl font-bold text-white drop-shadow-lg">${account ? parseFloat(account.portfolio_value || account.equity || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</p>
           </div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setChartPeriod('1D')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1D'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setChartPeriod('1W')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1W'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setChartPeriod('1M')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1M'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => setChartPeriod('1A')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1A'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Year
+              </button>
+            </div>
+            <Badge className={portfolioChangeAmount >= 0 ? "bg-blue-600 hover:bg-blue-700" : "bg-red-600 hover:bg-red-700"}>
+              {portfolioChangeAmount >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
+              <span className="mr-1">{portfolioChangeAmount >= 0 ? '+' : ''}${Math.abs(portfolioChangeAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>({portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%)</span>
+            </Badge>
+          </div>
         </div>
       </div>
 
@@ -235,7 +277,13 @@ export default function DashboardPage() {
               ) : (
                 <TrendingDown className="h-3 w-3" />
               )}
-              {portfolioChange !== 0 ? `${portfolioChange >= 0 ? '+' : ''}${portfolioChange.toFixed(2)}%` : 'No change'} from last period
+              {portfolioChange !== 0 ? (
+                <>
+                  {portfolioChangeAmount >= 0 ? '+' : ''}${Math.abs(portfolioChangeAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%)
+                </>
+              ) : (
+                'No change'
+              )}
             </p>
           </CardContent>
         </Card>
@@ -288,9 +336,10 @@ export default function DashboardPage() {
               <div>
                 <CardTitle className="text-white text-xl">Portfolio Trend</CardTitle>
                 <CardDescription className="text-white/70">
-                  {chartPeriod === 'week' && 'Performance over the last 7 days'}
-                  {chartPeriod === 'month' && 'Performance over the last 30 days'}
-                  {chartPeriod === 'year' && 'Performance over the last year'}
+                  {chartPeriod === '1D' && 'Performance today'}
+                  {chartPeriod === '1W' && 'Performance over the last 7 days'}
+                  {chartPeriod === '1M' && 'Performance over the last 30 days'}
+                  {chartPeriod === '1A' && 'Performance over the last year'}
                 </CardDescription>
               </div>
               <div className="flex gap-4 text-sm">
@@ -308,9 +357,19 @@ export default function DashboardPage() {
             {/* Period Selector */}
             <div className="flex gap-2 mb-4">
               <button
-                onClick={() => setChartPeriod('week')}
+                onClick={() => setChartPeriod('1D')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === 'week'
+                  chartPeriod === '1D'
+                    ? 'bg-blue-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setChartPeriod('1W')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1W'
                     ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
@@ -318,9 +377,9 @@ export default function DashboardPage() {
                 Week
               </button>
               <button
-                onClick={() => setChartPeriod('month')}
+                onClick={() => setChartPeriod('1M')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === 'month'
+                  chartPeriod === '1M'
                     ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
@@ -328,9 +387,9 @@ export default function DashboardPage() {
                 Month
               </button>
               <button
-                onClick={() => setChartPeriod('year')}
+                onClick={() => setChartPeriod('1A')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === 'year'
+                  chartPeriod === '1A'
                     ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
