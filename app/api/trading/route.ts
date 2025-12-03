@@ -679,11 +679,12 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
     // Get user's confidence threshold from settings (needed for logging even when market is closed)
-    let baseConfidenceThreshold = 0.55 // Default
+    let baseConfidenceThreshold = 0.55 // Default for BUY
+    let baseSellConfidenceThreshold = 0.50 // Default for SELL (lower for easier exits)
     try {
       const { data: userSettings } = await supabase
         .from('user_settings')
-        .select('confidence_threshold')
+        .select('confidence_threshold, sell_confidence_threshold')
         .eq('user_id', userId)
         .single()
       
@@ -692,6 +693,13 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         console.log(`✅ Using confidence threshold from settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
       } else {
         console.log(`ℹ️  No confidence threshold in settings, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+      }
+      
+      if (userSettings?.sell_confidence_threshold !== null && userSettings?.sell_confidence_threshold !== undefined) {
+        baseSellConfidenceThreshold = parseFloat(userSettings.sell_confidence_threshold)
+        console.log(`✅ Using sell confidence threshold from settings: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
+      } else {
+        console.log(`ℹ️  No sell confidence threshold in settings, using default: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
       }
     } catch (error) {
       console.warn('⚠️  Could not fetch confidence threshold from settings, using default:', error)
@@ -721,6 +729,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
               market_open: false,
               diagnostics: {
                 min_confidence_threshold: baseConfidenceThreshold,
+                min_sell_confidence_threshold: baseSellConfidenceThreshold,
                 market_risk: 0.3,
                 total_ml_signals: 0,
                 buy_signals_before_filter: 0,
@@ -747,6 +756,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
               market_open: false,
               diagnostics: {
                 min_confidence_threshold: baseConfidenceThreshold,
+                min_sell_confidence_threshold: baseSellConfidenceThreshold,
                 market_risk: 0.3,
                 total_ml_signals: 0,
                 buy_signals_before_filter: 0,
@@ -781,7 +791,8 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     // STEP 2: Get FRED Economic Indicators
     let fredIndicators: any = null
     let marketRisk = 0.3 // Default moderate risk
-    let minConfidence = baseConfidenceThreshold // Start with user's setting
+    let minConfidence = baseConfidenceThreshold // Start with user's setting for BUY
+    let minConfidenceForSell = baseSellConfidenceThreshold // Separate threshold for SELL
 
     try {
       if (isFREDInitialized()) {
@@ -790,19 +801,25 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         fredIndicators = await fredService.getIndicators()
         marketRisk = fredService.calculateMarketRisk(fredIndicators)
         
-        // Adjust confidence threshold based on market risk (adds 0-15% to base threshold)
-        // This allows user's setting to be the base, with risk adjustment on top
+        // For BUY signals: Higher risk = higher threshold (be more selective)
         const riskAdjustment = marketRisk * 0.15
-        minConfidence = Math.min(baseConfidenceThreshold + riskAdjustment, 1.0) // Cap at 100%
+        minConfidence = Math.min(baseConfidenceThreshold + riskAdjustment, 1.0)
         
-        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Base Threshold: ${(baseConfidenceThreshold * 100).toFixed(1)}% | Adjusted: ${(minConfidence * 100).toFixed(1)}%`)
+        // For SELL signals: Higher risk = lower threshold (sell more easily to protect capital)
+        const sellRiskAdjustment = marketRisk * 0.15
+        minConfidenceForSell = Math.max(baseSellConfidenceThreshold - sellRiskAdjustment, 0.0)
+        
+        console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Base Threshold: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        console.log(`   BUY Threshold: ${(minConfidence * 100).toFixed(1)}% | SELL Threshold: ${(minConfidenceForSell * 100).toFixed(1)}%`)
       } else {
         console.log('⚠️  FRED not initialized, using base confidence threshold without risk adjustment')
         minConfidence = baseConfidenceThreshold
+        minConfidenceForSell = baseSellConfidenceThreshold
       }
     } catch (error) {
       console.warn('⚠️  Could not fetch FRED data, using base confidence threshold:', error)
       minConfidence = baseConfidenceThreshold
+      minConfidenceForSell = baseSellConfidenceThreshold
     }
 
     // STEP 3: Stock Selection (skip scanning to avoid rate limits)
@@ -1115,7 +1132,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     // SELL signals: Only for positions we currently hold
     const sellSignalsBeforeFilter = allSignals.filter((s: any) => s.action === 'sell' && s.is_held)
     const sellSignals = sellSignalsBeforeFilter
-      .filter((s: any) => s.adjusted_confidence >= minConfidence)
+      .filter((s: any) => s.adjusted_confidence >= minConfidenceForSell)
       .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
     
     const sellFilteredByConfidence = sellSignalsBeforeFilter.length - sellSignals.length
@@ -1308,14 +1325,14 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       : []
     const filteredBuySignals = [...filteredBuySignalsByConfidence, ...filteredBuySignalsByTime]
     
-    const filteredSellSignals = sellSignalsBeforeFilter.filter((s: any) => s.adjusted_confidence < minConfidence)
+    const filteredSellSignals = sellSignalsBeforeFilter.filter((s: any) => s.adjusted_confidence < minConfidenceForSell)
     
     console.log('═══════════════════════════════════════════════════════════')
     console.log('📊 TRADING LOOP SUMMARY')
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`✅ Signals to Execute: ${executedCount}`)
     console.log(`📈 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`)
-    console.log(`🎯 Confidence Threshold: ${(minConfidence * 100).toFixed(1)}%`)
+    console.log(`🎯 Confidence Thresholds: BUY ${(minConfidence * 100).toFixed(1)}% | SELL ${(minConfidenceForSell * 100).toFixed(1)}%`)
     console.log(`💼 Positions Before: ${currentHoldings.length}`)
     if (filteredBuySignals.length > 0) {
       console.log(`⚠️  Filtered BUY signals (low confidence):`)
@@ -1326,7 +1343,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     if (filteredSellSignals.length > 0) {
       console.log(`⚠️  Filtered SELL signals (low confidence):`)
       filteredSellSignals.forEach((s: any) => {
-        console.log(`   - ${s.symbol}: ${(s.confidence * 100).toFixed(1)}% base + ${(s.news_sentiment * 15).toFixed(1)}% sentiment = ${(s.adjusted_confidence * 100).toFixed(1)}% (need ${(minConfidence * 100).toFixed(1)}%)`)
+        console.log(`   - ${s.symbol}: ${(s.confidence * 100).toFixed(1)}% base + ${(s.news_sentiment * 15).toFixed(1)}% sentiment = ${(s.adjusted_confidence * 100).toFixed(1)}% (need ${(minConfidenceForSell * 100).toFixed(1)}%)`)
       })
     }
     console.log('═══════════════════════════════════════════════════════════')
@@ -1364,12 +1381,13 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
               base_confidence: s.confidence,
               sentiment_boost: s.news_sentiment * 0.15,
               adjusted_confidence: s.adjusted_confidence,
-              threshold: minConfidence,
-              reason: s.adjusted_confidence < minConfidence ? 'confidence_below_threshold' : 'other'
+              threshold: minConfidenceForSell,
+              reason: s.adjusted_confidence < minConfidenceForSell ? 'confidence_below_threshold' : 'other'
             }))
           },
           diagnostics: {
             min_confidence_threshold: minConfidence,
+            min_sell_confidence_threshold: minConfidenceForSell,
             market_risk: marketRisk,
             total_ml_signals: allSignals.length,
             buy_signals_before_filter: buySignalsBeforeFilter.length,

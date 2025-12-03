@@ -6,6 +6,7 @@ export interface UserSettings {
   strategy: 'cash' | '25k_plus'
   account_type: 'cash' | 'margin'
   confidence_threshold?: number
+  sell_confidence_threshold?: number
   max_exposure?: number  // Max total exposure % (default 90)
 }
 
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<SettingsRespon
       strategy: 'cash',
       account_type: 'cash',
       confidence_threshold: 0.55,
+      sell_confidence_threshold: 0.50,
       max_exposure: 90
     }
 
@@ -65,13 +67,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     console.log('[SETTINGS POST] User detected:', { userId, isDemo })
 
     const body = await req.json()
-    const { strategy, account_type, confidence_threshold, max_exposure } = body
+    const { strategy, account_type, confidence_threshold, sell_confidence_threshold, max_exposure } = body
 
     // Validate input
     const validationError = validateSettings({
       strategy,
       account_type,
       confidence_threshold,
+      sell_confidence_threshold,
       max_exposure
     })
 
@@ -90,6 +93,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
     // Add confidence_threshold if provided
     if (confidence_threshold !== undefined) {
       settingsData.confidence_threshold = Number(confidence_threshold)
+    }
+    
+    // Add sell_confidence_threshold if provided
+    if (sell_confidence_threshold !== undefined) {
+      settingsData.sell_confidence_threshold = Number(sell_confidence_threshold)
     }
     
     // Add max_exposure if provided
@@ -124,6 +132,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
         strategy: data.strategy,
         account_type: data.account_type,
         confidence_threshold: data.confidence_threshold ?? 0.55,
+        sell_confidence_threshold: data.sell_confidence_threshold ?? 0.50,
         max_exposure: data.max_exposure ?? 90
       }
     })
@@ -136,7 +145,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<SettingsRespo
 
 // Validation function
 function validateSettings(settings: any): string | null {
-  const { strategy, account_type, confidence_threshold, max_exposure } = settings
+  const { strategy, account_type, confidence_threshold, sell_confidence_threshold, max_exposure } = settings
 
   // Validate strategy
   if (!strategy || !['cash', '25k_plus'].includes(strategy)) {
@@ -152,6 +161,13 @@ function validateSettings(settings: any): string | null {
   if (confidence_threshold !== undefined && confidence_threshold !== null) {
     if (confidence_threshold < 0 || confidence_threshold > 1) {
       return 'Confidence threshold must be between 0.0 and 1.0 (0% to 100%)'
+    }
+  }
+
+  // Validate sell_confidence_threshold if provided
+  if (sell_confidence_threshold !== undefined && sell_confidence_threshold !== null) {
+    if (sell_confidence_threshold < 0 || sell_confidence_threshold > 1) {
+      return 'Sell confidence threshold must be between 0.0 and 1.0 (0% to 100%)'
     }
   }
 
