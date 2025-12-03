@@ -59,6 +59,16 @@ export default function TradingBot({ mode }: TradingBotProps) {
   const [diagnostics, setDiagnostics] = useState<any>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [showInfoModal, setShowInfoModal] = useState(false)
+  const [statsPeriod, setStatsPeriod] = useState<'today' | 'week'>('today')
+  const [quickStats, setQuickStats] = useState<{
+    completedTrades: number
+    openTrades: number
+    winRate: number
+    avgHoldTime: string
+    avgWinAmount: number
+    avgWinPercent: number
+  } | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
   const [config, setConfig] = useState<BotConfig>({
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
     interval: 10, // 10 seconds
@@ -233,6 +243,121 @@ export default function TradingBot({ mode }: TradingBotProps) {
       clearInterval(diagnosticsInterval)
     }
   }, [botStatus?.isRunning])
+
+  // Fetch quick stats
+  const fetchQuickStats = async () => {
+    setStatsLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        setStatsLoading(false)
+        return
+      }
+
+      // Calculate date range
+      const now = new Date()
+      const startDate = statsPeriod === 'today' 
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+      
+      // Fetch current trades (open)
+      const { data: currentTrades, error: currentError } = await supabase
+        .from('trade_logs')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('status', 'open')
+        .eq('action', 'buy')
+        .eq('account_type', mode)
+        .gte('buy_timestamp', startDate.toISOString())
+
+      // Fetch completed trades
+      const { data: completedTrades, error: completedError } = await supabase
+        .from('trade_logs')
+        .select('profit_loss, profit_loss_percent, holding_duration')
+        .eq('user_id', session.user.id)
+        .eq('status', 'closed')
+        .eq('account_type', mode)
+        .gte('sell_timestamp', startDate.toISOString())
+
+      if (currentError || completedError) {
+        console.error('Error fetching stats:', currentError || completedError)
+        setStatsLoading(false)
+        return
+      }
+
+      const openCount = currentTrades?.length || 0
+      const completedCount = completedTrades?.length || 0
+      
+      // Calculate win rate
+      const winningTrades = completedTrades?.filter(t => t.profit_loss > 0) || []
+      const winRate = completedCount > 0 ? (winningTrades.length / completedCount) * 100 : 0
+
+      // Calculate average win amount ($ and %)
+      let avgWinAmount = 0
+      let avgWinPercent = 0
+      if (winningTrades.length > 0) {
+        const totalWinAmount = winningTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0)
+        avgWinAmount = totalWinAmount / winningTrades.length
+        
+        const totalWinPercent = winningTrades.reduce((sum, t) => sum + (t.profit_loss_percent || 0), 0)
+        avgWinPercent = totalWinPercent / winningTrades.length
+      }
+
+      // Calculate average hold time
+      let avgHoldTime = '0h'
+      if (completedTrades && completedTrades.length > 0) {
+        const durations = completedTrades
+          .map(t => t.holding_duration)
+          .filter(d => d)
+          .map(d => {
+            // Parse PostgreSQL interval format (e.g., "2 days 06:30:00" or "06:30:00")
+            const daysMatch = d.match(/(\d+)\s+days?/i)
+            const days = daysMatch ? parseInt(daysMatch[1]) : 0
+            const timeMatch = d.match(/(\d+):(\d+):(\d+)/)
+            if (!timeMatch) return 0
+            const hours = parseInt(timeMatch[1])
+            const minutes = parseInt(timeMatch[2])
+            return days * 24 + hours + minutes / 60
+          })
+        
+        if (durations.length > 0) {
+          const avgHours = durations.reduce((a, b) => a + b, 0) / durations.length
+          if (avgHours < 24) {
+            avgHoldTime = `${Math.round(avgHours)}h`
+          } else {
+            const days = Math.floor(avgHours / 24)
+            const hours = Math.round(avgHours % 24)
+            avgHoldTime = hours > 0 ? `${days}d ${hours}h` : `${days}d`
+          }
+        }
+      }
+
+      setQuickStats({
+        completedTrades: completedCount,
+        openTrades: openCount,
+        winRate,
+        avgHoldTime,
+        avgWinAmount,
+        avgWinPercent
+      })
+    } catch (error) {
+      console.error('Error fetching quick stats:', error)
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  // Fetch stats when period changes or component mounts
+  useEffect(() => {
+    fetchQuickStats()
+    const statsInterval = setInterval(fetchQuickStats, 30000) // Refresh every 30 seconds
+    
+    return () => {
+      clearInterval(statsInterval)
+    }
+  }, [statsPeriod, mode])
 
   const fetchBotStatus = async () => {
     try {
@@ -690,6 +815,92 @@ export default function TradingBot({ mode }: TradingBotProps) {
           {botStatus?.marketOpen === true && (
             <div className="text-sm text-green-300 bg-green-950/50 border border-green-800/50 p-3 rounded-lg">
               <strong>🟢 Market Open:</strong> Live trading active
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Quick Stats Summary */}
+      <Card className="glass-card">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-white text-lg">Quick Stats</CardTitle>
+            <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStatsPeriod('today')}
+                className={`h-7 px-3 text-xs ${
+                  statsPeriod === 'today'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Today
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStatsPeriod('week')}
+                className={`h-7 px-3 text-xs ${
+                  statsPeriod === 'week'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                This Week
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {statsLoading ? (
+            <div className="text-center py-4 text-gray-400">
+              <Activity className="h-5 w-5 animate-spin mx-auto mb-2" />
+              Loading stats...
+            </div>
+          ) : quickStats ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <div className="text-xs text-gray-400">Total Trades</div>
+                <div className="text-2xl font-bold text-white">
+                  {quickStats.completedTrades + quickStats.openTrades}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {quickStats.completedTrades} completed, {quickStats.openTrades} open
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-gray-400">Win Rate</div>
+                <div className="text-2xl font-bold text-white">
+                  {quickStats.winRate.toFixed(1)}%
+                </div>
+                {quickStats.avgWinAmount > 0 && (
+                  <div className="text-xs text-green-400 font-medium">
+                    Avg Win: {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(quickStats.avgWinAmount)} ({quickStats.avgWinPercent.toFixed(1)}%)
+                  </div>
+                )}
+                {quickStats.avgWinAmount === 0 && quickStats.completedTrades > 0 && (
+                  <div className="text-xs text-gray-500">
+                    No winning trades
+                  </div>
+                )}
+                {quickStats.completedTrades === 0 && (
+                  <div className="text-xs text-gray-500">
+                    No completed trades
+                  </div>
+                )}
+              </div>
+              <div className="col-span-2 space-y-1 pt-2 border-t border-gray-700">
+                <div className="text-xs text-gray-400">Avg Hold Time</div>
+                <div className="text-xl font-bold text-white">
+                  {quickStats.avgHoldTime}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500 text-sm">
+              No stats available
             </div>
           )}
         </CardContent>
