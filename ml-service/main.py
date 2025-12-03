@@ -230,6 +230,9 @@ async def predict(request: PredictionRequest):
         signals = []
         timestamp = datetime.utcnow().isoformat()
         
+        # Log prediction distribution for debugging
+        action_counts = {'buy': 0, 'sell': 0, 'hold': 0}
+        
         for i, (_, row) in enumerate(df.iterrows()):
             pred_class = int(predictions[i])
             probs = probabilities[i]
@@ -237,6 +240,7 @@ async def predict(request: PredictionRequest):
             # Map class to action
             class_map = {-1: 'sell', 0: 'hold', 1: 'buy'}
             action = class_map.get(pred_class, 'hold')
+            action_counts[action] = action_counts.get(action, 0) + 1
             
             # Get confidence
             class_idx = MODEL.classes_.tolist().index(pred_class)
@@ -292,6 +296,14 @@ async def predict(request: PredictionRequest):
                 signal.probabilities = prob_dict
             
             signals.append(signal)
+        
+        # Log prediction summary
+        logger.info(f"📊 ML Predictions Summary: {len(signals)} total signals")
+        logger.info(f"   - BUY: {action_counts.get('buy', 0)} | SELL: {action_counts.get('sell', 0)} | HOLD: {action_counts.get('hold', 0)}")
+        if action_counts.get('hold', 0) == len(signals):
+            logger.warning(f"⚠️  All {len(signals)} symbols predicted as HOLD - model is being very conservative")
+        elif action_counts.get('hold', 0) > len(signals) * 0.8:
+            logger.info(f"💡 {action_counts.get('hold', 0)}/{len(signals)} symbols predicted as HOLD ({(action_counts.get('hold', 0)/len(signals)*100):.1f}%) - this is normal for conservative models")
         
         return PredictionResponse(
             success=True,

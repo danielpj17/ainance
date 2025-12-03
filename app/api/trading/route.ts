@@ -705,92 +705,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.warn('⚠️  Could not fetch confidence threshold from settings, using default:', error)
     }
 
-    // Check if market is open (applies to both paper and live trading)
-    if (!isMarketOpen()) {
-      console.log('⏸️  Market is closed, skipping trading execution but continuing bot operation')
-      // Update bot state to show it's running but market is closed
-      await supabase.rpc('update_bot_state', {
-        user_uuid: userId,
-        is_running_param: true,
-        config_param: config,
-        error_param: null
-      })
-      
-      // Log the execution even when market is closed (so diagnostics can show activity)
-      let logError = null
-      try {
-        const { error } = await supabase
-          .from('bot_logs')
-          .insert({
-            user_id: userId,
-            action: 'execute',
-            message: 'Trading loop executed - market is closed',
-            data: {
-              market_open: false,
-              diagnostics: {
-                min_confidence_threshold: baseConfidenceThreshold,
-                min_sell_confidence_threshold: baseSellConfidenceThreshold,
-                market_risk: 0.3,
-                total_ml_signals: 0,
-                buy_signals_before_filter: 0,
-                sell_signals_before_filter: 0,
-                final_buy_signals: 0,
-                final_sell_signals: 0,
-                allocated_buy_signals: 0,
-                executed_signals: 0,
-                market_open: false,
-                in_last_30_minutes: false
-              }
-            }
-          })
-        logError = error
-        
-        // If direct insert fails, try using the security definer function
-        if (logError) {
-          console.warn('⚠️  Direct insert failed, trying security definer function:', logError.message)
-          const { error: rpcError } = await supabase.rpc('insert_bot_log', {
-            user_uuid: userId,
-            action_param: 'execute',
-            message_param: 'Trading loop executed - market is closed',
-            data_param: {
-              market_open: false,
-              diagnostics: {
-                min_confidence_threshold: baseConfidenceThreshold,
-                min_sell_confidence_threshold: baseSellConfidenceThreshold,
-                market_risk: 0.3,
-                total_ml_signals: 0,
-                buy_signals_before_filter: 0,
-                sell_signals_before_filter: 0,
-                final_buy_signals: 0,
-                final_sell_signals: 0,
-                allocated_buy_signals: 0,
-                executed_signals: 0,
-                market_open: false,
-                in_last_30_minutes: false
-              }
-            }
-          })
-          if (rpcError) {
-            console.error('❌ Error writing bot_logs via RPC (market closed):', rpcError)
-            logError = rpcError
-          } else {
-            console.log('✅ Bot log written via RPC (market closed)')
-            logError = null
-          }
-        } else {
-          console.log('✅ Bot log written (market closed)')
-        }
-      } catch (err: any) {
-        console.error('❌ Exception writing bot_logs (market closed):', err)
-        logError = err
-      }
-      
-      return
-    }
-
-    // STEP 2: Get FRED Economic Indicators
+    // STEP 2: Get FRED Economic Indicators (fetch even when market is closed for accurate diagnostics)
     let fredIndicators: any = null
-    let marketRisk = 0.3 // Default moderate risk
+    let marketRisk = 0.3 // Default moderate risk (fallback if FRED unavailable)
     let minConfidence = baseConfidenceThreshold // Start with user's setting for BUY
     let minConfidenceForSell = baseSellConfidenceThreshold // Separate threshold for SELL
 
@@ -820,6 +737,94 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.warn('⚠️  Could not fetch FRED data, using base confidence threshold:', error)
       minConfidence = baseConfidenceThreshold
       minConfidenceForSell = baseSellConfidenceThreshold
+    }
+
+    // Check if market is open (applies to both paper and live trading)
+    if (!isMarketOpen()) {
+      console.log('⏸️  Market is closed, skipping trading execution but continuing bot operation')
+      // Update bot state to show it's running but market is closed
+      await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: true,
+        config_param: config,
+        error_param: null
+      })
+      
+      // Log the execution even when market is closed (so diagnostics can show activity)
+      // Use REAL values from FRED and user settings, not hardcoded values
+      let logError = null
+      try {
+        const { error } = await supabase
+          .from('bot_logs')
+          .insert({
+            user_id: userId,
+            action: 'execute',
+            message: 'Trading loop executed - market is closed',
+            data: {
+              market_open: false,
+              diagnostics: {
+                min_confidence_threshold: minConfidence,
+                min_sell_confidence_threshold: minConfidenceForSell,
+                market_risk: marketRisk,
+                total_ml_signals: 0,
+                buy_signals_before_filter: 0,
+                sell_signals_before_filter: 0,
+                final_buy_signals: 0,
+                final_sell_signals: 0,
+                allocated_buy_signals: 0,
+                executed_signals: 0,
+                market_open: false,
+                in_last_30_minutes: false,
+                filtered_buy_count: 0,
+                filtered_sell_count: 0
+              }
+            }
+          })
+        logError = error
+        
+        // If direct insert fails, try using the security definer function
+        if (logError) {
+          console.warn('⚠️  Direct insert failed, trying security definer function:', logError.message)
+          const { error: rpcError } = await supabase.rpc('insert_bot_log', {
+            user_uuid: userId,
+            action_param: 'execute',
+            message_param: 'Trading loop executed - market is closed',
+            data_param: {
+              market_open: false,
+              diagnostics: {
+                min_confidence_threshold: minConfidence,
+                min_sell_confidence_threshold: minConfidenceForSell,
+                market_risk: marketRisk,
+                total_ml_signals: 0,
+                buy_signals_before_filter: 0,
+                sell_signals_before_filter: 0,
+                final_buy_signals: 0,
+                final_sell_signals: 0,
+                allocated_buy_signals: 0,
+                executed_signals: 0,
+                market_open: false,
+                in_last_30_minutes: false,
+                filtered_buy_count: 0,
+                filtered_sell_count: 0
+              }
+            }
+          })
+          if (rpcError) {
+            console.error('❌ Error writing bot_logs via RPC (market closed):', rpcError)
+            logError = rpcError
+          } else {
+            console.log('✅ Bot log written via RPC (market closed)')
+            logError = null
+          }
+        } else {
+          console.log('✅ Bot log written (market closed)')
+        }
+      } catch (err: any) {
+        console.error('❌ Exception writing bot_logs (market closed):', err)
+        logError = err
+      }
+      
+      return
     }
 
     // STEP 3: Stock Selection (skip scanning to avoid rate limits)
@@ -1117,6 +1122,20 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     const sellCount = allSignals.filter((s: any) => s.action === 'sell').length
     const holdCount = allSignals.filter((s: any) => s.action === 'hold').length
     console.log(`   - BUY: ${buyCount} | SELL: ${sellCount} | HOLD: ${holdCount}`)
+    
+    // Log which symbols got which action types (for debugging)
+    if (buyCount > 0) {
+      const buySymbols = allSignals.filter((s: any) => s.action === 'buy').map((s: any) => `${s.symbol}(${(s.adjusted_confidence * 100).toFixed(0)}%)`).join(', ')
+      console.log(`   📈 BUY signals: ${buySymbols}`)
+    }
+    if (sellCount > 0) {
+      const sellSymbols = allSignals.filter((s: any) => s.action === 'sell').map((s: any) => `${s.symbol}(${(s.adjusted_confidence * 100).toFixed(0)}%)`).join(', ')
+      console.log(`   📉 SELL signals: ${sellSymbols}`)
+    }
+    if (holdCount > 0 && holdCount === allSignals.length) {
+      console.log(`   ⚠️  ALL signals are HOLD - this means the ML model is not finding any trading opportunities`)
+      console.log(`   💡 This is normal if market conditions are neutral or if the model is being conservative`)
+    }
     
     // Count signals by confidence
     const highConfidence = allSignals.filter((s: any) => s.adjusted_confidence >= minConfidence).length

@@ -73,6 +73,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         data: log.data || {}, // Include full data object for filtered_signals
         diagnostics: {
           min_confidence_threshold: diagnosticsData.min_confidence_threshold,
+          min_sell_confidence_threshold: diagnosticsData.min_sell_confidence_threshold,
           market_risk: diagnosticsData.market_risk,
           total_ml_signals: diagnosticsData.total_ml_signals,
           buy_signals_before_filter: diagnosticsData.buy_signals_before_filter,
