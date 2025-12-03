@@ -546,7 +546,7 @@ export default function LiveTradingPage() {
       {/* Trading Bot & Portfolio Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* Trading Bot */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 flex flex-col">
           {hasApiKeys ? (
             <TradingBot mode="live" />
           ) : (
