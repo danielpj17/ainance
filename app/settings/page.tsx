@@ -132,31 +132,31 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-center gap-4">
-                      {userAvatar ? (
-                        <img 
-                          src={userAvatar} 
-                          alt="Profile" 
-                          className="w-16 h-16 rounded-full border-2 border-blue-400"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center">
-                          <User className="h-8 w-8 text-blue-400" />
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        {userAvatar ? (
+                          <img 
+                            src={userAvatar} 
+                            alt="Profile" 
+                            className="w-16 h-16 rounded-full border-2 border-blue-400 flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center flex-shrink-0">
+                            <User className="h-8 w-8 text-blue-400" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-xl font-semibold text-white">{userName || 'User'}</h3>
+                          <p className="text-white/70 truncate">{userEmail || 'No email'}</p>
                         </div>
-                      )}
-                      <div>
-                        <h3 className="text-xl font-semibold text-white">{userName || 'User'}</h3>
-                        <p className="text-white/70">{userEmail || 'No email'}</p>
                       </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-700">
-                      <div className="flex items-center justify-between p-4 bg-green-500/10 rounded-lg border border-green-500/30">
+                      
+                      <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 rounded-lg border border-green-500/30 flex-shrink-0">
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                         <div>
-                          <p className="text-green-400 font-medium">Signed In</p>
-                          <p className="text-sm text-white/60">Your account is connected via Google</p>
+                          <p className="text-green-400 font-medium text-sm">Signed In</p>
+                          <p className="text-xs text-white/60">Google</p>
                         </div>
-                        <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
                       </div>
                     </div>
 

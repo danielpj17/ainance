@@ -259,53 +259,58 @@ export default function StrategySettings({ mode }: StrategySettingsProps) {
           </Alert>
         )}
 
-        {/* Confidence Threshold */}
-        <div className="space-y-2 border-t pt-4">
-          <Label htmlFor="confidence_threshold">
-            ML Buy Confidence Threshold ({(settings.confidence_threshold ?? 0.55) * 100}%)
-          </Label>
-          <div className="space-y-2">
-            <Input
-              id="confidence_threshold"
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              value={settings.confidence_threshold ?? 0.55}
-              onChange={(e) => updateSetting('confidence_threshold', Number(e.target.value))}
-              placeholder="0.55"
-            />
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p>Minimum confidence (0.0-1.0) required for ML BUY signals to execute trades.</p>
-              <p><strong>Lower threshold (0.45-0.50):</strong> More trades, higher risk</p>
-              <p><strong>Higher threshold (0.55-0.70):</strong> Fewer trades, lower risk</p>
-              <p><strong>Recommended:</strong> Start at 0.55 (55%) and adjust based on performance</p>
+        {/* Confidence Thresholds - Side by Side */}
+        <div className="border-t pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Buy Confidence Threshold */}
+            <div className="space-y-2">
+              <Label htmlFor="confidence_threshold">
+                ML Buy Confidence Threshold ({(settings.confidence_threshold ?? 0.55) * 100}%)
+              </Label>
+              <div className="space-y-2">
+                <Input
+                  id="confidence_threshold"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={settings.confidence_threshold ?? 0.55}
+                  onChange={(e) => updateSetting('confidence_threshold', Number(e.target.value))}
+                  placeholder="0.55"
+                />
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>Minimum confidence (0.0-1.0) required for ML BUY signals to execute trades.</p>
+                  <p><strong>Lower threshold (0.45-0.50):</strong> More trades, higher risk</p>
+                  <p><strong>Higher threshold (0.55-0.70):</strong> Fewer trades, lower risk</p>
+                  <p><strong>Recommended:</strong> Start at 0.55 (55%) and adjust based on performance</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Sell Confidence Threshold */}
-        <div className="space-y-2 border-t pt-4">
-          <Label htmlFor="sell_confidence_threshold">
-            ML Sell Confidence Threshold ({(settings.sell_confidence_threshold ?? 0.50) * 100}%)
-          </Label>
-          <div className="space-y-2">
-            <Input
-              id="sell_confidence_threshold"
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              value={settings.sell_confidence_threshold ?? 0.50}
-              onChange={(e) => updateSetting('sell_confidence_threshold', Number(e.target.value))}
-              placeholder="0.50"
-            />
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p>Minimum confidence (0.0-1.0) required for ML SELL signals to exit positions.</p>
-              <p><strong>Lower threshold (0.40-0.50):</strong> Exit positions more easily, better capital protection</p>
-              <p><strong>Higher threshold (0.50-0.60):</strong> Hold positions longer, wait for stronger sell signals</p>
-              <p><strong>Recommended:</strong> Set 5-10% lower than buy threshold (e.g., 0.50 if buy is 0.55)</p>
-              <p><strong>Note:</strong> In high-risk markets, this threshold automatically decreases further to protect capital.</p>
+            {/* Sell Confidence Threshold */}
+            <div className="space-y-2">
+              <Label htmlFor="sell_confidence_threshold">
+                ML Sell Confidence Threshold ({(settings.sell_confidence_threshold ?? 0.50) * 100}%)
+              </Label>
+              <div className="space-y-2">
+                <Input
+                  id="sell_confidence_threshold"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={settings.sell_confidence_threshold ?? 0.50}
+                  onChange={(e) => updateSetting('sell_confidence_threshold', Number(e.target.value))}
+                  placeholder="0.50"
+                />
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>Minimum confidence (0.0-1.0) required for ML SELL signals to exit positions.</p>
+                  <p><strong>Lower threshold (0.40-0.50):</strong> Exit positions more easily, better capital protection</p>
+                  <p><strong>Higher threshold (0.50-0.60):</strong> Hold positions longer, wait for stronger sell signals</p>
+                  <p><strong>Recommended:</strong> Set 5-10% lower than buy threshold (e.g., 0.50 if buy is 0.55)</p>
+                  <p><strong>Note:</strong> In high-risk markets, this threshold automatically decreases further to protect capital.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
