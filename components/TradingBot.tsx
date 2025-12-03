@@ -600,26 +600,6 @@ export default function TradingBot({ mode }: TradingBotProps) {
             </Alert>
           )}
 
-          {/* Bot Statistics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 rounded-lg bg-gray-800/30">
-              <div className="text-3xl font-bold text-white">{botStatus?.totalTrades || 0}</div>
-              <div className="text-sm text-gray-400 mt-1">Total Trades</div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-gray-800/30">
-              <div className="text-3xl font-bold text-white">{botStatus?.activePositions || 0}</div>
-              <div className="text-sm text-gray-400 mt-1">Active Positions</div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-gray-800/30">
-              <div className="text-3xl font-bold text-white">{botStatus?.currentSignals.length || 0}</div>
-              <div className="text-sm text-gray-400 mt-1">Current Signals</div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-gray-800/30">
-              <div className="text-lg font-semibold text-white">{formatTime(botStatus?.lastRun || null)}</div>
-              <div className="text-sm text-gray-400 mt-1">Last Run</div>
-            </div>
-          </div>
-
           {/* Control Buttons */}
           <div className="flex gap-3 flex-wrap">
             {!botStatus?.isRunning ? (

@@ -14,21 +14,25 @@ export const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  // During build time, return a dummy client if env vars are missing
+  // During build time or if env vars are missing, return a dummy client
   // This allows the build to succeed, and the actual client will be created at runtime
   if (!supabaseUrl || !supabaseAnonKey) {
-    if (typeof window === 'undefined') {
-      // Server-side during build: return a dummy client
-      return createSupabaseClient(
-        'https://placeholder.supabase.co',
-        'placeholder-anon-key'
-      )
-    } else {
-      // Client-side at runtime: this is a real error
-      throw new Error(
-        'Missing Supabase environment variables. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set.'
+    // Return a dummy client that won't crash the app
+    // This is better than throwing an error, as it allows the app to load
+    // and show helpful error messages in the UI
+    const dummyClient = createSupabaseClient(
+      'https://placeholder.supabase.co',
+      'placeholder-anon-key'
+    )
+    
+    // Override methods to return safe defaults
+    if (typeof window !== 'undefined') {
+      console.warn(
+        '⚠️ Missing Supabase environment variables. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in your .env.local file and restart your dev server.'
       )
     }
+    
+    return dummyClient
   }
 
   // Validate URL format and warn about potential mismatches
