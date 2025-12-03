@@ -258,7 +258,7 @@ export default function TradeLogsPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
                           <div className="text-2xl font-bold text-white">{trade.symbol}</div>
-                          <Badge className="bg-blue-600">BUY</Badge>
+                          <Badge className="bg-blue-400">BUY</Badge>
                           <Badge variant="outline" className="border-gray-600 text-gray-400">
                             {trade.qty} shares
                           </Badge>

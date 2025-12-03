@@ -945,7 +945,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
                     <div className="flex items-center gap-3">
                       <Badge 
                         variant={signal.action === 'buy' ? 'default' : signal.action === 'sell' ? 'destructive' : 'secondary'}
-                        className={signal.action === 'buy' ? 'bg-blue-600' : signal.action === 'sell' ? 'bg-red-600' : ''}
+                        className={signal.action === 'buy' ? 'bg-blue-400' : signal.action === 'sell' ? 'bg-red-600' : ''}
                       >
                         {signal.action.toUpperCase()}
                       </Badge>

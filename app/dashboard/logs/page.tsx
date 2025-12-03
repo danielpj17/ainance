@@ -225,13 +225,13 @@ export default function TradeLogsPage() {
       {/* Tabs for different views */}
       <Tabs defaultValue="realized" className="space-y-6">
         <TabsList className="bg-[#1a1d2e] border border-gray-800">
-          <TabsTrigger value="realized" className="data-[state=active]:bg-blue-600">
+          <TabsTrigger value="realized" className="data-[state=active]:bg-blue-400">
             Realized P&L
           </TabsTrigger>
-          <TabsTrigger value="unrealized" className="data-[state=active]:bg-blue-600">
+          <TabsTrigger value="unrealized" className="data-[state=active]:bg-blue-400">
             Open Positions
           </TabsTrigger>
-          <TabsTrigger value="all" className="data-[state=active]:bg-blue-600">
+          <TabsTrigger value="all" className="data-[state=active]:bg-blue-400">
             All Trades
           </TabsTrigger>
         </TabsList>

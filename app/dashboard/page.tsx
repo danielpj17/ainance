@@ -251,7 +251,7 @@ export default function DashboardPage() {
                 Year
               </button>
             </div>
-            <Badge className={portfolioChangeAmount >= 0 ? "bg-blue-600 hover:bg-blue-700" : "bg-red-600 hover:bg-red-700"}>
+            <Badge className={portfolioChangeAmount >= 0 ? "bg-blue-400 hover:bg-blue-500" : "bg-red-600 hover:bg-red-700"}>
               {portfolioChangeAmount >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
               <span className="mr-1">{portfolioChangeAmount >= 0 ? '+' : ''}${Math.abs(portfolioChangeAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span>({portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%)</span>

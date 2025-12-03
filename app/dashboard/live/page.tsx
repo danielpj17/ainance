@@ -422,7 +422,7 @@ export default function LiveTradingPage() {
                 variant={chartPeriod === '1D' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setChartPeriod('1D')}
-                className={chartPeriod === '1D' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1D' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
               >
                 Today
               </Button>
@@ -430,7 +430,7 @@ export default function LiveTradingPage() {
                 variant={chartPeriod === '1W' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setChartPeriod('1W')}
-                className={chartPeriod === '1W' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1W' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
               >
                 Week
               </Button>
@@ -438,7 +438,7 @@ export default function LiveTradingPage() {
                 variant={chartPeriod === '1M' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setChartPeriod('1M')}
-                className={chartPeriod === '1M' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1M' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
               >
                 Month
               </Button>
@@ -446,12 +446,12 @@ export default function LiveTradingPage() {
                 variant={chartPeriod === '1A' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setChartPeriod('1A')}
-                className={chartPeriod === '1A' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1A' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
               >
                 Year
               </Button>
             </div>
-            <Badge className={profitLoss.amount >= 0 ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}>
+            <Badge className={profitLoss.amount >= 0 ? "bg-green-400 hover:bg-green-500" : "bg-red-600 hover:bg-red-700"}>
               {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
               <span className="mr-1">{formatCurrency(profitLoss.amount)}</span>
               <span>({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)</span>
@@ -566,7 +566,7 @@ export default function LiveTradingPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="text-2xl font-bold text-white">{position.symbol}</div>
-                        <Badge className="bg-green-600">BUY</Badge>
+                        <Badge className="bg-green-400">BUY</Badge>
                         <Badge variant="outline" className="border-gray-600 text-gray-400">
                           {position.qty} shares
                         </Badge>
@@ -654,7 +654,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1D' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1D')}
-                  className={chartPeriod === '1D' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1D' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
                 >
                   Today
                 </Button>
@@ -662,7 +662,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1W' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1W')}
-                  className={chartPeriod === '1W' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1W' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
                 >
                   Week
                 </Button>
@@ -670,7 +670,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1M' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1M')}
-                  className={chartPeriod === '1M' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1M' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
                 >
                   Month
                 </Button>
@@ -678,7 +678,7 @@ export default function LiveTradingPage() {
                   variant={chartPeriod === '1A' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1A')}
-                  className={chartPeriod === '1A' ? 'bg-green-600' : 'border-gray-600 text-gray-400'}
+                  className={chartPeriod === '1A' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
                 >
                   Year
                 </Button>
@@ -752,7 +752,7 @@ export default function LiveTradingPage() {
                       <div className="flex items-center gap-2">
                         <Badge 
                           variant={trade.action === 'buy' ? 'default' : 'destructive'} 
-                          className={trade.action === 'buy' ? 'bg-green-600' : 'bg-red-600'}
+                          className={trade.action === 'buy' ? 'bg-green-400' : 'bg-red-600'}
                         >
                           {trade.action.toUpperCase()}
                         </Badge>

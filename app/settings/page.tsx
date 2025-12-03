@@ -125,7 +125,7 @@ export default function SettingsPage() {
                       You're using the app in demo mode with shared API keys.
                     </p>
                     <Link href="/auth">
-                      <Button className="bg-blue-600 hover:bg-blue-700">
+                      <Button className="bg-blue-400 hover:bg-blue-500">
                         Sign in with Google
                       </Button>
                     </Link>
@@ -273,7 +273,7 @@ export default function SettingsPage() {
                   View confidence scores, technical indicators, and AI reasoning for each prediction.
                 </p>
                 <Link href="/test-ml">
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                  <Button className="w-full bg-blue-400 hover:bg-blue-500">
                     <FlaskConical className="mr-2 h-4 w-4" />
                     Open ML Testing
                   </Button>

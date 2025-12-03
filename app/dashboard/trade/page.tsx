@@ -178,7 +178,7 @@ export default function TradeTerminalPage() {
           <p className="text-white/80">AI-powered trading with live market data</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge className="bg-blue-600 text-white px-4 py-2">Paper Trading</Badge>
+          <Badge className="bg-blue-400 text-white px-4 py-2">Paper Trading</Badge>
           <Button variant="outline" size="icon" onClick={fetchBars} className="border-gray-700 hover:bg-blue-500/10 backdrop-blur-sm">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
@@ -279,7 +279,7 @@ export default function TradeTerminalPage() {
                   <SelectItem value="1Day">1d</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={fetchBars} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+              <Button onClick={fetchBars} disabled={loading} className="bg-blue-400 hover:bg-blue-500">
                 {loading ? (<><Loader2 className="h-4 w-4 animate-spin mr-2"/>Load</>) : 'Refresh'}
               </Button>
             </div>
@@ -359,7 +359,7 @@ export default function TradeTerminalPage() {
                 <Button 
                   onClick={() => setSide('buy')} 
                   variant={side === 'buy' ? 'default' : 'outline'}
-                  className={side === 'buy' ? 'bg-blue-600 hover:bg-blue-700' : 'border-gray-700 hover:bg-blue-500/10 backdrop-blur-sm'}
+                  className={side === 'buy' ? 'bg-blue-400 hover:bg-blue-500' : 'border-gray-700 hover:bg-blue-500/10 backdrop-blur-sm'}
                 >
                   Buy
                 </Button>
@@ -412,7 +412,7 @@ export default function TradeTerminalPage() {
 
               <Button 
                 onClick={placeOrder} 
-                className={`w-full ${side === 'buy' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'}`}
+                className={`w-full ${side === 'buy' ? 'bg-blue-400 hover:bg-blue-500' : 'bg-red-600 hover:bg-red-700'}`}
               >
                 {side === 'buy' ? 'Buy' : 'Sell'} {qty} {symbol}
               </Button>
@@ -437,7 +437,7 @@ export default function TradeTerminalPage() {
                   <div key={idx} className="p-3 bg-blue-500/10 backdrop-blur-sm rounded-lg border border-gray-700 hover:border-blue-500 transition-colors">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={`${signal.action === 'buy' ? 'bg-blue-600' : 'bg-red-600'} font-mono text-xs`}>
+                        <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={`${signal.action === 'buy' ? 'bg-blue-400' : 'bg-red-600'} font-mono text-xs`}>
                           {signal.action.toUpperCase()}
                         </Badge>
                         <span className="font-bold text-white">{signal.symbol}</span>
@@ -450,7 +450,7 @@ export default function TradeTerminalPage() {
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      className="w-full border-gray-700 hover:bg-blue-600 hover:border-blue-600" 
+                      className="w-full border-gray-700 hover:bg-blue-400 hover:border-blue-400" 
                       onClick={() => executeAISignal(signal)}
                     >
                       Execute

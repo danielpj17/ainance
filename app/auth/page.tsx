@@ -86,7 +86,7 @@ export default function AuthPage() {
           <Button
             onClick={handleDemoMode}
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            className="w-full bg-blue-400 hover:bg-blue-500 text-white"
             size="lg"
           >
             <Sparkles className="mr-2 h-5 w-5" />
