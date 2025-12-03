@@ -214,7 +214,7 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('1D')}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === '1D'
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
@@ -224,7 +224,7 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('1W')}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === '1W'
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
@@ -234,7 +234,7 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('1M')}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === '1M'
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
@@ -244,17 +244,17 @@ export default function DashboardPage() {
                 onClick={() => setChartPeriod('1A')}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === '1A'
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-blue-400 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
                 Year
               </button>
             </div>
-            <Badge className={portfolioChangeAmount >= 0 ? "bg-blue-400 hover:bg-blue-500" : "bg-red-600 hover:bg-red-700"}>
-              {portfolioChangeAmount >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
-              <span className="mr-1">{portfolioChangeAmount >= 0 ? '+' : ''}${Math.abs(portfolioChangeAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span>({portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%)</span>
+            <Badge className={portfolioChangeAmount >= 0 ? "bg-blue-400 hover:bg-blue-500 text-white" : "bg-red-600 hover:bg-red-700 text-white"}>
+              {portfolioChangeAmount >= 0 ? <TrendingUp className="h-3 w-3 mr-1 text-white" /> : <TrendingDown className="h-3 w-3 mr-1 text-white" />}
+              <span className="mr-1 text-white">{portfolioChangeAmount >= 0 ? '+' : ''}${Math.abs(portfolioChangeAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-white">({portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%)</span>
             </Badge>
           </div>
         </div>
