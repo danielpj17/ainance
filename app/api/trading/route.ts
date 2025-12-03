@@ -689,15 +689,23 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         .single()
       
       if (settingsError) {
-        console.warn('⚠️  Error fetching user settings:', settingsError.message)
-      }
-      
-      if (userSettings?.confidence_threshold !== null && userSettings?.confidence_threshold !== undefined) {
-        baseConfidenceThreshold = parseFloat(String(userSettings.confidence_threshold))
-        console.log(`✅ Using confidence threshold from settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        if (settingsError.code === 'PGRST116') {
+          // No rows found - user has no settings yet
+          console.log(`ℹ️  No user_settings row found for user ${userId}, using defaults`)
+        } else {
+          console.warn('⚠️  Error fetching user settings:', settingsError.message, settingsError.code)
+        }
+      } else if (userSettings) {
+        // Settings found - check if confidence_threshold exists
+        if (userSettings.confidence_threshold !== null && userSettings.confidence_threshold !== undefined) {
+          baseConfidenceThreshold = parseFloat(String(userSettings.confidence_threshold))
+          console.log(`✅ Using confidence threshold from settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        } else {
+          console.log(`⚠️  User settings exist but confidence_threshold is null/undefined, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+          console.log(`   Full user settings:`, JSON.stringify(userSettings, null, 2))
+        }
       } else {
-        console.log(`ℹ️  No confidence threshold in settings, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
-        console.log(`   User settings data:`, userSettings)
+        console.log(`ℹ️  No user settings returned, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
       }
       
       if (userSettings?.sell_confidence_threshold !== null && userSettings?.sell_confidence_threshold !== undefined) {
@@ -738,15 +746,27 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         console.log(`   BUY Threshold: ${(minConfidence * 100).toFixed(1)}% | SELL Threshold: ${(minConfidenceForSell * 100).toFixed(1)}%`)
         console.log(`📊 DIAGNOSTICS WILL SHOW: Market Risk=${(marketRisk * 100).toFixed(1)}%, Confidence=${(minConfidence * 100).toFixed(1)}%`)
       } else {
-        console.log('⚠️  FRED not initialized, using base confidence threshold without risk adjustment')
+        console.log('⚠️  FRED not initialized (FRED_API_KEY not set or service not started)')
+        console.log(`   Using default market risk: ${(marketRisk * 100).toFixed(1)}%`)
+        console.log(`   Using base confidence threshold without risk adjustment: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
         minConfidence = baseConfidenceThreshold
         minConfidenceForSell = baseSellConfidenceThreshold
       }
     } catch (error) {
-      console.warn('⚠️  Could not fetch FRED data, using base confidence threshold:', error)
+      console.warn('⚠️  Could not fetch FRED data, using defaults:', error)
+      console.warn(`   Market Risk: ${(marketRisk * 100).toFixed(1)}% (default)`)
+      console.warn(`   Confidence: ${(baseConfidenceThreshold * 100).toFixed(1)}% (from settings or default)`)
       minConfidence = baseConfidenceThreshold
       minConfidenceForSell = baseSellConfidenceThreshold
     }
+    
+    // Final verification - log what will be saved to diagnostics
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('📊 FINAL DIAGNOSTICS VALUES (what will be saved):')
+    console.log(`   min_confidence_threshold: ${minConfidence} (${(minConfidence * 100).toFixed(1)}%)`)
+    console.log(`   min_sell_confidence_threshold: ${minConfidenceForSell} (${(minConfidenceForSell * 100).toFixed(1)}%)`)
+    console.log(`   market_risk: ${marketRisk} (${(marketRisk * 100).toFixed(1)}%)`)
+    console.log('═══════════════════════════════════════════════════════════')
 
     // Check if market is open (applies to both paper and live trading)
     if (!isMarketOpen()) {
