@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react'
+import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle, Info, X } from 'lucide-react'
 
 export interface BotStatus {
   isRunning: boolean
@@ -58,6 +58,7 @@ export default function TradingBot({ mode }: TradingBotProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [diagnostics, setDiagnostics] = useState<any>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+  const [showInfoModal, setShowInfoModal] = useState(false)
   const [config, setConfig] = useState<BotConfig>({
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
     interval: 10, // 10 seconds
@@ -562,17 +563,27 @@ export default function TradingBot({ mode }: TradingBotProps) {
       <Card className="glass-card">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {getStatusIcon()}
               <CardTitle className="text-white">
-                Trading Bot Status - {mode === 'paper' ? 'Paper Trading' : 'Live Trading'}
+                Trading Bot - {mode === 'paper' ? 'Paper Trading' : 'Live Trading'}
               </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowInfoModal(true)
+                  if (!diagnostics && botStatus?.isRunning) {
+                    fetchDiagnostics()
+                  }
+                }}
+                className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+              >
+                <Info className="h-4 w-4" />
+              </Button>
             </div>
             {getStatusBadge()}
           </div>
-          <CardDescription className="text-gray-400">
-            Automated trading bot using Random Forest ML model with real-time technical indicators
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -591,56 +602,34 @@ export default function TradingBot({ mode }: TradingBotProps) {
 
           {/* Bot Statistics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-white">{botStatus?.totalTrades || 0}</div>
-              <div className="text-sm text-gray-400">Total Trades</div>
+            <div className="text-center p-3 rounded-lg bg-gray-800/30">
+              <div className="text-3xl font-bold text-white">{botStatus?.totalTrades || 0}</div>
+              <div className="text-sm text-gray-400 mt-1">Total Trades</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-white">{botStatus?.activePositions || 0}</div>
-              <div className="text-sm text-gray-400">Active Positions</div>
+            <div className="text-center p-3 rounded-lg bg-gray-800/30">
+              <div className="text-3xl font-bold text-white">{botStatus?.activePositions || 0}</div>
+              <div className="text-sm text-gray-400 mt-1">Active Positions</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-white">{botStatus?.currentSignals.length || 0}</div>
-              <div className="text-sm text-gray-400">Current Signals</div>
+            <div className="text-center p-3 rounded-lg bg-gray-800/30">
+              <div className="text-3xl font-bold text-white">{botStatus?.currentSignals.length || 0}</div>
+              <div className="text-sm text-gray-400 mt-1">Current Signals</div>
             </div>
-            <div className="text-center">
-              <div className="text-sm font-medium text-white">{formatTime(botStatus?.lastRun || null)}</div>
-              <div className="text-sm text-gray-400">Last Run</div>
+            <div className="text-center p-3 rounded-lg bg-gray-800/30">
+              <div className="text-lg font-semibold text-white">{formatTime(botStatus?.lastRun || null)}</div>
+              <div className="text-sm text-gray-400 mt-1">Last Run</div>
             </div>
-          </div>
-
-          {/* Bot Configuration */}
-          <div className="p-4 rounded-lg bg-blue-500/10 backdrop-blur-sm border border-blue-500/20">
-            <h4 className="font-medium mb-2 text-white">Bot Configuration</h4>
-            <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
-              <div>Symbols: {config.symbols.join(', ')}</div>
-              <div>Interval: {config.interval}s</div>
-              <div>Strategy: {config.settings.strategy}</div>
-              <div>Account: {config.settings.account_type}</div>
-              <div className="col-span-2">Mode: Market Hours (9:30 AM - 4:00 PM ET)</div>
-            </div>
-            <div className="mt-2 text-xs text-gray-400">
-              Bot runs continuously during market hours. Signals are generated by your trained Random Forest ML model deployed on Google Cloud Run.
-            </div>
-            {botStatus?.alwaysOn && (
-              <div className="mt-2 p-2 rounded bg-green-500/20 border border-green-500/30">
-                <div className="text-sm text-green-400 font-medium">✓ Always-On Mode Active</div>
-                <div className="text-xs text-green-300/80 mt-1">
-                  Bot will automatically start when market opens and persist across server restarts.
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Control Buttons */}
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-3 flex-wrap">
             {!botStatus?.isRunning ? (
               <Button 
                 onClick={startBot} 
                 disabled={isLoading}
-                className="flex items-center gap-2"
+                size="lg"
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
               >
-                <Play className="h-4 w-4" />
+                <Play className="h-5 w-5" />
                 {isLoading ? 'Starting...' : 'Start Bot'}
               </Button>
             ) : (
@@ -648,9 +637,10 @@ export default function TradingBot({ mode }: TradingBotProps) {
                 onClick={stopBot} 
                 disabled={isLoading}
                 variant="destructive"
+                size="lg"
                 className="flex items-center gap-2"
               >
-                <Square className="h-4 w-4" />
+                <Square className="h-5 w-5" />
                 {isLoading ? 'Stopping...' : 'Stop Bot'}
               </Button>
             )}
@@ -660,57 +650,125 @@ export default function TradingBot({ mode }: TradingBotProps) {
               onClick={toggleAlwaysOn}
               disabled={isLoading}
               variant={botStatus?.alwaysOn ? "default" : "outline"}
+              size="lg"
               className={`flex items-center gap-2 ${
                 botStatus?.alwaysOn 
                   ? "bg-green-600 hover:bg-green-700 text-white" 
                   : "border-gray-600 text-gray-300 hover:bg-gray-800"
               }`}
             >
-              <Activity className="h-4 w-4" />
-              {botStatus?.alwaysOn ? 'Always-On: Enabled' : 'Always-On: Disabled'}
+              <Activity className="h-5 w-5" />
+              Always-On {botStatus?.alwaysOn ? 'ON' : 'OFF'}
             </Button>
             
-            {/* Test Signals Button (for when market is closed) */}
+            {/* Test Signals Button */}
             <Button 
               onClick={generateTestSignals} 
               disabled={isLoading || botStatus?.isRunning}
               variant="outline"
+              size="lg"
               className="flex items-center gap-2"
             >
-              <Activity className="h-4 w-4" />
+              <Activity className="h-5 w-5" />
               {isLoading ? 'Generating...' : 'Test Signals'}
             </Button>
-            
-            {/* Diagnostics Button */}
-            {botStatus?.isRunning && (
-              <Button 
-                onClick={() => {
-                  setShowDiagnostics(!showDiagnostics)
-                  if (!showDiagnostics && !diagnostics) {
-                    fetchDiagnostics()
-                  }
-                }}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                <Info className="h-4 w-4" />
-                {showDiagnostics ? 'Hide' : 'Show'} Diagnostics
-              </Button>
-            )}
           </div>
           
-          {/* Diagnostics Panel */}
-          {showDiagnostics && botStatus?.isRunning && (
-            <div className="mt-4 p-4 rounded-lg bg-gray-900/50 border border-gray-700">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-medium text-white flex items-center gap-2">
-                  <Info className="h-4 w-4" />
-                  Bot Activity & Diagnostics
-                </h4>
-                {diagnosticsLoading && (
-                  <div className="text-xs text-gray-400">Loading...</div>
-                )}
+          {/* Market Hours Info */}
+          {botStatus?.marketOpen === false && (
+            <div className="text-sm text-yellow-300 bg-yellow-950/50 border border-yellow-800/50 p-3 rounded-lg">
+              <strong>⏰ Market Closed:</strong> Bot is running in standby mode. 
+              {botStatus?.nextMarketOpen && (
+                <span> Next open: {new Date(botStatus.nextMarketOpen).toLocaleString('en-US', { 
+                  timeZone: 'America/New_York',
+                  month: 'numeric',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                })} ET</span>
+              )}
+            </div>
+          )}
+          {botStatus?.marketOpen === true && (
+            <div className="text-sm text-green-300 bg-green-950/50 border border-green-800/50 p-3 rounded-lg">
+              <strong>🟢 Market Open:</strong> Live trading active
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Info Modal */}
+      {showInfoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowInfoModal(false)}>
+          <div className="bg-[#1a1d29] rounded-xl border border-gray-700 max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-[#1a1d29] border-b border-gray-700 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                Bot Information & Diagnostics
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowInfoModal(false)}
+                className="h-8 w-8 p-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Bot Configuration */}
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-3">Configuration</h3>
+                <div className="p-4 rounded-lg bg-gray-800/50 border border-gray-700 space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-gray-400">Symbols:</span>
+                      <div className="text-white font-medium">{config.symbols.join(', ')}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Interval:</span>
+                      <div className="text-white font-medium">{config.interval}s</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Strategy:</span>
+                      <div className="text-white font-medium">{config.settings.strategy}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Account:</span>
+                      <div className="text-white font-medium">{config.settings.account_type}</div>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-gray-700">
+                    <span className="text-gray-400">Mode:</span>
+                    <div className="text-white font-medium">Market Hours (9:30 AM - 4:00 PM ET)</div>
+                  </div>
+                  <div className="pt-2 border-t border-gray-700 text-gray-300">
+                    Bot runs continuously during market hours. Signals are generated by your trained Random Forest ML model deployed on Google Cloud Run.
+                  </div>
+                  {botStatus?.alwaysOn && (
+                    <div className="mt-3 p-3 rounded bg-green-500/20 border border-green-500/30">
+                      <div className="text-sm text-green-400 font-medium">✓ Always-On Mode Active</div>
+                      <div className="text-xs text-green-300/80 mt-1">
+                        Bot will automatically start when market opens and persist across server restarts.
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Diagnostics Panel */}
+              {botStatus?.isRunning && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-white">Bot Activity & Diagnostics</h3>
+                    {diagnosticsLoading && (
+                      <div className="text-sm text-gray-400">Loading...</div>
+                    )}
+                  </div>
+                  <div className="p-4 rounded-lg bg-gray-800/50 border border-gray-700">
               
               {diagnostics && diagnostics.diagnostics && diagnostics.diagnostics.length > 0 ? (
                 <div className="space-y-3">
@@ -894,39 +952,13 @@ export default function TradingBot({ mode }: TradingBotProps) {
                   No diagnostics available yet. The bot will show activity after it runs its first trading loop.
                 </div>
               )}
-            </div>
-          )}
-          
-          {/* Market Hours Info */}
-          {botStatus?.marketOpen === false && (
-            <div className="text-xs text-yellow-300 bg-yellow-950 border border-yellow-800 p-2 rounded">
-              <strong>⏰ Market Closed:</strong> Bot is running in standby mode. 
-              {botStatus?.nextMarketOpen && (
-                <span> Next market open: {new Date(botStatus.nextMarketOpen).toLocaleString('en-US', { 
-                  timeZone: 'America/New_York',
-                  month: 'numeric',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true
-                })} ET</span>
+                  </div>
+                </div>
               )}
-              {mode === 'paper' && ' Use "Test Signals" to see how the bot works with last available data.'}
             </div>
-          )}
-          {botStatus?.marketOpen === true && (
-            <div className="text-xs text-green-300 bg-green-950 border border-green-800 p-2 rounded">
-              <strong>🟢 Market Open:</strong> Live trading active. Bot will scan 70+ stocks and make intelligent decisions.
-            </div>
-          )}
-          {botStatus?.marketOpen === undefined && (
-            <div className="text-xs text-blue-300 bg-blue-950 border border-blue-800 p-2 rounded">
-              <strong>🔄 Market Hours Mode:</strong> Bot runs continuously during market hours (9:30 AM - 4:00 PM ET).
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </div>
+      )}
 
       {/* Current Signals */}
       {botStatus?.currentSignals && botStatus.currentSignals.length > 0 && (
