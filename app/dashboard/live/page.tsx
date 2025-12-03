@@ -410,51 +410,59 @@ export default function LiveTradingPage() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-sm text-gray-400">Portfolio Value</p>
-            <p className="text-2xl font-bold">
+          <div className="text-right bg-black/30 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
+            <p className="text-sm text-white/80 font-medium">Portfolio Value</p>
+            <p className="text-2xl font-bold text-white drop-shadow-lg">
               {account ? formatCurrency(account.equity) : '$0.00'}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex gap-2">
-              <Button
-                variant={chartPeriod === '1D' ? 'default' : 'outline'}
-                size="sm"
+              <button
                 onClick={() => setChartPeriod('1D')}
-                  className={chartPeriod === '1D' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1D'
+                    ? 'bg-green-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
               >
                 Today
-              </Button>
-              <Button
-                variant={chartPeriod === '1W' ? 'default' : 'outline'}
-                size="sm"
+              </button>
+              <button
                 onClick={() => setChartPeriod('1W')}
-                  className={chartPeriod === '1W' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1W'
+                    ? 'bg-green-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
               >
                 Week
-              </Button>
-              <Button
-                variant={chartPeriod === '1M' ? 'default' : 'outline'}
-                size="sm"
+              </button>
+              <button
                 onClick={() => setChartPeriod('1M')}
-                  className={chartPeriod === '1M' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1M'
+                    ? 'bg-green-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
               >
                 Month
-              </Button>
-              <Button
-                variant={chartPeriod === '1A' ? 'default' : 'outline'}
-                size="sm"
+              </button>
+              <button
                 onClick={() => setChartPeriod('1A')}
-                  className={chartPeriod === '1A' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  chartPeriod === '1A'
+                    ? 'bg-green-400 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
               >
                 Year
-              </Button>
+              </button>
             </div>
-            <Badge className={profitLoss.amount >= 0 ? "bg-green-400 hover:bg-green-500" : "bg-red-600 hover:bg-red-700"}>
-              {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
-              <span className="mr-1">{formatCurrency(profitLoss.amount)}</span>
-              <span>({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)</span>
+            <Badge className={profitLoss.amount >= 0 ? "bg-green-400 hover:bg-green-500 text-white" : "bg-red-600 hover:bg-red-700 text-white"}>
+              {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1 text-white" /> : <ArrowDownRight className="h-3 w-3 mr-1 text-white" />}
+              <span className="mr-1 text-white">{formatCurrency(profitLoss.amount)}</span>
+              <span className="text-white">({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)</span>
             </Badge>
           </div>
         </div>
