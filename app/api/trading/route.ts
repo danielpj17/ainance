@@ -682,21 +682,26 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     let baseConfidenceThreshold = 0.55 // Default for BUY
     let baseSellConfidenceThreshold = 0.50 // Default for SELL (lower for easier exits)
     try {
-      const { data: userSettings } = await supabase
+      const { data: userSettings, error: settingsError } = await supabase
         .from('user_settings')
         .select('confidence_threshold, sell_confidence_threshold')
         .eq('user_id', userId)
         .single()
       
+      if (settingsError) {
+        console.warn('⚠️  Error fetching user settings:', settingsError.message)
+      }
+      
       if (userSettings?.confidence_threshold !== null && userSettings?.confidence_threshold !== undefined) {
-        baseConfidenceThreshold = parseFloat(userSettings.confidence_threshold)
+        baseConfidenceThreshold = parseFloat(String(userSettings.confidence_threshold))
         console.log(`✅ Using confidence threshold from settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
       } else {
         console.log(`ℹ️  No confidence threshold in settings, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        console.log(`   User settings data:`, userSettings)
       }
       
       if (userSettings?.sell_confidence_threshold !== null && userSettings?.sell_confidence_threshold !== undefined) {
-        baseSellConfidenceThreshold = parseFloat(userSettings.sell_confidence_threshold)
+        baseSellConfidenceThreshold = parseFloat(String(userSettings.sell_confidence_threshold))
         console.log(`✅ Using sell confidence threshold from settings: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
       } else {
         console.log(`ℹ️  No sell confidence threshold in settings, using default: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
@@ -704,6 +709,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     } catch (error) {
       console.warn('⚠️  Could not fetch confidence threshold from settings, using default:', error)
     }
+    
+    // Log the final values being used for diagnostics
+    console.log(`📊 DIAGNOSTICS VALUES: Confidence=${(baseConfidenceThreshold * 100).toFixed(1)}%, Sell=${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
 
     // STEP 2: Get FRED Economic Indicators (fetch even when market is closed for accurate diagnostics)
     let fredIndicators: any = null
@@ -728,6 +736,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
         
         console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}% | Base Threshold: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
         console.log(`   BUY Threshold: ${(minConfidence * 100).toFixed(1)}% | SELL Threshold: ${(minConfidenceForSell * 100).toFixed(1)}%`)
+        console.log(`📊 DIAGNOSTICS WILL SHOW: Market Risk=${(marketRisk * 100).toFixed(1)}%, Confidence=${(minConfidence * 100).toFixed(1)}%`)
       } else {
         console.log('⚠️  FRED not initialized, using base confidence threshold without risk adjustment')
         minConfidence = baseConfidenceThreshold
@@ -752,6 +761,10 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       
       // Log the execution even when market is closed (so diagnostics can show activity)
       // Use REAL values from FRED and user settings, not hardcoded values
+      console.log(`📝 SAVING DIAGNOSTICS (market closed):`)
+      console.log(`   - min_confidence_threshold: ${minConfidence} (${(minConfidence * 100).toFixed(1)}%)`)
+      console.log(`   - min_sell_confidence_threshold: ${minConfidenceForSell} (${(minConfidenceForSell * 100).toFixed(1)}%)`)
+      console.log(`   - market_risk: ${marketRisk} (${(marketRisk * 100).toFixed(1)}%)`)
       let logError = null
       try {
         const { error } = await supabase
@@ -1352,7 +1365,12 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log(`✅ Signals to Execute: ${executedCount}`)
     console.log(`📈 Market Status: ${isMarketOpen() ? 'OPEN' : 'CLOSED'}`)
     console.log(`🎯 Confidence Thresholds: BUY ${(minConfidence * 100).toFixed(1)}% | SELL ${(minConfidenceForSell * 100).toFixed(1)}%`)
+    console.log(`📊 Market Risk: ${(marketRisk * 100).toFixed(1)}%`)
     console.log(`💼 Positions Before: ${currentHoldings.length}`)
+    console.log(`📝 DIAGNOSTICS VALUES BEING SAVED:`)
+    console.log(`   - min_confidence_threshold: ${minConfidence} (${(minConfidence * 100).toFixed(1)}%)`)
+    console.log(`   - min_sell_confidence_threshold: ${minConfidenceForSell} (${(minConfidenceForSell * 100).toFixed(1)}%)`)
+    console.log(`   - market_risk: ${marketRisk} (${(marketRisk * 100).toFixed(1)}%)`)
     if (filteredBuySignals.length > 0) {
       console.log(`⚠️  Filtered BUY signals (low confidence):`)
       filteredBuySignals.forEach((s: any) => {
