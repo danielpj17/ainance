@@ -2,6 +2,8 @@ export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
 import { createAlpacaClient } from '@/lib/alpaca-client'
+import crypto from 'crypto'
+import { Order } from '@/lib/alpaca-client'
 
 export interface TradeLog {
   id: bigint
@@ -393,21 +395,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-// GET - Fetch trade logs
+// GET - Fetch trade logs directly from Alpaca
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  console.log('[TRADE-LOGS] GET HANDLER CALLED')
+  console.log('[TRADE-LOGS] GET HANDLER CALLED - Fetching from Alpaca')
   try {
-    console.log('[TRADE-LOGS] Creating Supabase client')
     const supabase = await createServerClient(req, {})
-    console.log('[TRADE-LOGS] Supabase client created')
     
     // Get user ID from request (checks Authorization header)
     const { userId, isDemo } = await getUserIdFromRequest(req)
     console.log('[TRADE-LOGS] User detected:', { userId, isDemo })
 
     const { searchParams } = new URL(req.url)
-    const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics'
-    const limit = parseInt(searchParams.get('limit') || '100')
+    const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics', 'transactions'
+    const limit = parseInt(searchParams.get('limit') || '500') // Increased limit for Alpaca orders
     const offset = parseInt(searchParams.get('offset') || '0')
     console.log('[TRADE-LOGS] Request params: view=' + view + ', limit=' + limit + ', offset=' + offset)
 
@@ -415,652 +415,575 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     let completedTrades: CompletedTrade[] = []
     let statistics: TradeStatistics | null = null
 
-    // Fetch trade statistics
-    if (view === 'statistics' || view === 'all' || !view) {
-      const { data: statsData, error: statsError } = await supabase.rpc('get_trade_statistics', {
-        user_uuid: userId
-      })
+    // Statistics will be calculated from Alpaca data after fetching trades
 
-      if (!statsError && statsData && statsData.length > 0) {
-        statistics = statsData[0]
-      } else {
-        statistics = {
-          total_trades: 0,
-          open_trades: 0,
-          closed_trades: 0,
-          winning_trades: 0,
-          losing_trades: 0,
-          total_profit_loss: 0,
-          avg_profit_loss: 0,
-          win_rate: 0,
-          avg_holding_duration: '0',
-          best_trade: 0,
-          worst_trade: 0
-        }
-      }
-    }
-
-    // Fetch current/open trades from multiple sources
+    // Fetch current positions directly from Alpaca
     if (view === 'current' || view === 'all' || !view) {
-      console.log('[TRADE-LOGS] STARTING FETCH - view=' + (view || 'all') + ', userId=' + userId)
+      console.log('[TRADE-LOGS] Fetching current positions from Alpaca')
       
-      // Get from trade_logs table
-      console.log('[TRADE-LOGS] Calling get_current_trades RPC')
-      const { data: currentData, error: currentError } = await supabase.rpc('get_current_trades', {
-        user_uuid: userId
-      })
-
-      console.log('[TRADE-LOGS] RPC response: hasData=' + !!currentData + ', hasError=' + !!currentError + ', dataLength=' + (currentData?.length || 0))
-
-      if (currentError) {
-        console.error(`❌ [TRADE-LOGS] Error fetching current trades:`, JSON.stringify(currentError))
-      }
-
-      if (!currentError && currentData) {
-        currentTrades = currentData
-        console.log('[TRADE-LOGS] Found ' + currentTrades.length + ' current trades from database')
-        if (currentTrades.length > 0) {
-          console.log('[TRADE-LOGS] Trade details: ' + JSON.stringify(currentTrades.map(t => ({
-            symbol: t.symbol,
-            account_type: t.account_type,
-            buy_price: t.buy_price,
-            current_price: t.current_price,
-            qty: t.qty
-          }))))
-        }
-      } else {
-        console.warn('[TRADE-LOGS] No current trades found or error occurred')
-        if (currentError) {
-          console.error('[TRADE-LOGS] Database error:', JSON.stringify(currentError))
-        }
-      }
-
-      // Helper function to fetch quote for a trade
-      async function fetchQuoteForTrade(trade: CurrentTrade, alpacaClient: any, preservedBuyPrice: number): Promise<boolean> {
+      // Fetch for both paper and live accounts
+      const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
+      
+      for (const accountType of accountTypes) {
         try {
-          console.log(`📞 [TRADE-LOGS] Fetching quote for ${trade.symbol}...`)
-          const quote = await alpacaClient.getLatestQuote(trade.symbol)
-          console.log(`📞 [TRADE-LOGS] Quote received for ${trade.symbol}:`, JSON.stringify({
-            bid: quote.bid,
-            ask: quote.ask,
-            bidSize: quote.bidSize,
-            askSize: quote.askSize
-          }))
+          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
           
-          const bid = typeof quote.bid === 'string' ? parseFloat(quote.bid) : quote.bid
-          const ask = typeof quote.ask === 'string' ? parseFloat(quote.ask) : quote.ask
-          const latestPrice = (bid && ask) ? (bid + ask) / 2 : (bid || ask || 0)
-          
-          console.log(`📞 [TRADE-LOGS] ${trade.symbol} quote: bid=${bid}, ask=${ask}, mid=${latestPrice}`)
-          
-          if (latestPrice && latestPrice > 0 && !isNaN(latestPrice) && isFinite(latestPrice)) {
-            const oldPrice = trade.current_price
-            trade.current_price = latestPrice
-            trade.current_value = trade.qty * latestPrice
-            trade.unrealized_pl = (latestPrice - preservedBuyPrice) * trade.qty
-            trade.unrealized_pl_percent = ((latestPrice - preservedBuyPrice) / preservedBuyPrice) * 100
-            
-            console.log(`✅ [TRADE-LOGS] UPDATED ${trade.symbol} from quote: ${oldPrice}→${latestPrice}, P&L=${trade.unrealized_pl_percent.toFixed(2)}%`)
-            return true
-          } else {
-            console.warn(`⚠️  [TRADE-LOGS] Invalid quote price for ${trade.symbol}: ${latestPrice} (bid=${bid}, ask=${ask})`)
+          if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
+            console.log(`[TRADE-LOGS] No API keys for ${accountType} account, skipping`)
+            continue
           }
-        } catch (quoteError: any) {
-          const errorMsg = quoteError?.message || String(quoteError)
-          console.error(`❌ [TRADE-LOGS] Error fetching quote for ${trade.symbol}:`, errorMsg)
-          // Don't log stack trace in production to avoid clutter
-          if (process.env.NODE_ENV === 'development') {
-            console.error(`Stack:`, quoteError?.stack)
-          }
-        }
-        return false
-      }
 
-      // Also get current positions directly from Alpaca and update current_price
-      // Group trades by account_type to fetch from correct Alpaca account
-      const tradesByAccountType = new Map<string, CurrentTrade[]>()
-      for (const trade of currentTrades) {
-        if (!tradesByAccountType.has(trade.account_type)) {
-          tradesByAccountType.set(trade.account_type, [])
-        }
-        tradesByAccountType.get(trade.account_type)!.push(trade)
-      }
+          const alpacaClient = createAlpacaClient({
+            apiKey: alpacaKeys.apiKey,
+            secretKey: alpacaKeys.secretKey,
+            baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+            paper: alpacaKeys.paper
+          })
 
-      if (currentTrades.length === 0) {
-        console.log('[TRADE-LOGS] No current trades to update prices for')
-      } else {
-        console.log('[TRADE-LOGS] STARTING PRICE UPDATE')
-        console.log('[TRADE-LOGS] Fetching prices for ' + currentTrades.length + ' trades across ' + tradesByAccountType.size + ' account types')
-        console.log('[TRADE-LOGS] Trades to update: ' + currentTrades.map(t => t.symbol + '@' + t.account_type).join(', '))
-
-        try {
-          // Try environment variables first (especially useful for demo mode)
-          let envPaperKey = process.env.ALPACA_PAPER_KEY || process.env.ALPACA_PAPER_API_KEY
-          let envPaperSecret = process.env.ALPACA_PAPER_SECRET || process.env.ALPACA_PAPER_SECRET_KEY
-          let envLiveKey = process.env.ALPACA_API_KEY || process.env.ALPACA_LIVE_KEY
-          let envLiveSecret = process.env.ALPACA_SECRET_KEY || process.env.ALPACA_LIVE_SECRET
+          await alpacaClient.initialize()
           
-          console.log('[TRADE-LOGS] Checking environment variables: hasPaperKey=' + !!envPaperKey + ', hasPaperSecret=' + !!envPaperSecret)
-          
-          // If we have env vars, use them; otherwise try database
-          let keys: any = null
-          if (envPaperKey && envPaperSecret) {
-            console.log('[TRADE-LOGS] Using API keys from environment variables')
-            keys = {
-              alpaca_paper_key: envPaperKey,
-              alpaca_paper_secret: envPaperSecret,
-              alpaca_live_key: envLiveKey || null,
-              alpaca_live_secret: envLiveSecret || null
+          // Sync all orders to Supabase first (including buy orders for current positions)
+          const allOrders = await alpacaClient.getOrderHistory(limit)
+          console.log(`[SYNC] Syncing ${allOrders.length} orders from ${accountType} account to Supabase...`)
+          for (const order of allOrders) {
+            if (order.status === 'filled' || order.status === 'partially_filled') {
+              await syncOrderToSupabase(order, accountType, supabase, userId)
+              // Small delay to avoid rate limiting
+              await new Promise(resolve => setTimeout(resolve, 50))
             }
-          } else {
-            console.log('[TRADE-LOGS] Fetching API keys from database for userId=' + userId)
-            const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-              user_uuid: userId
+          }
+          
+          // Get current positions from Alpaca
+          const positions = await alpacaClient.getPositions()
+          console.log(`[TRADE-LOGS] Found ${positions.length} positions in ${accountType} account`)
+          
+          // Try to get decision metrics from Supabase for these positions
+          const symbols = positions.map(p => p.symbol.toUpperCase())
+          const { data: metricsData } = await supabase
+            .from('trade_logs')
+            .select('symbol, buy_decision_metrics, strategy, trade_pair_id')
+            .eq('user_id', userId)
+            .eq('account_type', accountType)
+            .in('symbol', symbols)
+            .eq('action', 'buy')
+            .eq('status', 'open')
+            .order('timestamp', { ascending: false })
+          
+          // Create a map of metrics by symbol
+          const metricsMap = new Map<string, any>()
+          if (metricsData) {
+            for (const metric of metricsData) {
+              if (!metricsMap.has(metric.symbol)) {
+                metricsMap.set(metric.symbol, {
+                  buy_decision_metrics: metric.buy_decision_metrics,
+                  strategy: metric.strategy,
+                  trade_pair_id: metric.trade_pair_id
+                })
+              }
+            }
+          }
+          
+          // Convert Alpaca positions to CurrentTrade format
+          for (const position of positions) {
+            const symbol = position.symbol.toUpperCase()
+            const qty = Math.abs(parseFloat(position.qty))
+            const costBasis = parseFloat(position.cost_basis)
+            const avgEntryPrice = qty > 0 ? costBasis / qty : 0
+            const currentPrice = parseFloat(position.current_price)
+            const marketValue = parseFloat(position.market_value)
+            const unrealizedPl = parseFloat(position.unrealized_pl)
+            const unrealizedPlPercent = parseFloat(position.unrealized_plpc) * 100
+            
+            // Get metrics from Supabase if available
+            const metrics = metricsMap.get(symbol)
+            
+            // Calculate holding duration (we'll use a placeholder since Alpaca doesn't provide entry time)
+            const holdingDuration = '0:0:0' // Will be calculated from order history if needed
+            
+            currentTrades.push({
+              id: BigInt(0), // Placeholder - not from database
+              symbol,
+              qty,
+              buy_price: avgEntryPrice,
+              buy_timestamp: new Date().toISOString(), // Will be updated from order history
+              current_price: currentPrice,
+              current_value: marketValue,
+              unrealized_pl: unrealizedPl,
+              unrealized_pl_percent: unrealizedPlPercent,
+              holding_duration: holdingDuration,
+              buy_decision_metrics: metrics?.buy_decision_metrics || {
+                confidence: 0,
+                reasoning: 'Position from Alpaca'
+              },
+              strategy: metrics?.strategy || 'cash',
+              account_type: accountType,
+              trade_pair_id: metrics?.trade_pair_id || crypto.randomUUID()
             })
-
-            console.log('[TRADE-LOGS] API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
-
-            if (apiKeysError) {
-              console.error('[TRADE-LOGS] Error fetching API keys:', JSON.stringify(apiKeysError))
-            }
-
-            if (apiKeys?.[0]) {
-              keys = apiKeys[0]
-              console.log('[TRADE-LOGS] API keys retrieved from database')
-              console.log('[TRADE-LOGS] Keys object has properties: ' + JSON.stringify(Object.keys(keys)))
-              console.log('[TRADE-LOGS] Keys object values: alpaca_paper_key=' + (keys.alpaca_paper_key ? 'SET(' + keys.alpaca_paper_key.length + ' chars)' : 'NULL/EMPTY') + ', alpaca_paper_secret=' + (keys.alpaca_paper_secret ? 'SET(' + keys.alpaca_paper_secret.length + ' chars)' : 'NULL/EMPTY'))
-            }
-          }
-
-          if (!keys) {
-            console.warn('[TRADE-LOGS] No API keys found in environment or database')
-          } else {
-            console.log('[TRADE-LOGS] API keys found, processing ' + tradesByAccountType.size + ' account types')
-          
-          // Process each account type separately
-          for (const [accountType, trades] of tradesByAccountType) {
-            if (trades.length === 0) {
-              console.log('[TRADE-LOGS] Skipping ' + accountType + ' - no trades')
-              continue
-            }
-            
-            // Determine strategy from first trade (they should all have same strategy)
-            const strategy = trades[0]?.strategy || 'cash'
-            console.log('[TRADE-LOGS] Processing ' + trades.length + ' trades for ' + accountType + ' account with strategy ' + strategy)
-            console.log('[TRADE-LOGS] Trade symbols: ' + trades.map(t => t.symbol).join(', '))
-            
-            // Get Alpaca keys for this account type (strict: no demo fallback for authenticated users)
-            const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType as 'paper' | 'live')
-            console.log('[TRADE-LOGS] getAlpacaKeysForUser returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
-            
-            if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
-              console.warn('[TRADE-LOGS] No API keys found for ' + accountType + ' account')
-              continue
-            }
-            
-            console.log('[TRADE-LOGS] Using ' + (alpacaKeys.paper ? 'PAPER' : 'LIVE') + ' Alpaca account for ' + accountType)
-            
-            try {
-              const alpacaClient = createAlpacaClient({
-                apiKey: alpacaKeys.apiKey,
-                secretKey: alpacaKeys.secretKey,
-                baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-                paper: alpacaKeys.paper
-              })
-
-              console.log(`🔄 [TRADE-LOGS] Initializing Alpaca client...`)
-              await alpacaClient.initialize()
-              console.log(`✅ [TRADE-LOGS] Alpaca client initialized`)
-
-              // Get all open positions from Alpaca
-              console.log(`📞 [TRADE-LOGS] Calling Alpaca getPositions()...`)
-              const positions = await alpacaClient.getPositions()
-              console.log(`📊 [TRADE-LOGS] Alpaca returned ${positions.length} positions for ${accountType} account`)
-              
-              if (positions.length > 0) {
-                console.log(`📊 [TRADE-LOGS] First position sample:`, JSON.stringify({
-                  symbol: positions[0].symbol,
-                  current_price: positions[0].current_price,
-                  qty: positions[0].qty,
-                  market_value: positions[0].market_value
-                }))
-              } else {
-                console.warn(`⚠️  [TRADE-LOGS] No positions returned from Alpaca for ${accountType} account`)
-              }
-              
-              // Create a map of positions by symbol for quick lookup (case-insensitive)
-              const positionMap = new Map<string, any>()
-              for (const pos of positions) {
-                const symbol = pos.symbol?.toUpperCase()
-                if (symbol) {
-                  positionMap.set(symbol, pos)
-                  const price = typeof pos.current_price === 'string' ? parseFloat(pos.current_price) : pos.current_price
-                  console.log(`   📍 [TRADE-LOGS] Position: ${symbol}, current_price: ${pos.current_price} (type: ${typeof pos.current_price}, parsed: ${price}), qty: ${pos.qty}`)
-                }
-              }
-              
-              const tradeSymbols = trades.map(t => t.symbol.toUpperCase())
-              const availableSymbols = Array.from(positionMap.keys())
-              console.log(`📊 [TRADE-LOGS] Looking for ${trades.length} trades: ${tradeSymbols.join(', ')}`)
-              console.log(`📊 [TRADE-LOGS] Available positions: ${availableSymbols.length > 0 ? availableSymbols.join(', ') : 'NONE'}`)
-              
-              // Update current_price for trades that exist in Alpaca
-              for (const trade of trades) {
-                const tradeSymbol = trade.symbol.toUpperCase()
-                const position = positionMap.get(tradeSymbol)
-                
-                console.log(`🔍 [TRADE-LOGS] Processing trade ${trade.symbol} (${tradeSymbol}): position found=${!!position}, current_price=${trade.current_price}, buy_price=${trade.buy_price}`)
-                
-                if (position) {
-                  // Use Alpaca's cost_basis to get the actual average entry price (more accurate than database)
-                  const costBasis = parseFloat(position.cost_basis) || 0
-                  const positionQty = Math.abs(parseFloat(position.qty) || trade.qty)
-                  const actualEntryPrice = positionQty > 0 ? costBasis / positionQty : trade.buy_price
-                  
-                  // Use actual entry price from Alpaca if available, otherwise use database buy_price
-                  const preservedBuyPrice = actualEntryPrice > 0 ? actualEntryPrice : trade.buy_price
-                  
-                  const rawCurrentPrice = position.current_price
-                  const newCurrentPrice = typeof rawCurrentPrice === 'string' 
-                    ? parseFloat(rawCurrentPrice) 
-                    : (typeof rawCurrentPrice === 'number' ? rawCurrentPrice : NaN)
-                  
-                  console.log(`🔍 [TRADE-LOGS] ${trade.symbol} details: costBasis=${costBasis}, qty=${positionQty}, actualEntryPrice=${actualEntryPrice}, dbBuyPrice=${trade.buy_price}, raw_current=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}`)
-                  
-                  // Always update current_price from Alpaca if we got a valid value
-                  if (newCurrentPrice && !isNaN(newCurrentPrice) && isFinite(newCurrentPrice) && newCurrentPrice > 0) {
-                    const oldCurrentPrice = trade.current_price
-                    trade.current_price = newCurrentPrice
-                    
-                    // Calculate position value based on THIS trade's quantity, not the aggregated Alpaca position
-                    // When multiple trades exist for the same symbol, Alpaca returns aggregated values
-                    // but we need to calculate per-trade values
-                    trade.current_value = trade.qty * newCurrentPrice
-                    
-                    // Calculate P&L based on THIS trade's quantity and entry price
-                    // Don't use Alpaca's aggregated unrealized_pl since it's for the entire position
-                    trade.unrealized_pl = (newCurrentPrice - preservedBuyPrice) * trade.qty
-                    
-                    // Percentage is the same for all trades of the same symbol (based on price change)
-                    // So we can use Alpaca's percentage if available, otherwise calculate it
-                    const alpacaUnrealizedPlPercent = position.unrealized_plpc != null ? parseFloat(position.unrealized_plpc) * 100 : null
-                    
-                    if (alpacaUnrealizedPlPercent != null && !isNaN(alpacaUnrealizedPlPercent)) {
-                      trade.unrealized_pl_percent = alpacaUnrealizedPlPercent
-                    } else {
-                      trade.unrealized_pl_percent = preservedBuyPrice > 0 ? ((newCurrentPrice - preservedBuyPrice) / preservedBuyPrice) * 100 : 0
-                    }
-                    
-                    // Update buy_price to use actual entry price from Alpaca
-                    trade.buy_price = preservedBuyPrice
-                    
-                    console.log(`✅ [TRADE-LOGS] UPDATED ${trade.symbol}: buy=${preservedBuyPrice}, current=${oldCurrentPrice}→${newCurrentPrice}, P&L=$${trade.unrealized_pl.toFixed(2)} (${trade.unrealized_pl_percent.toFixed(2)}%)`)
-                  } else {
-                    console.warn(`⚠️  [TRADE-LOGS] Invalid current_price from Alpaca for ${trade.symbol}: raw=${rawCurrentPrice} (${typeof rawCurrentPrice}), parsed=${newCurrentPrice}`)
-                    // Try to fetch quote as fallback
-                    console.log(`🔄 [TRADE-LOGS] Attempting quote fallback for ${trade.symbol}...`)
-                    const quoteSuccess = await fetchQuoteForTrade(trade, alpacaClient, preservedBuyPrice)
-                    if (!quoteSuccess) {
-                      console.error(`❌ [TRADE-LOGS] Failed to update ${trade.symbol} from both position and quote`)
-                    }
-                  }
-                } else {
-                  // Position not found in Alpaca - try to fetch quote
-                  console.warn(`⚠️  [TRADE-LOGS] Position ${trade.symbol} (${tradeSymbol}) not found in Alpaca ${accountType} account, trying quote...`)
-                  const quoteSuccess = await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
-                  if (!quoteSuccess) {
-                    console.error(`❌ [TRADE-LOGS] Failed to update ${trade.symbol} - position not found and quote failed`)
-                  }
-                }
-              }
-                
-                // Also add positions from Alpaca that aren't in trade_logs
-                for (const position of positions) {
-                  const existingTrade = trades.find(t => t.symbol === position.symbol)
-                  
-                  if (!existingTrade) {
-                    // Add position from Alpaca that's not in trade_logs
-                    const qty = Math.abs(parseFloat(position.qty))
-                    const costBasis = parseFloat(position.cost_basis)
-                    const avgEntryPrice = qty > 0 ? costBasis / qty : 0
-                    
-                    currentTrades.push({
-                      id: BigInt(0), // Placeholder
-                      symbol: position.symbol,
-                      qty,
-                      buy_price: avgEntryPrice,
-                      buy_timestamp: new Date().toISOString(), // Alpaca doesn't provide this in position
-                      current_price: parseFloat(position.current_price),
-                      current_value: parseFloat(position.market_value),
-                      unrealized_pl: parseFloat(position.unrealized_pl),
-                      unrealized_pl_percent: parseFloat(position.unrealized_plpc) * 100,
-                      holding_duration: '0:0:0', // Will be calculated on frontend
-                      buy_decision_metrics: {
-                        confidence: 0,
-                        reasoning: 'Trade from Alpaca (not logged in system)'
-                      },
-                      strategy: strategy,
-                      account_type: accountType as 'paper' | 'live',
-                      trade_pair_id: crypto.randomUUID()
-                    })
-                  }
-                }
-              } catch (accountError: any) {
-                console.error(`❌ [TRADE-LOGS] Error fetching Alpaca positions for ${accountType} account:`, accountError?.message || accountError)
-                // Continue with other account types
-              }
-            }
           }
         } catch (error: any) {
-          console.error(`❌ [TRADE-LOGS] Error in main Alpaca fetch block:`, error?.message || error)
-          // Continue with data from database only
+          console.error(`[TRADE-LOGS] Error fetching positions for ${accountType}:`, error?.message || error)
         }
       }
       
-      // For any trades that still have current_price == buy_price, try to fetch latest quote as fallback
-      const tradesNeedingUpdate = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) < 0.01)
-      console.log('[TRADE-LOGS] Checking trades needing update: total=' + currentTrades.length + ', needingUpdate=' + tradesNeedingUpdate.length)
-      
-      if (tradesNeedingUpdate.length > 0) {
-        console.warn('[TRADE-LOGS] ' + tradesNeedingUpdate.length + ' trade(s) still have current_price == buy_price')
-        
-        for (const trade of tradesNeedingUpdate) {
-          console.warn('[TRADE-LOGS] Trade ' + trade.symbol + ' still has current_price (' + trade.current_price + ') equal to buy_price (' + trade.buy_price + ') - attempting quote fallback')
+      console.log(`[TRADE-LOGS] Total current trades from Alpaca: ${currentTrades.length}`)
+    }
+
+    // Helper function to sync Alpaca order to Supabase
+    async function syncOrderToSupabase(order: Order, accountType: string, supabase: any, userId: string) {
+      try {
+        if (!order.id) {
+          console.warn(`[SYNC] Order missing ID, skipping: ${order.symbol}`)
+          return
+        }
+
+        const orderId = order.id
+        const symbol = order.symbol.toUpperCase()
+        const side = order.side.toLowerCase() // 'buy' or 'sell'
+        const filledQty = parseFloat(order.filled_qty || '0')
+        const filledPrice = parseFloat(order.filled_avg_price || '0')
+        const orderStatus = order.status
+        const filledAt = order.filled_at || order.created_at
+        const timestamp = filledAt || order.created_at || new Date().toISOString()
+
+        if (filledQty <= 0 || filledPrice <= 0) {
+          console.warn(`[SYNC] Order ${orderId} has invalid qty or price, skipping`)
+          return
+        }
+
+        // Check if order already exists in Supabase
+        const { data: existingOrder } = await supabase
+          .from('trade_logs')
+          .select('id, trade_pair_id')
+          .eq('user_id', userId)
+          .eq('alpaca_order_id', orderId)
+          .single()
+
+        const orderData: any = {
+          user_id: userId,
+          symbol,
+          action: side,
+          qty: filledQty,
+          price: filledPrice,
+          total_value: filledQty * filledPrice,
+          timestamp,
+          status: side === 'buy' ? 'open' : 'closed', // Buy orders are open until sold
+          order_status: orderStatus,
+          alpaca_order_id: orderId,
+          account_type: accountType,
+          strategy: 'cash', // Default, can be updated from decision metrics
+          updated_at: new Date().toISOString()
+        }
+
+        // Add buy/sell specific fields
+        if (side === 'buy') {
+          orderData.buy_timestamp = timestamp
+          orderData.buy_price = filledPrice
+        } else {
+          orderData.sell_timestamp = timestamp
+          orderData.sell_price = filledPrice
+        }
+
+        if (existingOrder) {
+          // Update existing order with latest data from Alpaca
+          const { error: updateError } = await supabase
+            .from('trade_logs')
+            .update({
+              ...orderData,
+              trade_pair_id: existingOrder.trade_pair_id // Preserve existing trade_pair_id
+            })
+            .eq('id', existingOrder.id)
+
+          if (updateError) {
+            console.error(`[SYNC] Error updating order ${orderId}:`, updateError)
+          } else {
+            console.log(`[SYNC] Updated order ${orderId} for ${symbol} ${side}`)
+          }
+        } else {
+          // Insert new order
+          // For buy orders, generate new trade_pair_id. For sell orders, try to match with existing buy
+          let tradePairId = crypto.randomUUID()
           
-          try {
-            // Try environment variables first, then database
-            let envPaperKey = process.env.ALPACA_PAPER_KEY || process.env.ALPACA_PAPER_API_KEY
-            let envPaperSecret = process.env.ALPACA_PAPER_SECRET || process.env.ALPACA_PAPER_SECRET_KEY
-            let envLiveKey = process.env.ALPACA_API_KEY || process.env.ALPACA_LIVE_KEY
-            let envLiveSecret = process.env.ALPACA_SECRET_KEY || process.env.ALPACA_LIVE_SECRET
-            
-            let keys: any = null
-            if (envPaperKey && envPaperSecret) {
-              console.log('[TRADE-LOGS] Fallback: Using API keys from environment variables')
-              keys = {
-                alpaca_paper_key: envPaperKey,
-                alpaca_paper_secret: envPaperSecret,
-                alpaca_live_key: envLiveKey || null,
-                alpaca_live_secret: envLiveSecret || null
-              }
-            } else {
-              console.log('[TRADE-LOGS] Fallback: Fetching API keys from database for userId=' + userId + ', accountType=' + trade.account_type + ', strategy=' + trade.strategy)
-              const { data: apiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-                user_uuid: userId
-              })
+          if (side === 'sell') {
+            // Try to find matching buy order for this symbol (FIFO)
+            const { data: buyOrder } = await supabase
+              .from('trade_logs')
+              .select('trade_pair_id, buy_price, qty')
+              .eq('user_id', userId)
+              .eq('symbol', symbol)
+              .eq('action', 'buy')
+              .eq('status', 'open')
+              .eq('account_type', accountType)
+              .order('timestamp', { ascending: true })
+              .limit(1)
+              .single()
+
+            if (buyOrder) {
+              tradePairId = buyOrder.trade_pair_id
               
-              console.log('[TRADE-LOGS] Fallback: API keys response: hasData=' + !!apiKeys + ', hasError=' + !!apiKeysError + ', keysLength=' + (apiKeys?.length || 0))
+              // Calculate P&L
+              const buyPrice = parseFloat(buyOrder.buy_price || '0')
+              const buyQty = parseFloat(buyOrder.qty || '0')
+              const sellQty = filledQty
+              const tradeQty = Math.min(buyQty, sellQty)
+              const pl = (filledPrice - buyPrice) * tradeQty
+              const plPercent = buyPrice > 0 ? ((filledPrice - buyPrice) / buyPrice) * 100 : 0
               
-              if (apiKeysError) {
-                console.error('[TRADE-LOGS] Fallback: Error fetching API keys:', JSON.stringify(apiKeysError))
+              // Calculate holding duration
+              const { data: buyOrderFull } = await supabase
+                .from('trade_logs')
+                .select('buy_timestamp')
+                .eq('trade_pair_id', tradePairId)
+                .eq('action', 'buy')
+                .eq('user_id', userId)
+                .single()
+              
+              let holdingDuration = '0:0:0'
+              if (buyOrderFull?.buy_timestamp) {
+                const buyTime = new Date(buyOrderFull.buy_timestamp).getTime()
+                const sellTime = new Date(timestamp).getTime()
+                const duration = sellTime - buyTime
+                const totalSeconds = Math.floor(duration / 1000)
+                const days = Math.floor(totalSeconds / 86400)
+                const hours = Math.floor((totalSeconds % 86400) / 3600)
+                const minutes = Math.floor((totalSeconds % 3600) / 60)
+                const seconds = totalSeconds % 60
+                holdingDuration = days > 0 
+                  ? `${days} day${days > 1 ? 's' : ''} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                  : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
               }
               
-              if (apiKeys?.[0]) {
-                keys = apiKeys[0]
-              }
+              // Add P&L to order data
+              orderData.profit_loss = pl
+              orderData.profit_loss_percent = plPercent
+              orderData.holding_duration = holdingDuration
+              
+              // Mark the buy order as closed
+              await supabase
+                .from('trade_logs')
+                .update({ 
+                  status: 'closed',
+                  sell_timestamp: timestamp,
+                  sell_price: filledPrice,
+                  profit_loss: pl,
+                  profit_loss_percent: plPercent,
+                  holding_duration: holdingDuration
+                })
+                .eq('trade_pair_id', tradePairId)
+                .eq('action', 'buy')
+                .eq('user_id', userId)
             }
-            
-            // Get Alpaca keys for this trade's account type
-            const accountType = (trade.account_type as 'paper' | 'live') || 'paper'
-            console.log('[TRADE-LOGS] Fallback: Getting keys for accountType=' + accountType)
-            const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
-            
-            console.log('[TRADE-LOGS] Fallback: getAlpacaKeysForUser returned: apiKey=' + (alpacaKeys.apiKey ? 'SET' : 'EMPTY') + ', secretKey=' + (alpacaKeys.secretKey ? 'SET' : 'EMPTY') + ', paper=' + alpacaKeys.paper)
-            
-            if (alpacaKeys.apiKey && alpacaKeys.secretKey) {
-              console.log('[TRADE-LOGS] Fallback: API keys available, creating client')
-              const alpacaClient = createAlpacaClient({
-                apiKey: alpacaKeys.apiKey,
-                secretKey: alpacaKeys.secretKey,
-                baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-                paper: alpacaKeys.paper
-              })
-                
-              await alpacaClient.initialize()
-              const success = await fetchQuoteForTrade(trade, alpacaClient, trade.buy_price)
-              if (success) {
-                console.log('[TRADE-LOGS] Successfully updated ' + trade.symbol + ' via quote fallback')
-              } else {
-                console.error('[TRADE-LOGS] Quote fallback failed for ' + trade.symbol)
-              }
-            } else {
-              console.warn('[TRADE-LOGS] No API keys available for quote fallback for ' + trade.symbol)
-            }
-          } catch (error: any) {
-            console.error('[TRADE-LOGS] Error fetching quote fallback for ' + trade.symbol + ': ' + (error?.message || String(error)))
+          }
+
+          const { error: insertError } = await supabase
+            .from('trade_logs')
+            .insert({
+              ...orderData,
+              trade_pair_id: tradePairId
+            })
+
+          if (insertError) {
+            console.error(`[SYNC] Error inserting order ${orderId}:`, insertError)
+          } else {
+            console.log(`[SYNC] Inserted new order ${orderId} for ${symbol} ${side}`)
           }
         }
-      } else {
-        console.log('[TRADE-LOGS] All ' + currentTrades.length + ' trades have updated prices')
-      }
-      
-      // Summary log
-      const updatedCount = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) > 0.01).length
-      const unchangedCount = currentTrades.length - updatedCount
-      console.log(`📊 [TRADE-LOGS] SUMMARY: ${updatedCount} trades updated, ${unchangedCount} trades unchanged`)
-      if (unchangedCount > 0) {
-        const unchanged = currentTrades.filter(t => Math.abs(t.current_price - t.buy_price) < 0.01)
-        console.log(`⚠️  [TRADE-LOGS] Unchanged trades: ${unchanged.map(t => `${t.symbol}(${t.current_price})`).join(', ')}`)
+      } catch (error: any) {
+        console.error(`[SYNC] Error syncing order ${order.id}:`, error?.message || error)
       }
     }
 
-    // Fetch completed trades from multiple sources
+    // Fetch completed trades from Alpaca order history
     if (view === 'completed' || view === 'all' || !view) {
-      // Get from trade_logs table
-      const { data: completedData, error: completedError } = await supabase.rpc('get_completed_trades', {
-        user_uuid: userId,
-        limit_count: limit,
-        offset_count: offset
-      })
-
-      if (!completedError && completedData) {
-        completedTrades = completedData
-      }
-
-      // Also check legacy trades table for completed trades
-      try {
-        // First check if there are any SELL trades at all
-        const { data: sellTrades, error: sellError } = await supabase
-          .from('trades')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('action', 'sell')
-          .order('trade_timestamp', { ascending: false })
-          .limit(10)
-
-        console.log(`Found ${sellTrades?.length || 0} SELL trades in legacy table`)
-
-        const { data: legacyTrades, error: legacyError } = await supabase
-          .from('trades')
-          .select('*')
-          .eq('user_id', userId)
-          .order('trade_timestamp', { ascending: false })
-          .limit(100)
-
-        if (!legacyError && legacyTrades && legacyTrades.length > 0) {
-          console.log(`Found ${legacyTrades.length} legacy trades to process`)
+      console.log('[TRADE-LOGS] Fetching completed trades from Alpaca order history')
+      
+      const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
+      const allOrders: any[] = []
+      
+      // Fetch all filled orders from Alpaca for both account types
+      for (const accountType of accountTypes) {
+        try {
+          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
           
-          // Group trades by symbol to find buy/sell pairs
-          const tradesBySymbol = new Map<string, any[]>()
-          
-          for (const trade of legacyTrades) {
-            if (!tradesBySymbol.has(trade.symbol)) {
-              tradesBySymbol.set(trade.symbol, [])
-            }
-            tradesBySymbol.get(trade.symbol)!.push(trade)
+          if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
+            console.log(`[TRADE-LOGS] No API keys for ${accountType} account, skipping`)
+            continue
           }
 
-          // Find completed buy/sell pairs
-          for (const [symbol, trades] of tradesBySymbol) {
-            const buys = trades.filter(t => t.action === 'buy').sort((a, b) => 
-              new Date(a.trade_timestamp).getTime() - new Date(b.trade_timestamp).getTime()
-            )
-            const sells = trades.filter(t => t.action === 'sell').sort((a, b) => 
-              new Date(a.trade_timestamp).getTime() - new Date(b.trade_timestamp).getTime()
-            )
+          const alpacaClient = createAlpacaClient({
+            apiKey: alpacaKeys.apiKey,
+            secretKey: alpacaKeys.secretKey,
+            baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+            paper: alpacaKeys.paper
+          })
 
-            console.log(`Processing ${symbol}: ${buys.length} buys, ${sells.length} sells`)
-
-            const pairsCount = Math.min(buys.length, sells.length)
-            
-            for (let i = 0; i < pairsCount; i++) {
-              const buy = buys[i]
-              const sell = sells[i]
-              
-              const pl = (sell.price - buy.price) * buy.qty
-              const plPercent = ((sell.price - buy.price) / buy.price) * 100
-              const duration = new Date(sell.trade_timestamp).getTime() - new Date(buy.trade_timestamp).getTime()
-              // Calculate days, hours, minutes, seconds properly
-              const totalSeconds = Math.floor(duration / 1000)
-              const days = Math.floor(totalSeconds / 86400)
-              const hours = Math.floor((totalSeconds % 86400) / 3600)
-              const minutes = Math.floor((totalSeconds % 3600) / 60)
-              const seconds = totalSeconds % 60
-              // Format as PostgreSQL interval: "X days HH:MM:SS" or "HH:MM:SS" if no days
-              const durationStr = days > 0 
-                ? `${days} day${days > 1 ? 's' : ''} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-                : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-
-              // Check if this pair is already in completedTrades
-              const exists = completedTrades.some(ct => 
-                ct.symbol === symbol && 
-                Math.abs(new Date(ct.buy_timestamp).getTime() - new Date(buy.trade_timestamp).getTime()) < 1000
-              )
-
-              if (!exists) {
-                completedTrades.push({
-                  id: buy.id,
-                  symbol,
-                  qty: buy.qty,
-                  buy_price: buy.price,
-                  buy_timestamp: buy.trade_timestamp,
-                  sell_price: sell.price,
-                  sell_timestamp: sell.trade_timestamp,
-                  profit_loss: pl,
-                  profit_loss_percent: plPercent,
-                  holding_duration: durationStr,
-                  buy_decision_metrics: {
-                    confidence: buy.confidence || 0,
-                    reasoning: buy.reasoning || 'Legacy trade from trades table'
-                  },
-                  sell_decision_metrics: {
-                    confidence: sell.confidence || 0,
-                    reasoning: sell.reasoning || 'Legacy trade from trades table'
-                  },
-                  strategy: buy.strategy,
-                  account_type: buy.account_type,
-                  trade_pair_id: crypto.randomUUID()
-                })
-              }
+          await alpacaClient.initialize()
+          
+          // Get all filled orders from Alpaca (increased limit to get more history)
+          const orders = await alpacaClient.getOrderHistory(limit)
+          console.log(`[TRADE-LOGS] Found ${orders.length} orders in ${accountType} account`)
+          
+          // Sync all orders to Supabase (store exact Alpaca data)
+          console.log(`[SYNC] Syncing ${orders.length} orders from ${accountType} account to Supabase...`)
+          for (const order of orders) {
+            if (order.status === 'filled' || order.status === 'partially_filled') {
+              await syncOrderToSupabase(order, accountType, supabase, userId)
+              // Small delay to avoid rate limiting
+              await new Promise(resolve => setTimeout(resolve, 50))
             }
           }
           
-          console.log(`Processed legacy trades: ${completedTrades.length} completed trades found`)
+          // Filter for filled orders only and add account type
+          const filledOrders = orders
+            .filter(order => order.status === 'filled' || order.status === 'partially_filled')
+            .filter(order => order.filled_qty && parseFloat(order.filled_qty) > 0)
+            .map(order => ({
+              ...order,
+              account_type: accountType
+            }))
           
-          // If no completed pairs found, show individual trades as "completed" for display purposes
-          if (completedTrades.length === 0 && legacyTrades.length > 0) {
-            console.log('No completed pairs found, showing individual trades')
-            
-            // If there are no SELL trades at all, treat all BUY trades as "completed" (sold at current price)
-            if (!sellTrades || sellTrades.length === 0) {
-              console.log('No SELL trades found - treating all BUY trades as completed')
-              for (const trade of legacyTrades.filter(t => t.action === 'buy').slice(0, 20)) {
-                completedTrades.push({
-                  id: trade.id,
-                  symbol: trade.symbol,
-                  qty: trade.qty,
-                  buy_price: trade.price,
-                  buy_timestamp: trade.trade_timestamp,
-                  sell_price: trade.price, // Assume sold at same price for now
-                  sell_timestamp: trade.trade_timestamp,
-                  profit_loss: 0, // No profit/loss since we don't have actual sell price
-                  profit_loss_percent: 0,
-                  holding_duration: '0:0:0',
-                  buy_decision_metrics: {
-                    confidence: trade.confidence || 0,
-                    reasoning: trade.reasoning || 'Legacy buy trade (no sell recorded)'
-                  },
-                  sell_decision_metrics: {
-                    confidence: trade.confidence || 0,
-                    reasoning: 'No sell trade recorded in database'
-                  },
-                  strategy: trade.strategy,
-                  account_type: trade.account_type,
-                  trade_pair_id: crypto.randomUUID()
-                })
-              }
-            } else {
-              // Show individual trades as completed
-              for (const trade of legacyTrades.slice(0, 20)) {
-                completedTrades.push({
-                  id: trade.id,
-                  symbol: trade.symbol,
-                  qty: trade.qty,
-                  buy_price: trade.action === 'buy' ? trade.price : 0,
-                  buy_timestamp: trade.action === 'buy' ? trade.trade_timestamp : trade.created_at,
-                  sell_price: trade.action === 'sell' ? trade.price : 0,
-                  sell_timestamp: trade.action === 'sell' ? trade.trade_timestamp : trade.created_at,
-                  profit_loss: 0, // Can't calculate without pair
-                  profit_loss_percent: 0,
-                  holding_duration: '0:0:0',
-                  buy_decision_metrics: {
-                    confidence: trade.confidence || 0,
-                    reasoning: trade.reasoning || `Legacy ${trade.action} trade`
-                  },
-                  sell_decision_metrics: {
-                    confidence: trade.confidence || 0,
-                    reasoning: trade.reasoning || `Legacy ${trade.action} trade`
-                  },
-                  strategy: trade.strategy,
-                  account_type: trade.account_type,
-                  trade_pair_id: crypto.randomUUID()
-                })
-              }
-            }
-          }
-        } else {
-          console.log('No legacy trades found or error:', legacyError)
+          allOrders.push(...filledOrders)
+        } catch (error: any) {
+          console.error(`[TRADE-LOGS] Error fetching orders for ${accountType}:`, error?.message || error)
         }
-      } catch (error) {
-        console.error('Error fetching legacy trades:', error)
-        // Continue with trade_logs data only
       }
-
+      
+      console.log(`[TRADE-LOGS] Total filled orders from Alpaca: ${allOrders.length}`)
+      
+      // Group orders by symbol
+      const ordersBySymbol = new Map<string, any[]>()
+      for (const order of allOrders) {
+        const symbol = order.symbol.toUpperCase()
+        if (!ordersBySymbol.has(symbol)) {
+          ordersBySymbol.set(symbol, [])
+        }
+        ordersBySymbol.get(symbol)!.push(order)
+      }
+      
+      // Try to get decision metrics from Supabase
+      const allSymbols = Array.from(ordersBySymbol.keys())
+      const { data: metricsData } = await supabase
+        .from('trade_logs')
+        .select('symbol, alpaca_order_id, buy_decision_metrics, sell_decision_metrics, strategy, trade_pair_id, account_type')
+        .eq('user_id', userId)
+        .in('symbol', allSymbols)
+        .not('alpaca_order_id', 'is', null)
+      
+      // Create maps for metrics lookup
+      const buyMetricsMap = new Map<string, any>()
+      const sellMetricsMap = new Map<string, any>()
+      const strategyMap = new Map<string, string>()
+      const tradePairMap = new Map<string, string>()
+      
+      if (metricsData) {
+        for (const metric of metricsData) {
+          const key = `${metric.symbol}_${metric.alpaca_order_id}`
+          if (metric.buy_decision_metrics) {
+            buyMetricsMap.set(key, metric.buy_decision_metrics)
+            strategyMap.set(key, metric.strategy)
+            tradePairMap.set(key, metric.trade_pair_id)
+          }
+          if (metric.sell_decision_metrics) {
+            sellMetricsMap.set(key, metric.sell_decision_metrics)
+          }
+        }
+      }
+      
+      // Process each symbol's orders to match buy/sell pairs using FIFO
+      for (const [symbol, orders] of ordersBySymbol) {
+        // Sort orders by filled_at timestamp
+        orders.sort((a, b) => {
+          const timeA = a.filled_at ? new Date(a.filled_at).getTime() : new Date(a.created_at).getTime()
+          const timeB = b.filled_at ? new Date(b.filled_at).getTime() : new Date(b.created_at).getTime()
+          return timeA - timeB
+        })
+        
+        // Separate buy and sell orders
+        const buyOrders = orders.filter(o => o.side === 'buy')
+        const sellOrders = orders.filter(o => o.side === 'sell')
+        
+        console.log(`[TRADE-LOGS] Processing ${symbol}: ${buyOrders.length} buys, ${sellOrders.length} sells`)
+        
+        // Match buy and sell orders using FIFO
+        let buyIndex = 0
+        let sellIndex = 0
+        
+        while (buyIndex < buyOrders.length && sellIndex < sellOrders.length) {
+          const buyOrder = buyOrders[buyIndex]
+          const sellOrder = sellOrders[sellIndex]
+          
+          const buyQty = parseFloat(buyOrder.filled_qty)
+          const sellQty = parseFloat(sellOrder.filled_qty)
+          const buyPrice = parseFloat(buyOrder.filled_avg_price || '0')
+          const sellPrice = parseFloat(sellOrder.filled_avg_price || '0')
+          
+          if (buyQty <= 0 || sellQty <= 0 || buyPrice <= 0 || sellPrice <= 0) {
+            // Skip invalid orders
+            if (buyQty <= 0 || buyPrice <= 0) buyIndex++
+            if (sellQty <= 0 || sellPrice <= 0) sellIndex++
+            continue
+          }
+          
+          // Use the smaller quantity for the trade pair
+          const tradeQty = Math.min(buyQty, sellQty)
+          
+          // Calculate P&L
+          const pl = (sellPrice - buyPrice) * tradeQty
+          const plPercent = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0
+          
+          // Calculate holding duration
+          const buyTime = buyOrder.filled_at ? new Date(buyOrder.filled_at).getTime() : new Date(buyOrder.created_at).getTime()
+          const sellTime = sellOrder.filled_at ? new Date(sellOrder.filled_at).getTime() : new Date(sellOrder.created_at).getTime()
+          const duration = sellTime - buyTime
+          const totalSeconds = Math.floor(duration / 1000)
+          const days = Math.floor(totalSeconds / 86400)
+          const hours = Math.floor((totalSeconds % 86400) / 3600)
+          const minutes = Math.floor((totalSeconds % 3600) / 60)
+          const seconds = totalSeconds % 60
+          const durationStr = days > 0 
+            ? `${days} day${days > 1 ? 's' : ''} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+            : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+          
+          // Get metrics from Supabase if available
+          const buyKey = `${symbol}_${buyOrder.id}`
+          const sellKey = `${symbol}_${sellOrder.id}`
+          const buyMetrics = buyMetricsMap.get(buyKey) || { confidence: 0, reasoning: 'Trade from Alpaca' }
+          const sellMetrics = sellMetricsMap.get(sellKey) || { confidence: 0, reasoning: 'Trade from Alpaca' }
+          const strategy = strategyMap.get(buyKey) || strategyMap.get(sellKey) || 'cash'
+          const tradePairId = tradePairMap.get(buyKey) || tradePairMap.get(sellKey) || crypto.randomUUID()
+          
+          completedTrades.push({
+            id: BigInt(0), // Placeholder - not from database
+            symbol,
+            qty: tradeQty,
+            buy_price: buyPrice,
+            buy_timestamp: buyOrder.filled_at || buyOrder.created_at,
+            sell_price: sellPrice,
+            sell_timestamp: sellOrder.filled_at || sellOrder.created_at,
+            profit_loss: pl,
+            profit_loss_percent: plPercent,
+            holding_duration: durationStr,
+            buy_decision_metrics: buyMetrics,
+            sell_decision_metrics: sellMetrics,
+            strategy,
+            account_type: buyOrder.account_type || 'paper',
+            trade_pair_id: tradePairId
+          })
+          
+          // Update remaining quantities
+          buyOrder.filled_qty = (buyQty - tradeQty).toString()
+          sellOrder.filled_qty = (sellQty - tradeQty).toString()
+          
+          // Move to next order if current one is fully matched
+          if (parseFloat(buyOrder.filled_qty) <= 0) buyIndex++
+          if (parseFloat(sellOrder.filled_qty) <= 0) sellIndex++
+        }
+      }
+      
       // Sort completed trades by sell timestamp (most recent first)
       completedTrades.sort((a, b) => 
         new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
       )
+      
+      // Apply limit and offset
+      completedTrades = completedTrades.slice(offset, offset + limit)
+      
+      console.log(`[TRADE-LOGS] Total completed trades from Alpaca: ${completedTrades.length}`)
     }
 
     // Handle request for individual transactions for a symbol
     const symbolParam = searchParams.get('symbol')
     if (symbolParam && view === 'transactions') {
-      console.log(`[TRADE-LOGS] Fetching all transactions for symbol: ${symbolParam}`)
+      console.log(`[TRADE-LOGS] Fetching all transactions for symbol: ${symbolParam} from Alpaca`)
       
-      // Fetch all individual transactions (both buy and sell) for this symbol
-      const { data: allTransactions, error: transactionsError } = await supabase
-        .from('trade_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('symbol', symbolParam.toUpperCase())
-        .order('timestamp', { ascending: false })
+      const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
+      const allTransactions: any[] = []
+      
+      // Fetch all orders for this symbol from Alpaca
+      for (const accountType of accountTypes) {
+        try {
+          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
+          
+          if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
+            continue
+          }
 
-      if (transactionsError) {
-        console.error('[TRADE-LOGS] Error fetching transactions:', transactionsError)
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Failed to fetch transactions' 
-        }, { status: 500 })
+          const alpacaClient = createAlpacaClient({
+            apiKey: alpacaKeys.apiKey,
+            secretKey: alpacaKeys.secretKey,
+            baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+            paper: alpacaKeys.paper
+          })
+
+          await alpacaClient.initialize()
+          
+          // Get all orders for this symbol
+          const orders = await alpacaClient.getOrderHistory(500)
+          const symbolOrders = orders
+            .filter(order => order.symbol.toUpperCase() === symbolParam.toUpperCase())
+            .filter(order => order.status === 'filled' || order.status === 'partially_filled')
+            .map(order => ({
+              id: order.id,
+              symbol: order.symbol,
+              side: order.side,
+              qty: parseFloat(order.filled_qty),
+              price: parseFloat(order.filled_avg_price || '0'),
+              timestamp: order.filled_at || order.created_at,
+              account_type: accountType,
+              alpaca_order_id: order.id,
+              order_status: order.status
+            }))
+          
+          allTransactions.push(...symbolOrders)
+        } catch (error: any) {
+          console.error(`[TRADE-LOGS] Error fetching transactions for ${accountType}:`, error?.message || error)
+        }
       }
+      
+      // Sort by timestamp descending
+      allTransactions.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
 
       return NextResponse.json({
         success: true,
         data: {
           symbol: symbolParam.toUpperCase(),
-          transactions: allTransactions || [],
-          count: allTransactions?.length || 0
+          transactions: allTransactions,
+          count: allTransactions.length
         }
       })
+    }
+    
+    // Calculate statistics from Alpaca data
+    if (view === 'statistics' || view === 'all' || !view) {
+      const closedTrades = completedTrades
+      const openTrades = currentTrades
+      
+      const winningTrades = closedTrades.filter(t => t.profit_loss > 0)
+      const losingTrades = closedTrades.filter(t => t.profit_loss < 0)
+      const totalPl = closedTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0)
+      const avgPl = closedTrades.length > 0 ? totalPl / closedTrades.length : 0
+      const winRate = closedTrades.length > 0 ? (winningTrades.length / closedTrades.length) * 100 : 0
+      
+      // Calculate average holding duration (simplified - just use first trade's duration format)
+      const avgHoldingDuration = closedTrades.length > 0 ? closedTrades[0].holding_duration : '0:0:0'
+      
+      const bestTrade = closedTrades.length > 0 ? Math.max(...closedTrades.map(t => t.profit_loss)) : 0
+      const worstTrade = closedTrades.length > 0 ? Math.min(...closedTrades.map(t => t.profit_loss)) : 0
+      
+      statistics = {
+        total_trades: closedTrades.length + openTrades.length,
+        open_trades: openTrades.length,
+        closed_trades: closedTrades.length,
+        winning_trades: winningTrades.length,
+        losing_trades: losingTrades.length,
+        total_profit_loss: totalPl,
+        avg_profit_loss: avgPl,
+        win_rate: winRate,
+        avg_holding_duration: avgHoldingDuration,
+        best_trade: bestTrade,
+        worst_trade: worstTrade
+      }
     }
 
     return NextResponse.json({
