@@ -79,22 +79,17 @@ export interface TradeStatistics {
   worst_trade: number
 }
 
-// POST - Fix prices for existing trades
+// POST - Create or update trade log, or fix prices
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const supabase = await createServerClient(req, {})
     const { userId, isDemo } = await getUserIdFromRequest(req)
     
     const body = await req.json().catch(() => ({}))
-    const { action, symbol } = body
+    const { action, symbol, qty, price, decision_metrics, strategy, account_type, alpaca_order_id, order_status, trade_pair_id } = body
 
-    // Only allow 'fix-prices' action
-    if (action !== 'fix-prices') {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid action. Use { "action": "fix-prices", "symbol": "FCEL" }' 
-      }, { status: 400 })
-    }
+    // Handle fix-prices action
+    if (action === 'fix-prices') {
 
     console.log(`[FIX-PRICES] Starting price fix for user ${userId}, symbol: ${symbol || 'ALL'}`)
 
@@ -304,19 +299,96 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      message: `Fixed ${fixedCount} trades, ${errorCount} errors`,
-      fixed: fixedCount,
-      errors: errorCount,
-      results
-    })
+      return NextResponse.json({
+        success: true,
+        message: `Fixed ${fixedCount} trades, ${errorCount} errors`,
+        fixed: fixedCount,
+        errors: errorCount,
+        results
+      })
+    }
+
+    // Handle buy/sell actions (existing POST logic)
+    if (!action || !symbol || !qty || !price || !strategy || !account_type) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Missing required fields' 
+      }, { status: 400 })
+    }
+
+    if (action === 'buy') {
+      // Create new trade log for buy
+      const { data: tradeLog, error: insertError } = await supabase
+        .from('trade_logs')
+        .insert({
+          user_id: userId,
+          symbol,
+          trade_pair_id: trade_pair_id || undefined, // Let DB generate if not provided
+          action: 'buy',
+          qty: parseFloat(qty),
+          price: parseFloat(price),
+          total_value: parseFloat(qty) * parseFloat(price),
+          timestamp: new Date().toISOString(),
+          status: 'open',
+          buy_timestamp: new Date().toISOString(),
+          buy_price: parseFloat(price),
+          buy_decision_metrics: decision_metrics,
+          strategy,
+          account_type,
+          alpaca_order_id,
+          order_status
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('Error creating trade log:', insertError)
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Failed to create trade log' 
+        }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: tradeLog
+      })
+
+    } else if (action === 'sell') {
+      // Update existing trade log for sell
+      const { error: closeError } = await supabase.rpc('close_trade_position', {
+        user_uuid: userId,
+        symbol_param: symbol,
+        sell_qty: parseFloat(qty),
+        sell_price_param: parseFloat(price),
+        sell_metrics: decision_metrics
+      })
+
+      if (closeError) {
+        console.error('Error closing trade position:', closeError)
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Failed to close trade position' 
+        }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Trade position closed successfully'
+      })
+
+    } else {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid action. Must be "fix-prices", "buy", or "sell"' 
+      }, { status: 400 })
+    }
 
   } catch (error: any) {
-    console.error('[FIX-PRICES] Error:', error)
+    console.error('Error in POST /api/trade-logs:', error)
     return NextResponse.json({ 
       success: false, 
-      error: error.message || 'Unknown error' 
+      error: error.message || 'Internal server error' 
     }, { status: 500 })
   }
 }
@@ -978,99 +1050,4 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-// POST - Create or update trade log
-export async function POST(req: NextRequest): Promise<NextResponse> {
-  try {
-    const supabase = await createServerClient(req, {})
-    
-    // Get user ID from request (checks Authorization header)
-    const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('[TRADE-LOGS POST] User detected:', { userId, isDemo })
-
-    const body = await req.json()
-    const { action, symbol, qty, price, decision_metrics, strategy, account_type, alpaca_order_id, order_status, trade_pair_id } = body
-
-    if (!action || !symbol || !qty || !price || !strategy || !account_type) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Missing required fields' 
-      }, { status: 400 })
-    }
-
-    if (action === 'buy') {
-      // Create new trade log for buy
-      const { data: tradeLog, error: insertError } = await supabase
-        .from('trade_logs')
-        .insert({
-          user_id: userId,
-          symbol,
-          trade_pair_id: trade_pair_id || undefined, // Let DB generate if not provided
-          action: 'buy',
-          qty: parseFloat(qty),
-          price: parseFloat(price),
-          total_value: parseFloat(qty) * parseFloat(price),
-          timestamp: new Date().toISOString(),
-          status: 'open',
-          buy_timestamp: new Date().toISOString(),
-          buy_price: parseFloat(price),
-          buy_decision_metrics: decision_metrics,
-          strategy,
-          account_type,
-          alpaca_order_id,
-          order_status
-        })
-        .select()
-        .single()
-
-      if (insertError) {
-        console.error('Error creating trade log:', insertError)
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Failed to create trade log' 
-        }, { status: 500 })
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: tradeLog
-      })
-
-    } else if (action === 'sell') {
-      // Update existing trade log for sell
-      const { error: closeError } = await supabase.rpc('close_trade_position', {
-        user_uuid: userId,
-        symbol_param: symbol,
-        sell_qty: parseFloat(qty),
-        sell_price_param: parseFloat(price),
-        sell_metrics: decision_metrics
-      })
-
-      if (closeError) {
-        console.error('Error closing trade position:', closeError)
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Failed to close trade position' 
-        }, { status: 500 })
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Trade position closed successfully'
-      })
-
-    } else {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid action. Must be "buy" or "sell"' 
-      }, { status: 400 })
-    }
-
-  } catch (error) {
-    console.error('Error in POST /api/trade-logs:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Internal server error' 
-    }, { status: 500 })
-  }
-}
 
