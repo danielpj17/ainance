@@ -1032,6 +1032,37 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       )
     }
 
+    // Handle request for individual transactions for a symbol
+    const symbolParam = searchParams.get('symbol')
+    if (symbolParam && view === 'transactions') {
+      console.log(`[TRADE-LOGS] Fetching all transactions for symbol: ${symbolParam}`)
+      
+      // Fetch all individual transactions (both buy and sell) for this symbol
+      const { data: allTransactions, error: transactionsError } = await supabase
+        .from('trade_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('symbol', symbolParam.toUpperCase())
+        .order('timestamp', { ascending: false })
+
+      if (transactionsError) {
+        console.error('[TRADE-LOGS] Error fetching transactions:', transactionsError)
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Failed to fetch transactions' 
+        }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          symbol: symbolParam.toUpperCase(),
+          transactions: allTransactions || [],
+          count: allTransactions?.length || 0
+        }
+      })
+    }
+
     return NextResponse.json({
       success: true,
       data: {

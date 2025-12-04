@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle, Info } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -82,6 +82,8 @@ export default function LiveTradingPage() {
   const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
   const [positionsLoading, setPositionsLoading] = useState(false)
   const [hasApiKeys, setHasApiKeys] = useState(false)
+  const [selectedPosition, setSelectedPosition] = useState<CurrentPosition | null>(null)
+  const [showMetricsModal, setShowMetricsModal] = useState(false)
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -730,13 +732,29 @@ export default function LiveTradingPage() {
                     </div>
 
                     <div className="mt-3 pt-3 border-t border-gray-700">
-                      <div className="flex items-center justify-between text-xs text-gray-400">
-                        <div>
-                          Bought: {new Date(position.buy_timestamp).toLocaleString()}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 text-xs text-gray-400">
+                          <div>
+                            Bought: {new Date(position.buy_timestamp).toLocaleString()}
+                          </div>
+                          <div className="text-green-400">
+                            Strategy: {position.strategy}
+                          </div>
                         </div>
-                        <div className="text-green-400">
-                          Strategy: {position.strategy}
-                        </div>
+                        {position.buy_decision_metrics && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedPosition(position)
+                              setShowMetricsModal(true)
+                            }}
+                            className="border-green-500 text-green-400 hover:bg-green-500/10"
+                          >
+                            <Info className="h-4 w-4 mr-1" />
+                            View Metrics
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -747,91 +765,244 @@ export default function LiveTradingPage() {
         </Card>
       </div>
 
-      {/* Current Positions */}
-      <div className="mb-8">
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-white">Current Positions</CardTitle>
-            <CardDescription className="text-gray-400">
-              Active live trading positions with real-time P&L
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {positionsLoading ? (
-              <div className="text-center py-8 text-gray-400">
-                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                Loading positions...
+      {/* Buy Decision Metrics Modal */}
+      {showMetricsModal && selectedPosition && selectedPosition.buy_decision_metrics && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowMetricsModal(false)}>
+          <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">Buy Decision Metrics: {selectedPosition.symbol}</h2>
+                <button
+                  onClick={() => setShowMetricsModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-            ) : currentPositions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>No current positions</p>
-                <p className="text-sm mt-1">Start the trading bot to see positions here</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {currentPositions.map((position) => (
-                  <div
-                    key={position.id.toString()}
-                    className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-green-500 transition-all"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="text-2xl font-bold text-white">{position.symbol}</div>
-                        <Badge className="bg-green-400">BUY</Badge>
-                        <Badge variant="outline" className="border-gray-600 text-gray-400">
-                          {position.qty} shares
-                        </Badge>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {formatCurrency(position.unrealized_pl)}
-                        </div>
-                        <div className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
-                        </div>
+
+              {/* Buy Decision Metrics */}
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-blue-500" />
+                  Buy Decision Metrics
+                </h3>
+                <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <div className="text-gray-500 text-sm mb-1">Confidence</div>
+                      <div className="text-2xl font-bold text-white">
+                        {((selectedPosition.buy_decision_metrics?.confidence || 0) * 100).toFixed(1)}%
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-500 mb-1">Entry Price</div>
-                        <div className="font-semibold text-white">{formatCurrency(position.buy_price)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500 mb-1">Current Price</div>
-                        <div className="font-semibold text-white">{formatCurrency(position.current_price)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500 mb-1">Position Value</div>
-                        <div className="font-semibold text-white">{formatCurrency(position.current_value)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500 mb-1 flex items-center gap-1">
-                          <Activity className="h-3 w-3" />
-                          Holding Time
-                        </div>
-                        <div className="font-semibold text-white">{formatDuration(position.holding_duration)}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 pt-3 border-t border-gray-700">
-                      <div className="flex items-center justify-between text-xs text-gray-400">
-                        <div>
-                          Bought: {new Date(position.buy_timestamp).toLocaleString()}
-                        </div>
-                        <div className="text-green-400">
-                          Strategy: {position.strategy}
-                        </div>
+                    <div>
+                      <div className="text-gray-500 text-sm mb-1">Adjusted Confidence</div>
+                      <div className="text-2xl font-bold text-purple-400">
+                        {((selectedPosition.buy_decision_metrics?.adjusted_confidence || 0) * 100).toFixed(1)}%
                       </div>
                     </div>
                   </div>
-                ))}
+                  
+                  <div className="mb-4">
+                    <div className="text-gray-500 text-sm mb-1">Reasoning</div>
+                    <div className="text-white bg-[#1a1d2e] p-3 rounded border border-gray-700">
+                      {selectedPosition.buy_decision_metrics?.reasoning || 'No reasoning provided'}
+                    </div>
+                  </div>
+
+                  {/* Technical Indicators */}
+                  {selectedPosition.buy_decision_metrics?.indicators && Object.keys(selectedPosition.buy_decision_metrics.indicators).length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-2">Technical Indicators</div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        {selectedPosition.buy_decision_metrics.indicators.rsi !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">RSI</div>
+                            <div className={`font-bold ${
+                              selectedPosition.buy_decision_metrics.indicators.rsi > 70 
+                                ? 'text-red-400' 
+                                : selectedPosition.buy_decision_metrics.indicators.rsi < 30 
+                                  ? 'text-green-400' 
+                                  : 'text-white'
+                            }`}>
+                              {selectedPosition.buy_decision_metrics.indicators.rsi.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedPosition.buy_decision_metrics.indicators.rsi > 70 ? 'Overbought' : 
+                               selectedPosition.buy_decision_metrics.indicators.rsi < 30 ? 'Oversold' : 'Neutral'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedPosition.buy_decision_metrics.indicators.macd !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">MACD</div>
+                            <div className={`font-bold ${
+                              selectedPosition.buy_decision_metrics.indicators.macd > 0 
+                                ? 'text-green-400' 
+                                : 'text-red-400'
+                            }`}>
+                              {selectedPosition.buy_decision_metrics.indicators.macd.toFixed(4)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedPosition.buy_decision_metrics.indicators.macd > 0 ? 'Bullish' : 'Bearish'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedPosition.buy_decision_metrics.indicators.stochastic !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">Stochastic</div>
+                            <div className={`font-bold ${
+                              selectedPosition.buy_decision_metrics.indicators.stochastic > 80 
+                                ? 'text-red-400' 
+                                : selectedPosition.buy_decision_metrics.indicators.stochastic < 20 
+                                  ? 'text-green-400' 
+                                  : 'text-white'
+                            }`}>
+                              {selectedPosition.buy_decision_metrics.indicators.stochastic.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedPosition.buy_decision_metrics.indicators.stochastic > 80 ? 'Overbought' : 
+                               selectedPosition.buy_decision_metrics.indicators.stochastic < 20 ? 'Oversold' : 'Neutral'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedPosition.buy_decision_metrics.indicators.bb_position !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">BB Position</div>
+                            <div className={`font-bold ${
+                              selectedPosition.buy_decision_metrics.indicators.bb_position > 0.9 
+                                ? 'text-red-400' 
+                                : selectedPosition.buy_decision_metrics.indicators.bb_position < 0.1 
+                                  ? 'text-green-400' 
+                                  : 'text-white'
+                            }`}>
+                              {(selectedPosition.buy_decision_metrics.indicators.bb_position * 100).toFixed(1)}%
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedPosition.buy_decision_metrics.indicators.bb_position > 0.9 ? 'Upper Band' : 
+                               selectedPosition.buy_decision_metrics.indicators.bb_position < 0.1 ? 'Lower Band' : 'Mid Range'}
+                            </div>
+                          </div>
+                        )}
+                        {selectedPosition.buy_decision_metrics.indicators.volume_ratio !== undefined && (
+                          <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">Volume Ratio</div>
+                            <div className={`font-bold ${
+                              selectedPosition.buy_decision_metrics.indicators.volume_ratio > 2 
+                                ? 'text-green-400' 
+                                : selectedPosition.buy_decision_metrics.indicators.volume_ratio < 0.5 
+                                  ? 'text-yellow-400' 
+                                  : 'text-white'
+                            }`}>
+                              {selectedPosition.buy_decision_metrics.indicators.volume_ratio.toFixed(2)}x
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {selectedPosition.buy_decision_metrics.indicators.volume_ratio > 2 ? 'High Volume' : 
+                               selectedPosition.buy_decision_metrics.indicators.volume_ratio < 0.5 ? 'Low Volume' : 'Normal'}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Model Probabilities */}
+                  {selectedPosition.buy_decision_metrics?.probabilities && Object.keys(selectedPosition.buy_decision_metrics.probabilities).length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-2">ML Model Probabilities</div>
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        {Object.entries(selectedPosition.buy_decision_metrics.probabilities).map(([action, prob]: [string, any]) => (
+                          <div key={action} className="bg-[#1a1d2e] p-2 rounded border border-gray-700 text-center">
+                            <div className="text-gray-400 text-xs mb-1 capitalize">{action}</div>
+                            <div className={`font-bold ${
+                              action === 'buy' ? 'text-green-400' : 
+                              action === 'sell' ? 'text-red-400' : 
+                              'text-gray-400'
+                            }`}>
+                              {(prob * 100).toFixed(1)}%
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="text-gray-500 mb-1">News Sentiment</div>
+                      <div className={`font-bold ${
+                        (selectedPosition.buy_decision_metrics?.news_sentiment || 0) > 0 
+                          ? 'text-green-400' 
+                          : (selectedPosition.buy_decision_metrics?.news_sentiment || 0) < 0 
+                            ? 'text-red-400' 
+                            : 'text-gray-400'
+                      }`}>
+                        {((selectedPosition.buy_decision_metrics?.news_sentiment || 0) * 100).toFixed(1)}%
+                      </div>
+                      {selectedPosition.buy_decision_metrics?.sentiment_boost !== undefined && selectedPosition.buy_decision_metrics.sentiment_boost > 0 && (
+                        <div className="text-xs text-purple-400 mt-1">
+                          +{((selectedPosition.buy_decision_metrics.sentiment_boost) * 100).toFixed(1)}% boost
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-center">
+                      <div className="text-gray-500 mb-1">Market Risk</div>
+                      <div className={`font-bold ${
+                        (selectedPosition.buy_decision_metrics?.market_risk || 0) < 0.3 
+                          ? 'text-green-400' 
+                          : (selectedPosition.buy_decision_metrics?.market_risk || 0) < 0.6 
+                            ? 'text-yellow-400' 
+                            : 'text-red-400'
+                      }`}>
+                        {((selectedPosition.buy_decision_metrics?.market_risk || 0) * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-gray-500 mb-1">Buy Price</div>
+                      <div className="font-bold text-white">
+                        {formatCurrency(selectedPosition.buy_price)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Buy Timestamp */}
+                  {selectedPosition.buy_timestamp && (
+                    <div className="mt-4 pt-4 border-t border-gray-700">
+                      <div className="text-gray-500 text-sm mb-1">Buy Timestamp</div>
+                      <div className="text-white text-sm">
+                        {new Date(selectedPosition.buy_timestamp).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true,
+                          timeZoneName: 'short'
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedPosition.buy_decision_metrics?.news_headlines && selectedPosition.buy_decision_metrics.news_headlines.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-gray-500 text-sm mb-2">News Headlines</div>
+                      <ul className="space-y-1 text-xs text-gray-400">
+                        {selectedPosition.buy_decision_metrics.news_headlines.map((headline: string, idx: number) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-purple-500 mt-1">•</span>
+                            <span>{headline}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

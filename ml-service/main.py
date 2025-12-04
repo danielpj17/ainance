@@ -246,30 +246,63 @@ async def predict(request: PredictionRequest):
             class_idx = MODEL.classes_.tolist().index(pred_class)
             confidence = float(probs[class_idx])
             
-            # Generate reasoning
+            # Generate reasoning with specific indicator values
             reasoning_parts = []
             
-            if row['rsi'] > 70:
-                reasoning_parts.append("Overbought (RSI>70)")
-            elif row['rsi'] < 30:
-                reasoning_parts.append("Oversold (RSI<30)")
+            rsi_val = round(float(row['rsi']), 2)
+            macd_val = round(float(row['macd']), 4)
+            macd_hist = round(float(row.get('macd_histogram', 0)), 4)
+            bb_pos = round(float(row['bb_position']), 3)
+            vol_ratio = round(float(row['volume_ratio']), 2)
+            stoch_val = round(float(row.get('stochastic', 50)), 2)
+            ema_trend = int(row.get('ema_trend', 0))
             
-            if row['macd_histogram'] > 0 and row['ema_trend'] == 1:
-                reasoning_parts.append("Bullish momentum (MACD+, EMA+)")
-            elif row['macd_histogram'] < 0 and row['ema_trend'] == 0:
-                reasoning_parts.append("Bearish momentum (MACD-, EMA-)")
+            # RSI analysis
+            if rsi_val > 70:
+                reasoning_parts.append(f"Overbought conditions (RSI {rsi_val})")
+            elif rsi_val < 30:
+                reasoning_parts.append(f"Oversold conditions (RSI {rsi_val})")
+            elif 30 <= rsi_val <= 70:
+                reasoning_parts.append(f"Neutral RSI ({rsi_val})")
             
-            if row['bb_position'] > 0.9:
-                reasoning_parts.append("Near upper Bollinger Band")
-            elif row['bb_position'] < 0.1:
-                reasoning_parts.append("Near lower Bollinger Band")
+            # MACD and EMA momentum
+            if macd_hist > 0 and ema_trend == 1:
+                reasoning_parts.append(f"Bullish momentum (MACD {macd_val}, EMA trend up)")
+            elif macd_hist < 0 and ema_trend == 0:
+                reasoning_parts.append(f"Bearish momentum (MACD {macd_val}, EMA trend down)")
+            elif macd_hist > 0:
+                reasoning_parts.append(f"Positive MACD ({macd_val})")
+            elif macd_hist < 0:
+                reasoning_parts.append(f"Negative MACD ({macd_val})")
             
-            if row['volume_ratio'] > 2:
-                reasoning_parts.append("High volume")
-            elif row['volume_ratio'] < 0.5:
-                reasoning_parts.append("Low volume")
+            # Bollinger Bands
+            if bb_pos > 0.9:
+                reasoning_parts.append(f"Near upper Bollinger Band ({bb_pos*100:.1f}%)")
+            elif bb_pos < 0.1:
+                reasoning_parts.append(f"Near lower Bollinger Band ({bb_pos*100:.1f}%)")
+            elif 0.4 <= bb_pos <= 0.6:
+                reasoning_parts.append(f"Mid-range Bollinger position ({bb_pos*100:.1f}%)")
             
-            reasoning = "; ".join(reasoning_parts) if reasoning_parts else f"ML {action} signal"
+            # Volume analysis
+            if vol_ratio > 2:
+                reasoning_parts.append(f"High volume ({vol_ratio}x average)")
+            elif vol_ratio < 0.5:
+                reasoning_parts.append(f"Low volume ({vol_ratio}x average)")
+            elif 0.8 <= vol_ratio <= 1.2:
+                reasoning_parts.append(f"Normal volume ({vol_ratio}x average)")
+            
+            # Stochastic oscillator
+            if stoch_val > 80:
+                reasoning_parts.append(f"Overbought stochastic ({stoch_val})")
+            elif stoch_val < 20:
+                reasoning_parts.append(f"Oversold stochastic ({stoch_val})")
+            
+            # Combine reasoning parts
+            if reasoning_parts:
+                reasoning = "; ".join(reasoning_parts)
+            else:
+                # Fallback with basic signal info
+                reasoning = f"ML {action} signal (confidence: {confidence*100:.1f}%)"
             
             # Build signal
             signal = TradingSignal(
