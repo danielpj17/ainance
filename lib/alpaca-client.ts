@@ -252,6 +252,47 @@ class AlpacaWrapper {
     }
   }
 
+  // Get order by ID
+  public async getOrder(orderId: string): Promise<Order | null> {
+    try {
+      const order = await this.client.getOrder(orderId)
+      return order as Order
+    } catch (error) {
+      console.error(`Error fetching order ${orderId}:`, error)
+      return null
+    }
+  }
+
+  // Wait for order to be filled and return filled price
+  public async waitForOrderFill(orderId: string, maxWaitMs: number = 10000): Promise<number | null> {
+    const startTime = Date.now()
+    const pollInterval = 500 // Check every 500ms
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      const order = await this.getOrder(orderId)
+      if (order && order.filled_avg_price && parseFloat(order.filled_avg_price) > 0) {
+        return parseFloat(order.filled_avg_price)
+      }
+      if (order && (order.status === 'filled' || order.status === 'partially_filled')) {
+        // If order is filled but no price yet, wait a bit more
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+        continue
+      }
+      if (order && (order.status === 'canceled' || order.status === 'expired' || order.status === 'rejected')) {
+        return null // Order won't fill
+      }
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
+    }
+    
+    // Final check
+    const order = await this.getOrder(orderId)
+    if (order && order.filled_avg_price && parseFloat(order.filled_avg_price) > 0) {
+      return parseFloat(order.filled_avg_price)
+    }
+    
+    return null
+  }
+
   // Get market data for symbols
   public async getMarketData(symbols: string[], timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' = '1Min'): Promise<MarketData[]> {
     try {

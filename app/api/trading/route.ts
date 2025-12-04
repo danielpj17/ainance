@@ -1853,6 +1853,26 @@ async function executeTradeSignal(
       return // Skip hold signals
     }
 
+    // Wait for order to fill and get actual execution price
+    let actualPrice = signal.price // Fallback to signal price
+    if (order && order.id) {
+      console.log(`⏳ Waiting for order ${order.id} to fill...`)
+      const filledPrice = await alpacaClient.waitForOrderFill(order.id, 10000) // Wait up to 10 seconds
+      if (filledPrice && filledPrice > 0) {
+        actualPrice = filledPrice
+        console.log(`✅ Order filled at actual price: $${actualPrice.toFixed(4)} (signal price was $${signal.price.toFixed(4)})`)
+      } else {
+        // If order not filled yet, try to get current order status
+        const orderStatus = await alpacaClient.getOrder(order.id)
+        if (orderStatus && orderStatus.filled_avg_price && parseFloat(orderStatus.filled_avg_price) > 0) {
+          actualPrice = parseFloat(orderStatus.filled_avg_price)
+          console.log(`✅ Got filled price from order status: $${actualPrice.toFixed(4)}`)
+        } else {
+          console.warn(`⚠️  Could not get filled price for order ${order.id}, using signal price $${signal.price.toFixed(4)}`)
+        }
+      }
+    }
+
     // Log the trade (legacy trades table)
     const { error: tradeError } = await supabase
       .from('trades')
@@ -1861,7 +1881,7 @@ async function executeTradeSignal(
         symbol: signal.symbol,
         action: signal.action,
         qty: positionSize,
-        price: signal.price,
+        price: actualPrice, // Use actual execution price
         trade_timestamp: new Date().toISOString(),
         strategy: config.strategy,
         account_type: config.accountType,
@@ -1883,7 +1903,8 @@ async function executeTradeSignal(
       news_sentiment: signal.news_sentiment,
       news_headlines: signal.news_headlines,
       market_risk: signal.market_risk || 0,
-      price: signal.price,
+      price: signal.price, // Keep signal price in metrics for reference
+      actual_execution_price: actualPrice, // Store actual execution price
       timestamp: new Date().toISOString(),
       alpaca_order_id: order.id,
       order_status: order.status,
@@ -1902,12 +1923,12 @@ async function executeTradeSignal(
           symbol: signal.symbol,
           action: 'buy',
           qty: positionSize,
-          price: signal.price,
-          total_value: positionSize * signal.price,
+          price: actualPrice, // Use actual execution price
+          total_value: positionSize * actualPrice, // Use actual execution price
           timestamp: new Date().toISOString(),
           status: 'open',
           buy_timestamp: new Date().toISOString(),
-          buy_price: signal.price,
+          buy_price: actualPrice, // Use actual execution price
           buy_decision_metrics: decisionMetrics,
           strategy: config.strategy,
           account_type: config.accountType,
@@ -1924,7 +1945,7 @@ async function executeTradeSignal(
         user_uuid: userId,
         symbol_param: signal.symbol,
         sell_qty: positionSize,
-        sell_price_param: signal.price,
+        sell_price_param: actualPrice, // Use actual execution price
         sell_metrics: decisionMetrics
       })
 
@@ -1933,7 +1954,7 @@ async function executeTradeSignal(
       }
     }
 
-    console.log(`Trade executed: ${signal.action} ${positionSize} ${signal.symbol} @ $${signal.price}`)
+    console.log(`Trade executed: ${signal.action} ${positionSize} ${signal.symbol} @ $${actualPrice.toFixed(4)} (signal: $${signal.price.toFixed(4)})`)
 
   } catch (error) {
     console.error(`Error executing trade signal for ${signal.symbol}:`, error)
