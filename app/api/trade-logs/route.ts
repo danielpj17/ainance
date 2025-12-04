@@ -47,6 +47,8 @@ export interface CurrentTrade {
   strategy: string
   account_type: string
   trade_pair_id: string
+  transaction_ids?: string[]
+  transaction_count?: number
 }
 
 export interface CompletedTrade {
@@ -65,6 +67,8 @@ export interface CompletedTrade {
   strategy: string
   account_type: string
   trade_pair_id: string
+  transaction_ids?: string[]
+  transaction_count?: number
 }
 
 export interface TradeStatistics {
@@ -457,75 +461,147 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           const positions = await alpacaClient.getPositions()
           console.log(`[TRADE-LOGS] Found ${positions.length} positions in ${accountType} account`)
           
-          // Try to get decision metrics from Supabase for these positions
-          const symbols = positions.map(p => p.symbol.toUpperCase())
-          const { data: metricsData } = await supabase
+          // Fetch open trades from Supabase and aggregate by symbol
+          const { data: supabaseTrades } = await supabase
             .from('trade_logs')
-            .select('symbol, buy_decision_metrics, strategy, trade_pair_id')
+            .select('*')
             .eq('user_id', userId)
             .eq('account_type', accountType)
-            .in('symbol', symbols)
             .eq('action', 'buy')
             .eq('status', 'open')
             .order('timestamp', { ascending: false })
           
-          // Create a map of metrics by symbol
-          const metricsMap = new Map<string, any>()
-          if (metricsData) {
-            for (const metric of metricsData) {
-              if (!metricsMap.has(metric.symbol)) {
-                metricsMap.set(metric.symbol, {
-                  buy_decision_metrics: metric.buy_decision_metrics,
-                  strategy: metric.strategy,
-                  trade_pair_id: metric.trade_pair_id
+          if (supabaseTrades && supabaseTrades.length > 0) {
+            // Helper function to group trades by similar price and timestamp
+            function groupSimilarTrades(trades: any[]): any[][] {
+              if (trades.length === 0) return []
+              
+              // Sort by timestamp
+              const sorted = [...trades].sort((a, b) => 
+                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              )
+              
+              const groups: any[][] = []
+              
+              for (const trade of sorted) {
+                const tradePrice = parseFloat(trade.price || trade.buy_price || '0')
+                const tradeTime = new Date(trade.timestamp).getTime()
+                
+                // Find a group where this trade fits (similar price and within 10 minutes)
+                let foundGroup = false
+                for (const group of groups) {
+                  const groupPrice = parseFloat(group[0].price || group[0].buy_price || '0')
+                  const groupTime = new Date(group[0].timestamp).getTime()
+                  
+                  // Check if price is within 0.5% and time is within 10 minutes
+                  const priceDiff = Math.abs(tradePrice - groupPrice) / groupPrice
+                  const timeDiff = Math.abs(tradeTime - groupTime) / (1000 * 60) // minutes
+                  
+                  if (priceDiff <= 0.005 && timeDiff <= 10) {
+                    group.push(trade)
+                    foundGroup = true
+                    break
+                  }
+                }
+                
+                if (!foundGroup) {
+                  groups.push([trade])
+                }
+              }
+              
+              return groups
+            }
+            
+            // Group by symbol first
+            const tradesBySymbol = new Map<string, any[]>()
+            for (const trade of supabaseTrades) {
+              const symbol = trade.symbol.toUpperCase()
+              if (!tradesBySymbol.has(symbol)) {
+                tradesBySymbol.set(symbol, [])
+              }
+              tradesBySymbol.get(symbol)!.push(trade)
+            }
+            
+            // Aggregate each symbol's trades (grouped by similar price/time)
+            for (const [symbol, allTradesForSymbol] of tradesBySymbol) {
+              // Group similar trades together
+              const tradeGroups = groupSimilarTrades(allTradesForSymbol)
+              
+              // Process each group as a single trade entry
+              for (const trades of tradeGroups) {
+                // Find current position from Alpaca for real-time price
+                const position = positions.find(p => p.symbol.toUpperCase() === symbol)
+                
+                // Aggregate quantities and calculate weighted average buy price
+                const totalQty = trades.reduce((sum, t) => sum + parseFloat(t.qty || '0'), 0)
+                const totalValue = trades.reduce((sum, t) => sum + parseFloat(t.total_value || '0'), 0)
+                const avgBuyPrice = totalQty > 0 ? totalValue / totalQty : 0
+                
+                // Get most recent buy timestamp and decision metrics
+                const mostRecentTrade = trades.sort((a, b) => 
+                  new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                )[0]
+                
+                // Use Alpaca position data if available, otherwise use Supabase data
+                const currentPrice = position ? parseFloat(position.current_price) : avgBuyPrice
+                const marketValue = totalQty * currentPrice
+                const unrealizedPl = marketValue - totalValue
+                const unrealizedPlPercent = totalValue > 0 ? ((unrealizedPl / totalValue) * 100) : 0
+                
+                // Calculate holding duration from oldest buy
+                const oldestTrade = trades.sort((a, b) => 
+                  new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                )[0]
+                const buyTime = new Date(oldestTrade.buy_timestamp || oldestTrade.timestamp).getTime()
+                const now = Date.now()
+                const duration = now - buyTime
+                const totalSeconds = Math.floor(duration / 1000)
+                const days = Math.floor(totalSeconds / 86400)
+                const hours = Math.floor((totalSeconds % 86400) / 3600)
+                const minutes = Math.floor((totalSeconds % 3600) / 60)
+                const seconds = totalSeconds % 60
+                const holdingDuration = days > 0 
+                  ? `${days} day${days > 1 ? 's' : ''} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                  : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                
+                // Store transaction IDs for this grouped trade
+                const transactionIds = trades.map(t => t.id.toString())
+                
+                currentTrades.push({
+                  id: BigInt(mostRecentTrade.id),
+                  symbol,
+                  qty: totalQty,
+                  buy_price: avgBuyPrice,
+                  buy_timestamp: mostRecentTrade.buy_timestamp || mostRecentTrade.timestamp,
+                  current_price: currentPrice,
+                  current_value: marketValue,
+                  unrealized_pl: unrealizedPl,
+                  unrealized_pl_percent: unrealizedPlPercent,
+                  holding_duration: holdingDuration,
+                  buy_decision_metrics: mostRecentTrade.buy_decision_metrics || {
+                    confidence: 0,
+                    reasoning: 'Position from Supabase'
+                  },
+                  strategy: mostRecentTrade.strategy || 'cash',
+                  account_type: accountType,
+                  trade_pair_id: mostRecentTrade.trade_pair_id,
+                  transaction_ids: transactionIds, // Store IDs of individual transactions
+                  transaction_count: trades.length // Number of transactions in this group
                 })
               }
             }
-          }
-          
-          // Convert Alpaca positions to CurrentTrade format
-          for (const position of positions) {
-            const symbol = position.symbol.toUpperCase()
-            const qty = Math.abs(parseFloat(position.qty))
-            const costBasis = parseFloat(position.cost_basis)
-            const avgEntryPrice = qty > 0 ? costBasis / qty : 0
-            const currentPrice = parseFloat(position.current_price)
-            const marketValue = parseFloat(position.market_value)
-            const unrealizedPl = parseFloat(position.unrealized_pl)
-            const unrealizedPlPercent = parseFloat(position.unrealized_plpc) * 100
-            
-            // Get metrics from Supabase if available
-            const metrics = metricsMap.get(symbol)
-            
-            // Calculate holding duration (we'll use a placeholder since Alpaca doesn't provide entry time)
-            const holdingDuration = '0:0:0' // Will be calculated from order history if needed
-            
-            currentTrades.push({
-              id: BigInt(0), // Placeholder - not from database
-              symbol,
-              qty,
-              buy_price: avgEntryPrice,
-              buy_timestamp: new Date().toISOString(), // Will be updated from order history
-              current_price: currentPrice,
-              current_value: marketValue,
-              unrealized_pl: unrealizedPl,
-              unrealized_pl_percent: unrealizedPlPercent,
-              holding_duration: holdingDuration,
-              buy_decision_metrics: metrics?.buy_decision_metrics || {
-                confidence: 0,
-                reasoning: 'Position from Alpaca'
-              },
-              strategy: metrics?.strategy || 'cash',
-              account_type: accountType,
-              trade_pair_id: metrics?.trade_pair_id || crypto.randomUUID()
-            })
           }
         } catch (error: any) {
           console.error(`[TRADE-LOGS] Error fetching positions for ${accountType}:`, error?.message || error)
         }
       }
       
-      console.log(`[TRADE-LOGS] Total current trades from Alpaca: ${currentTrades.length}`)
+      // Sort by most recent and limit to 10 for initial display
+      currentTrades.sort((a, b) => 
+        new Date(b.buy_timestamp).getTime() - new Date(a.buy_timestamp).getTime()
+      )
+      
+      console.log(`[TRADE-LOGS] Total current trades (aggregated): ${currentTrades.length}`)
     }
 
     // Helper function to sync Alpaca order to Supabase
@@ -879,15 +955,118 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         }
       }
       
-      // Sort completed trades by sell timestamp (most recent first)
-      completedTrades.sort((a, b) => 
+      // Helper function to group completed trades by similar buy/sell price and timestamp
+      function groupSimilarCompletedTrades(trades: any[]): any[][] {
+        if (trades.length === 0) return []
+        
+        // Sort by sell timestamp
+        const sorted = [...trades].sort((a, b) => 
+          new Date(a.sell_timestamp).getTime() - new Date(b.sell_timestamp).getTime()
+        )
+        
+        const groups: any[][] = []
+        
+        for (const trade of sorted) {
+          const buyPrice = parseFloat(trade.buy_price || '0')
+          const sellPrice = parseFloat(trade.sell_price || '0')
+          const buyTime = new Date(trade.buy_timestamp).getTime()
+          const sellTime = new Date(trade.sell_timestamp).getTime()
+          
+          // Find a group where this trade fits (similar prices and within 10 minutes)
+          let foundGroup = false
+          for (const group of groups) {
+            const groupBuyPrice = parseFloat(group[0].buy_price || '0')
+            const groupSellPrice = parseFloat(group[0].sell_price || '0')
+            const groupBuyTime = new Date(group[0].buy_timestamp).getTime()
+            const groupSellTime = new Date(group[0].sell_timestamp).getTime()
+            
+            // Check if prices are within 0.5% and times are within 10 minutes
+            const buyPriceDiff = Math.abs(buyPrice - groupBuyPrice) / groupBuyPrice
+            const sellPriceDiff = Math.abs(sellPrice - groupSellPrice) / groupSellPrice
+            const buyTimeDiff = Math.abs(buyTime - groupBuyTime) / (1000 * 60) // minutes
+            const sellTimeDiff = Math.abs(sellTime - groupSellTime) / (1000 * 60) // minutes
+            
+            if (buyPriceDiff <= 0.005 && sellPriceDiff <= 0.005 && buyTimeDiff <= 10 && sellTimeDiff <= 10) {
+              group.push(trade)
+              foundGroup = true
+              break
+            }
+          }
+          
+          if (!foundGroup) {
+            groups.push([trade])
+          }
+        }
+        
+        return groups
+      }
+      
+      // Group by symbol first
+      const completedBySymbol = new Map<string, any[]>()
+      for (const trade of completedTrades) {
+        const symbol = trade.symbol.toUpperCase()
+        if (!completedBySymbol.has(symbol)) {
+          completedBySymbol.set(symbol, [])
+        }
+        completedBySymbol.get(symbol)!.push(trade)
+      }
+      
+      // Aggregate each symbol's completed trades (grouped by similar price/time)
+      const aggregatedCompleted: CompletedTrade[] = []
+      for (const [symbol, allTradesForSymbol] of completedBySymbol) {
+        // Group similar trades together
+        const tradeGroups = groupSimilarCompletedTrades(allTradesForSymbol)
+        
+        // Process each group as a single trade entry
+        for (const trades of tradeGroups) {
+          // Sort by most recent sell
+          trades.sort((a, b) => 
+            new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
+          )
+          
+          // Aggregate quantities and P&L
+          const totalQty = trades.reduce((sum, t) => sum + t.qty, 0)
+          const totalPl = trades.reduce((sum, t) => sum + (t.profit_loss || 0), 0)
+          const totalPlPercent = trades.reduce((sum, t) => sum + (t.profit_loss_percent || 0), 0) / trades.length
+          
+          // Use most recent trade for timestamps and metrics
+          const mostRecent = trades[0]
+          
+          // Store transaction IDs for this grouped trade
+          const transactionIds = trades.map(t => t.id.toString())
+          
+          aggregatedCompleted.push({
+            id: mostRecent.id,
+            symbol,
+            qty: totalQty,
+            buy_price: trades.reduce((sum, t) => sum + (t.buy_price * t.qty), 0) / totalQty, // Weighted avg
+            buy_timestamp: trades.sort((a, b) => 
+              new Date(a.buy_timestamp).getTime() - new Date(b.buy_timestamp).getTime()
+            )[0].buy_timestamp, // Oldest buy
+            sell_price: mostRecent.sell_price,
+            sell_timestamp: mostRecent.sell_timestamp,
+            profit_loss: totalPl,
+            profit_loss_percent: totalPlPercent,
+            holding_duration: mostRecent.holding_duration,
+            buy_decision_metrics: mostRecent.buy_decision_metrics,
+            sell_decision_metrics: mostRecent.sell_decision_metrics,
+            strategy: mostRecent.strategy,
+            account_type: mostRecent.account_type,
+            trade_pair_id: mostRecent.trade_pair_id,
+            transaction_ids: transactionIds, // Store IDs of individual transactions
+            transaction_count: trades.length // Number of transactions in this group
+          })
+        }
+      }
+      
+      // Sort by most recent sell and limit to 10 for initial display
+      aggregatedCompleted.sort((a, b) => 
         new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
       )
       
-      // Apply limit and offset
-      completedTrades = completedTrades.slice(offset, offset + limit)
+      completedTrades = aggregatedCompleted
       
-      console.log(`[TRADE-LOGS] Total completed trades from Alpaca: ${completedTrades.length}`)
+      console.log(`[TRADE-LOGS] Total completed trades (aggregated): ${completedTrades.length}`)
     }
 
     // Handle request for individual transactions for a symbol

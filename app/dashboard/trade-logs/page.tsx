@@ -23,6 +23,8 @@ interface CurrentTrade {
   strategy: string
   account_type: string
   trade_pair_id: string
+  transaction_ids?: string[]
+  transaction_count?: number
 }
 
 interface CompletedTrade {
@@ -41,6 +43,8 @@ interface CompletedTrade {
   strategy: string
   account_type: string
   trade_pair_id: string
+  transaction_ids?: string[]
+  transaction_count?: number
 }
 
 interface TradeStatistics {
@@ -68,6 +72,8 @@ export default function TradeLogsPage() {
   const [showTransactions, setShowTransactions] = useState(false)
   const [transactions, setTransactions] = useState<any[]>([])
   const [loadingTransactions, setLoadingTransactions] = useState(false)
+  const [showAllCurrent, setShowAllCurrent] = useState(false)
+  const [showAllCompleted, setShowAllCompleted] = useState(false)
 
   useEffect(() => {
     fetchTradeData()
@@ -284,7 +290,7 @@ export default function TradeLogsPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {currentTrades.map((trade) => (
+                  {(showAllCurrent ? currentTrades : currentTrades.slice(0, 10)).map((trade) => (
                     <div
                       key={trade.id.toString()}
                       onClick={() => openTradeDetails(trade)}
@@ -297,6 +303,11 @@ export default function TradeLogsPage() {
                           <Badge variant="outline" className="border-gray-600 text-gray-400">
                             {trade.qty} shares
                           </Badge>
+                          {trade.transaction_count && trade.transaction_count > 1 && (
+                            <Badge variant="outline" className="border-blue-500/50 text-blue-400 text-xs">
+                              {trade.transaction_count} transactions
+                            </Badge>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -368,6 +379,18 @@ export default function TradeLogsPage() {
                       </div>
                     </div>
                   ))}
+                  
+                  {currentTrades.length > 10 && (
+                    <div className="pt-4 border-t border-gray-700">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowAllCurrent(!showAllCurrent)}
+                        className="w-full border-blue-500 text-blue-400 hover:bg-blue-500/10"
+                      >
+                        {showAllCurrent ? 'Show Less' : `See More (${currentTrades.length - 10} more)`}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -393,7 +416,7 @@ export default function TradeLogsPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {completedTrades.map((trade) => (
+                  {(showAllCompleted ? completedTrades : completedTrades.slice(0, 10)).map((trade) => (
                     <div
                       key={trade.id.toString()}
                       onClick={() => openTradeDetails(trade)}
@@ -405,6 +428,11 @@ export default function TradeLogsPage() {
                           <Badge variant="outline" className="border-gray-600 text-gray-400">
                             {trade.qty} shares
                           </Badge>
+                          {trade.transaction_count && trade.transaction_count > 1 && (
+                            <Badge variant="outline" className="border-purple-500/50 text-purple-400 text-xs">
+                              {trade.transaction_count} transactions
+                            </Badge>
+                          )}
                           <Badge 
                             className={trade.profit_loss >= 0 ? 'bg-green-600' : 'bg-red-600'}
                           >
@@ -472,6 +500,18 @@ export default function TradeLogsPage() {
                       </div>
                     </div>
                   ))}
+                  
+                  {completedTrades.length > 10 && (
+                    <div className="pt-4 border-t border-gray-700">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowAllCompleted(!showAllCompleted)}
+                        className="w-full border-purple-500 text-purple-400 hover:bg-purple-500/10"
+                      >
+                        {showAllCompleted ? 'Show Less' : `See More (${completedTrades.length - 10} more)`}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
