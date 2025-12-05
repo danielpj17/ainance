@@ -462,9 +462,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           
           if (supabaseError) {
             console.error(`[TRADE-LOGS] Error fetching current trades for ${accountType}:`, supabaseError)
-            continue
-          }
-          
+              continue
+            }
+            
           // Filter to only truly open trades (no sell_price/timestamp)
           let trulyOpenTrades = (supabaseTrades || []).filter((t: any) => 
             !t.sell_price && !t.sell_timestamp && t.status === 'open'
@@ -600,7 +600,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               for (const trades of tradeGroups) {
                 // Aggregate quantities and calculate weighted average buy price
                 const totalQty = trades.reduce((sum, t) => sum + parseFloat(t.qty || '0'), 0)
-                const totalValue = trades.reduce((sum, t) => sum + parseFloat(t.total_value || '0'), 0)
+                // Calculate total value from buy_price * qty (more reliable than total_value field)
+                const totalValue = trades.reduce((sum, t) => {
+                  const qty = parseFloat(t.qty || '0')
+                  const buyPrice = parseFloat(t.buy_price || t.price || '0')
+                  return sum + (buyPrice * qty)
+                }, 0)
                 const avgBuyPrice = totalQty > 0 ? totalValue / totalQty : 0
                 
                 // Get most recent buy timestamp and decision metrics
