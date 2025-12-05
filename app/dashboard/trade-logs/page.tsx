@@ -84,63 +84,6 @@ export default function TradeLogsPage() {
     })
   }, [currentTrades, completedTrades, isLoading])
 
-  useEffect(() => {
-    let mounted = true
-    const supabase = createClient()
-    
-    const setupRealtime = async () => {
-      console.log('[TRADE-LOGS PAGE] Setting up realtime subscription')
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user?.id || !mounted) {
-        console.warn('[TRADE-LOGS PAGE] No session or not mounted, skipping setup')
-        return
-      }
-      
-      console.log('[TRADE-LOGS PAGE] Initial fetchTradeData call')
-      fetchTradeData()
-      
-      // Set up realtime subscription for trade_logs table
-      const channel = supabase
-        .channel('trade-logs-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // Listen to INSERT, UPDATE, DELETE
-            schema: 'public',
-            table: 'trade_logs',
-            filter: `user_id=eq.${session.user.id}`
-          },
-          (payload: any) => {
-            console.log('Trade log change detected:', payload.eventType, payload.new || payload.old)
-            // Refresh trade data when any change occurs
-            if (mounted) {
-              fetchTradeData()
-            }
-          }
-        )
-        .subscribe()
-
-      // Keep the 30 second refresh as backup
-      const interval = setInterval(() => {
-        if (mounted) {
-          fetchTradeData()
-        }
-      }, 30000)
-      
-      return () => {
-        channel.unsubscribe()
-        clearInterval(interval)
-      }
-    }
-    
-    const cleanupPromise = setupRealtime()
-    
-    return () => {
-      mounted = false
-      cleanupPromise.then(cleanup => cleanup?.())
-    }
-  }, [])
-
   const fetchTradeData = async () => {
     console.log('[TRADE-LOGS PAGE] fetchTradeData called')
     try {
@@ -189,21 +132,87 @@ export default function TradeLogsPage() {
           completedTrades: completed
         })
         
+        console.log('[TRADE-LOGS PAGE] About to set state:', {
+          currentLength: current.length,
+          completedLength: completed.length,
+          currentFirst: current[0],
+          completedFirst: completed[0]
+        })
+        
         setCurrentTrades(current)
         setCompletedTrades(completed)
         setStatistics(data.data.statistics)
         
         // Force a re-render check
-        console.log('[TRADE-LOGS PAGE] State updated, currentTrades.length will be:', current.length)
+        console.log('[TRADE-LOGS PAGE] State set, will re-render')
       } else {
         console.error('[TRADE-LOGS PAGE] API returned error:', data.error, data)
       }
     } catch (error) {
       console.error('[TRADE-LOGS PAGE] Error fetching trade data:', error)
     } finally {
+      console.log('[TRADE-LOGS PAGE] Setting isLoading to false')
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    let mounted = true
+    const supabase = createClient()
+    
+    const setupRealtime = async () => {
+      console.log('[TRADE-LOGS PAGE] Setting up realtime subscription')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id || !mounted) {
+        console.warn('[TRADE-LOGS PAGE] No session or not mounted, skipping setup')
+        setIsLoading(false)
+        return
+      }
+      
+      console.log('[TRADE-LOGS PAGE] Initial fetchTradeData call')
+      await fetchTradeData()
+      
+      // Set up realtime subscription for trade_logs table
+      const channel = supabase
+        .channel('trade-logs-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'trade_logs',
+            filter: `user_id=eq.${session.user.id}`
+          },
+          (payload: any) => {
+            console.log('Trade log change detected:', payload.eventType, payload.new || payload.old)
+            // Refresh trade data when any change occurs
+            if (mounted) {
+              fetchTradeData()
+            }
+          }
+        )
+        .subscribe()
+
+      // Keep the 30 second refresh as backup
+      const interval = setInterval(() => {
+        if (mounted) {
+          fetchTradeData()
+        }
+      }, 30000)
+      
+      return () => {
+        channel.unsubscribe()
+        clearInterval(interval)
+      }
+    }
+    
+    const cleanupPromise = setupRealtime()
+    
+    return () => {
+      mounted = false
+      cleanupPromise.then(cleanup => cleanup?.())
+    }
+  }, [])
 
   const formatDuration = (duration: string) => {
     // Parse PostgreSQL interval format (can be HH:MM:SS or days HH:MM:SS format)
@@ -381,12 +390,19 @@ export default function TradeLogsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Debug info */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mb-4 p-2 bg-gray-800 rounded text-xs text-gray-400">
+                  Debug: isLoading={isLoading.toString()}, currentTrades.length={currentTrades.length}, completedTrades.length={completedTrades.length}
+                </div>
+              )}
               {isLoading ? (
                 <div className="text-center py-8 text-gray-400">Loading...</div>
               ) : currentTrades.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
                   <p>No current positions</p>
+                  <p className="text-xs text-gray-600 mt-2">Check console for debug info</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -507,12 +523,19 @@ export default function TradeLogsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Debug info */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mb-4 p-2 bg-gray-800 rounded text-xs text-gray-400">
+                  Debug: isLoading={isLoading.toString()}, completedTrades.length={completedTrades.length}
+                </div>
+              )}
               {isLoading ? (
                 <div className="text-center py-8 text-gray-400">Loading...</div>
               ) : completedTrades.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
                   <p>No completed trades yet</p>
+                  <p className="text-xs text-gray-600 mt-2">Check console for debug info</p>
                 </div>
               ) : (
                 <div className="space-y-4">
