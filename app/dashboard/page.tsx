@@ -59,15 +59,33 @@ export default function DashboardPage() {
         const timestamps = result.data.timestamp || []
         const equity = result.data.equity || []
         
-        const transformed = timestamps.map((ts: number, idx: number) => ({
-          date: new Date(ts * 1000).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: chartPeriod === '1D' ? 'numeric' : undefined,
-            minute: chartPeriod === '1D' ? '2-digit' : undefined
-          }),
-          portfolio: equity[idx] || 0
-        }))
+        const transformed = timestamps.map((ts: number, idx: number) => {
+          const date = new Date(ts * 1000)
+          let dateLabel: string
+          
+          if (chartPeriod === '1D') {
+            // For day view, only show time
+            dateLabel = date.toLocaleString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          } else {
+            // For other views, show date and time
+            dateLabel = date.toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          }
+          
+          return {
+            date: dateLabel,
+            portfolio: equity[idx] || 0
+          }
+        })
         
         setTrendData(transformed)
       }
@@ -427,6 +445,15 @@ export default function DashboardPage() {
                   <YAxis 
                     stroke="#9ca3af" 
                     domain={calculateYAxisDomain(trendData, ['portfolio'])}
+                    tickFormatter={(value) => {
+                      if (value >= 1000000) {
+                        return `$${(value / 1000000).toFixed(2)}M`
+                      } else if (value >= 1000) {
+                        return `$${(value / 1000).toFixed(0)}k`
+                      } else {
+                        return `$${value.toFixed(0)}`
+                      }
+                    }}
                   />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '4px' }}
