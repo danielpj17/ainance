@@ -471,11 +471,41 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           }
           
           // Additional filter: remove any trades that have sell_timestamp (double-check they're really open)
-          const trulyOpenTrades = (supabaseTrades || []).filter(t => 
+          let trulyOpenTrades = (supabaseTrades || []).filter(t => 
             !t.sell_price && !t.sell_timestamp && t.status === 'open'
           )
           
-          console.log(`[TRADE-LOGS] Found ${supabaseTrades?.length || 0} trades with status='open', ${trulyOpenTrades.length} truly open (no sell_price/timestamp) for ${accountType} account`)
+          // Cross-reference with Alpaca's actual positions to verify they're really open
+          try {
+            const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, accountType)
+            if (apiKey && secretKey) {
+              const alpacaClient = createAlpacaClient({
+                apiKey,
+                secretKey,
+                baseUrl: accountType === 'paper' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+                paper: accountType === 'paper'
+              })
+              await alpacaClient.initialize()
+              
+              // Get actual positions from Alpaca
+              const alpacaPositions = await alpacaClient.getPositions()
+              const alpacaSymbols = new Set(alpacaPositions.map((p: any) => p.symbol.toUpperCase()))
+              
+              console.log(`[TRADE-LOGS] Alpaca has ${alpacaPositions.length} open positions for ${accountType}:`, Array.from(alpacaSymbols))
+              
+              // Filter to only include trades that exist in Alpaca
+              trulyOpenTrades = trulyOpenTrades.filter(t => 
+                alpacaSymbols.has(t.symbol.toUpperCase())
+              )
+              
+              console.log(`[TRADE-LOGS] After Alpaca cross-reference: ${trulyOpenTrades.length} truly open positions for ${accountType}`)
+            }
+          } catch (alpacaError) {
+            console.error(`[TRADE-LOGS] Error cross-referencing with Alpaca for ${accountType}:`, alpacaError)
+            // Continue with Supabase-only filtering if Alpaca check fails
+          }
+          
+          console.log(`[TRADE-LOGS] Found ${supabaseTrades?.length || 0} trades with status='open', ${trulyOpenTrades.length} truly open (verified with Alpaca) for ${accountType} account`)
           
           if (trulyOpenTrades.length === 0) {
             continue

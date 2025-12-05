@@ -89,9 +89,14 @@ export default function TradeLogsPage() {
     const supabase = createClient()
     
     const setupRealtime = async () => {
+      console.log('[TRADE-LOGS PAGE] Setting up realtime subscription')
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user?.id || !mounted) return
+      if (!session?.user?.id || !mounted) {
+        console.warn('[TRADE-LOGS PAGE] No session or not mounted, skipping setup')
+        return
+      }
       
+      console.log('[TRADE-LOGS PAGE] Initial fetchTradeData call')
       fetchTradeData()
       
       // Set up realtime subscription for trade_logs table
@@ -137,13 +142,29 @@ export default function TradeLogsPage() {
   }, [])
 
   const fetchTradeData = async () => {
+    console.log('[TRADE-LOGS PAGE] fetchTradeData called')
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       
+      if (!session) {
+        console.warn('[TRADE-LOGS PAGE] No session found')
+        setIsLoading(false)
+        return
+      }
+      
+      console.log('[TRADE-LOGS PAGE] Fetching from API...')
       const response = await fetch('/api/trade-logs?view=all', {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
+      
+      if (!response.ok) {
+        console.error('[TRADE-LOGS PAGE] API response not OK:', response.status, response.statusText)
+        const errorText = await response.text()
+        console.error('[TRADE-LOGS PAGE] Error response:', errorText)
+        setIsLoading(false)
+        return
+      }
       
       const data = await response.json()
       
