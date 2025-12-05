@@ -935,16 +935,21 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
                 )
                 
-                // Aggregate quantities and P&L
+                // Aggregate quantities and calculate weighted average buy price
                 const totalQty = trades.reduce((sum, t) => sum + parseFloat(t.qty || '0'), 0)
-                const totalPl = trades.reduce((sum, t) => sum + parseFloat(t.profit_loss || '0'), 0)
-                const totalPlPercent = trades.reduce((sum, t) => {
-                  const pl = parseFloat(t.profit_loss_percent || '0')
-                  return sum + pl
-                }, 0) / trades.length
+                const weightedBuyPrice = trades.reduce((sum, t) => {
+                  const qty = parseFloat(t.qty || '0')
+                  const price = parseFloat(t.buy_price || '0')
+                  return sum + (price * qty)
+                }, 0) / totalQty
                 
-                // Use most recent trade for timestamps and metrics
+                // Use most recent trade for sell price and timestamps
                 const mostRecent = trades[0]
+                const sellPrice = parseFloat(mostRecent.sell_price || '0')
+                
+                // Recalculate P&L from actual buy and sell prices (more accurate than stored values)
+                const totalPl = (sellPrice - weightedBuyPrice) * totalQty
+                const totalPlPercent = weightedBuyPrice > 0 ? ((sellPrice - weightedBuyPrice) / weightedBuyPrice) * 100 : 0
                 
                 // Store transaction IDs for this grouped trade
                 const transactionIds = trades.map(t => t.id.toString())
@@ -953,15 +958,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   id: typeof mostRecent.id === 'bigint' ? mostRecent.id.toString() : Number(mostRecent.id),
                   symbol,
                   qty: totalQty,
-                  buy_price: trades.reduce((sum, t) => {
-                    const qty = parseFloat(t.qty || '0')
-                    const price = parseFloat(t.buy_price || '0')
-                    return sum + (price * qty)
-                  }, 0) / totalQty, // Weighted avg
+                  buy_price: weightedBuyPrice,
                   buy_timestamp: trades.sort((a, b) => 
                     new Date(a.buy_timestamp || a.timestamp).getTime() - new Date(b.buy_timestamp || b.timestamp).getTime()
                   )[0].buy_timestamp || trades[0].timestamp, // Oldest buy
-                  sell_price: parseFloat(mostRecent.sell_price || '0'),
+                  sell_price: sellPrice,
                   sell_timestamp: mostRecent.sell_timestamp,
                   profit_loss: totalPl,
                   profit_loss_percent: totalPlPercent,
