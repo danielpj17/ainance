@@ -521,6 +521,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               tradesBySymbol.get(symbol)!.push(trade)
             }
             
+            // Fetch current prices for all symbols in batch
+            const symbolsToFetch = Array.from(tradesBySymbol.keys())
+            const priceMap = new Map<string, number>()
+            
+            if (symbolsToFetch.length > 0) {
+              try {
+                // Get Alpaca keys for price fetching
+                const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, accountType)
+                if (apiKey && secretKey) {
+                  const alpacaClient = createAlpacaClient({
+                    apiKey,
+                    secretKey,
+                    baseUrl: accountType === 'paper' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+                    paper: accountType === 'paper'
+                  })
+                  await alpacaClient.initialize()
+                  
+                  // Fetch market data for all symbols at once
+                  const marketData = await alpacaClient.getMarketData(symbolsToFetch, '1Day')
+                  
+                  for (const data of marketData) {
+                    if (data.close) {
+                      priceMap.set(data.symbol.toUpperCase(), data.close)
+                    }
+                  }
+                  
+                  console.log(`[TRADE-LOGS] Fetched prices for ${priceMap.size} symbols`)
+                }
+              } catch (priceError) {
+                console.error(`[TRADE-LOGS] Error fetching prices for ${accountType}:`, priceError)
+                // Continue with buy price as fallback
+              }
+            }
+            
             // Aggregate each symbol's trades (grouped by similar price/time)
             for (const [symbol, allTradesForSymbol] of tradesBySymbol) {
               // Group similar trades together
@@ -538,8 +572,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                 )[0]
                 
-                // For current price, use buy price as fallback (can be enhanced later with separate price fetch)
-                const currentPrice = avgBuyPrice
+                // Fetch actual current market price, fallback to buy price if unavailable
+                const currentPrice = priceMap.get(symbol) || avgBuyPrice
                 const marketValue = totalQty * currentPrice
                 const unrealizedPl = marketValue - totalValue
                 const unrealizedPlPercent = totalValue > 0 ? ((unrealizedPl / totalValue) * 100) : 0

@@ -150,8 +150,19 @@ export default function PaperTradingPage() {
       
       const data = await response.json()
       
+      console.log('[PAPER TRADING] Positions API response:', {
+        success: data.success,
+        count: data.data?.currentTrades?.length || 0,
+        sample: data.data?.currentTrades?.[0]
+      })
+      
       if (data.success) {
-        setCurrentPositions(data.data.currentTrades || [])
+        const positions = data.data.currentTrades || []
+        console.log('[PAPER TRADING] Setting positions:', positions.length)
+        // Filter to only show paper account positions
+        const paperPositions = positions.filter((p: any) => p.account_type === 'paper')
+        console.log('[PAPER TRADING] Paper positions after filter:', paperPositions.length)
+        setCurrentPositions(paperPositions)
       }
     } catch (error) {
       console.error('Error loading current positions:', error)

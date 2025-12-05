@@ -138,13 +138,32 @@ export default function TradeLogsPage() {
       
       const data = await response.json()
       
+      console.log('[TRADE-LOGS PAGE] API Response:', {
+        success: data.success,
+        currentTradesCount: data.data?.currentTrades?.length || 0,
+        completedTradesCount: data.data?.completedTrades?.length || 0,
+        hasStatistics: !!data.data?.statistics
+      })
+      
       if (data.success) {
-        setCurrentTrades(data.data.currentTrades || [])
-        setCompletedTrades(data.data.completedTrades || [])
+        const current = data.data.currentTrades || []
+        const completed = data.data.completedTrades || []
+        
+        console.log('[TRADE-LOGS PAGE] Setting trades:', {
+          current: current.length,
+          completed: completed.length,
+          currentSample: current[0],
+          completedSample: completed[0]
+        })
+        
+        setCurrentTrades(current)
+        setCompletedTrades(completed)
         setStatistics(data.data.statistics)
+      } else {
+        console.error('[TRADE-LOGS PAGE] API returned error:', data.error)
       }
     } catch (error) {
-      console.error('Error fetching trade data:', error)
+      console.error('[TRADE-LOGS PAGE] Error fetching trade data:', error)
     } finally {
       setIsLoading(false)
     }
