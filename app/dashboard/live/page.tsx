@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle, Info } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cursor } from 'recharts'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface Trade {
   id: number
@@ -666,8 +666,8 @@ export default function LiveTradingPage() {
                       labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
                       formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
                       labelFormatter={(label) => `Time: ${label}`}
+                      cursor={{ stroke: '#22c55e', strokeWidth: 1, strokeDasharray: '3 3' }}
                     />
-                    <Cursor stroke="#22c55e" strokeWidth={1} strokeDasharray="3 3" />
                     <Area 
                       type="linear" 
                       dataKey="value" 

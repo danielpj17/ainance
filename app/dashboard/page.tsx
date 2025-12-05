@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { TrendingUp, TrendingDown, Activity, DollarSign, AlertTriangle, CheckCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { authFetch } from '@/lib/api-client'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Cursor } from 'recharts'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 
 export const dynamic = 'force-dynamic'
 
@@ -451,8 +451,8 @@ export default function DashboardPage() {
                       name === 'portfolio' ? 'Your Portfolio' : 'Benchmark'
                     ]}
                     labelFormatter={(label) => `Time: ${label}`}
+                    cursor={{ stroke: '#60a5fa', strokeWidth: 1, strokeDasharray: '3 3' }}
                   />
-                  <Cursor stroke="#60a5fa" strokeWidth={1} strokeDasharray="3 3" />
                   <Area type="linear" dataKey="portfolio" stroke="#60a5fa" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
                   <Area type="linear" dataKey="benchmark" stroke="#93c5fd" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
                 </AreaChart>
@@ -520,8 +520,8 @@ export default function DashboardPage() {
                       labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
                       formatter={(value: any) => [value, 'Count']}
                       labelFormatter={(label) => `Symbol: ${label}`}
+                      cursor={{ stroke: '#60a5fa', strokeWidth: 1, strokeDasharray: '3 3' }}
                     />
-                    <Cursor stroke="#60a5fa" strokeWidth={1} strokeDasharray="3 3" />
                     <Bar dataKey="count" fill="#60a5fa" radius={[0, 0, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
