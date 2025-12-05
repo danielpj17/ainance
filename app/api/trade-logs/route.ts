@@ -454,6 +454,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           console.log(`[TRADE-LOGS] All trades for ${accountType}: ${allTradesForAccount?.length || 0}`)
           
           // Now fetch open trades from Supabase
+          // Also filter out any that have a sell_price (which means they're closed)
           const { data: supabaseTrades, error: supabaseError } = await supabase
             .from('trade_logs')
             .select('*')
@@ -461,6 +462,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('account_type', accountType)
             .eq('action', 'buy')
             .eq('status', 'open')
+            .is('sell_price', null) // Ensure no sell_price (not closed)
             .order('timestamp', { ascending: false })
           
           if (supabaseError) {
@@ -468,9 +470,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             continue
           }
           
-          console.log(`[TRADE-LOGS] Found ${supabaseTrades?.length || 0} open trades in Supabase for ${accountType} account`)
+          // Additional filter: remove any trades that have sell_timestamp (double-check they're really open)
+          const trulyOpenTrades = (supabaseTrades || []).filter(t => 
+            !t.sell_price && !t.sell_timestamp && t.status === 'open'
+          )
           
-          if (supabaseTrades && supabaseTrades.length > 0) {
+          console.log(`[TRADE-LOGS] Found ${supabaseTrades?.length || 0} trades with status='open', ${trulyOpenTrades.length} truly open (no sell_price/timestamp) for ${accountType} account`)
+          
+          if (trulyOpenTrades.length === 0) {
+            continue
+          }
+          
+          if (trulyOpenTrades && trulyOpenTrades.length > 0) {
             // Helper function to group trades by similar price and timestamp
             function groupSimilarTrades(trades: any[]): any[][] {
               if (trades.length === 0) return []
@@ -513,7 +524,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             
             // Group by symbol first
             const tradesBySymbol = new Map<string, any[]>()
-            for (const trade of supabaseTrades) {
+            for (const trade of trulyOpenTrades) {
               const symbol = trade.symbol.toUpperCase()
               if (!tradesBySymbol.has(symbol)) {
                 tradesBySymbol.set(symbol, [])

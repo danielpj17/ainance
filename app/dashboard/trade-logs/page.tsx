@@ -74,6 +74,15 @@ export default function TradeLogsPage() {
   const [loadingTransactions, setLoadingTransactions] = useState(false)
   const [showAllCurrent, setShowAllCurrent] = useState(false)
   const [showAllCompleted, setShowAllCompleted] = useState(false)
+  
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('[TRADE-LOGS PAGE] State updated:', {
+      currentTrades: currentTrades.length,
+      completedTrades: completedTrades.length,
+      isLoading
+    })
+  }, [currentTrades, completedTrades, isLoading])
 
   useEffect(() => {
     let mounted = true
@@ -142,7 +151,8 @@ export default function TradeLogsPage() {
         success: data.success,
         currentTradesCount: data.data?.currentTrades?.length || 0,
         completedTradesCount: data.data?.completedTrades?.length || 0,
-        hasStatistics: !!data.data?.statistics
+        hasStatistics: !!data.data?.statistics,
+        fullResponse: data
       })
       
       if (data.success) {
@@ -153,14 +163,19 @@ export default function TradeLogsPage() {
           current: current.length,
           completed: completed.length,
           currentSample: current[0],
-          completedSample: completed[0]
+          completedSample: completed[0],
+          currentTrades: current,
+          completedTrades: completed
         })
         
         setCurrentTrades(current)
         setCompletedTrades(completed)
         setStatistics(data.data.statistics)
+        
+        // Force a re-render check
+        console.log('[TRADE-LOGS PAGE] State updated, currentTrades.length will be:', current.length)
       } else {
-        console.error('[TRADE-LOGS PAGE] API returned error:', data.error)
+        console.error('[TRADE-LOGS PAGE] API returned error:', data.error, data)
       }
     } catch (error) {
       console.error('[TRADE-LOGS PAGE] Error fetching trade data:', error)
