@@ -96,8 +96,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Handle fix-prices action
     if (action === 'fix-prices') {
-
-    console.log(`[FIX-PRICES] Starting price fix for user ${userId}, symbol: ${symbol || 'ALL'}`)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[FIX-PRICES] Starting price fix for user ${userId}, symbol: ${symbol || 'ALL'}`)
+      }
 
     // Get API keys
     const { data: apiKeys, error: keysError } = await supabase
@@ -152,7 +153,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       })
     }
 
-    console.log(`[FIX-PRICES] Found ${trades.length} trades to check`)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[FIX-PRICES] Found ${trades.length} trades to check`)
+    }
 
     let fixedCount = 0
     let errorCount = 0
@@ -183,7 +186,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const priceDiff = Math.abs(filledPrice - (currentPrice || 0))
 
         if (priceDiff > 0.01) { // Only update if difference is significant (>1 cent)
-          console.log(`[FIX-PRICES] ${trade.symbol} ${trade.action}: Updating ${trade.action}_price from $${currentPrice} to $${filledPrice.toFixed(4)}`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[FIX-PRICES] ${trade.symbol} ${trade.action}: Updating ${trade.action}_price from $${currentPrice} to $${filledPrice.toFixed(4)}`)
+          }
 
           if (trade.action === 'buy' && trade.status === 'open') {
             // Update buy price for open trades
@@ -297,7 +302,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           // Small delay to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 100))
           } else {
-          console.log(`[FIX-PRICES] ${trade.symbol} ${trade.action}: Price already correct (${filledPrice.toFixed(4)})`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[FIX-PRICES] ${trade.symbol} ${trade.action}: Price already correct (${filledPrice.toFixed(4)})`)
+          }
         }
       } catch (error) {
         console.error(`[FIX-PRICES] Error processing trade ${trade.id}:`, error)
@@ -312,6 +319,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         errors: errorCount,
         results
       })
+    }
+
+    // Invalidate cache on POST (trade updates)
+    const cacheKeysToInvalidate = [
+      `trade-logs-${userId}-all-paper`,
+      `trade-logs-${userId}-all-live`,
+      `trade-logs-${userId}-current-paper`,
+      `trade-logs-${userId}-current-live`,
+      `trade-logs-${userId}-completed-paper`,
+      `trade-logs-${userId}-completed-live`
+    ]
+    for (const key of cacheKeysToInvalidate) {
+      cache.delete(key)
     }
 
     // Handle buy/sell actions (existing POST logic)
@@ -399,21 +419,56 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 }
 
+// In-memory cache for trade logs
+const cache = new Map<string, { data: any, expires: number }>()
+const CACHE_TTL = 30000 // 30 seconds
+
+// Clean up expired cache entries periodically
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of cache.entries()) {
+    if (value.expires < now) {
+      cache.delete(key)
+    }
+  }
+}, 60000) // Clean up every minute
+
 // GET - Fetch trade logs directly from Alpaca
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  console.log('[TRADE-LOGS] GET HANDLER CALLED - Fetching from Alpaca')
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[TRADE-LOGS] GET HANDLER CALLED - Fetching from Alpaca')
+  }
   try {
     const supabase = await createServerClient(req, {})
     
     // Get user ID from request (checks Authorization header)
     const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('[TRADE-LOGS] User detected:', { userId, isDemo })
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[TRADE-LOGS] User detected:', { userId, isDemo })
+    }
 
     const { searchParams } = new URL(req.url)
     const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics', 'transactions'
     const limit = parseInt(searchParams.get('limit') || '500') // Increased limit for Alpaca orders
     const offset = parseInt(searchParams.get('offset') || '0')
-    console.log('[TRADE-LOGS] Request params: view=' + view + ', limit=' + limit + ', offset=' + offset)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[TRADE-LOGS] Request params: view=' + view + ', limit=' + limit + ', offset=' + offset)
+    }
+    
+    // Check cache (skip for transactions view as it's symbol-specific)
+    if (view !== 'transactions') {
+      const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
+      for (const accountType of accountTypes) {
+        const cacheKey = `trade-logs-${userId}-${view || 'all'}-${accountType}`
+        const cached = cache.get(cacheKey)
+        if (cached && cached.expires > Date.now()) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[TRADE-LOGS] Cache hit for ${cacheKey}`)
+          }
+          // Return cached data (will be merged with other account type below)
+        }
+      }
+    }
 
     let currentTrades: CurrentTrade[] = []
     let completedTrades: CompletedTrade[] = []
@@ -423,8 +478,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Fetch current positions from Supabase only (no Alpaca calls)
     if (view === 'current' || view === 'all' || !view) {
-      console.log('[TRADE-LOGS] Fetching current positions from Supabase')
-      console.log(`[TRADE-LOGS] User ID: ${userId}`)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[TRADE-LOGS] Fetching current positions from Supabase')
+        console.log(`[TRADE-LOGS] User ID: ${userId}`)
+      }
       
       // Fetch for both paper and live accounts
       const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
@@ -439,9 +496,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('account_type', accountType)
             .limit(10)
           
-          console.log(`[TRADE-LOGS] Total trades in Supabase for ${accountType}: ${allTradesCheck?.length || 0}`)
-          if (allTradesCheck && allTradesCheck.length > 0) {
-            console.log(`[TRADE-LOGS] Sample trades:`, allTradesCheck.map(t => ({ symbol: t.symbol, action: t.action, status: t.status })))
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[TRADE-LOGS] Total trades in Supabase for ${accountType}: ${allTradesCheck?.length || 0}`)
+            if (allTradesCheck && allTradesCheck.length > 0) {
+              console.log(`[TRADE-LOGS] Sample trades:`, allTradesCheck.map(t => ({ symbol: t.symbol, action: t.action, status: t.status })))
+            }
           }
           
           // Fetch ALL trades first to see what we have
@@ -451,7 +510,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('user_id', userId)
             .eq('account_type', accountType)
           
-          console.log(`[TRADE-LOGS] All trades for ${accountType}: ${allTradesForAccount?.length || 0}`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[TRADE-LOGS] All trades for ${accountType}: ${allTradesForAccount?.length || 0}`)
+          }
           
           // Use optimized database function for current trades
           const { data: supabaseTrades, error: supabaseError } = await supabase
@@ -486,21 +547,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               const alpacaPositions = await alpacaClient.getPositions()
               const alpacaSymbols = new Set(alpacaPositions.map((p: any) => p.symbol.toUpperCase()))
               
-              console.log(`[TRADE-LOGS] Alpaca has ${alpacaPositions.length} open positions for ${accountType}:`, Array.from(alpacaSymbols))
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`[TRADE-LOGS] Alpaca has ${alpacaPositions.length} open positions for ${accountType}:`, Array.from(alpacaSymbols))
+              }
               
               // Filter to only include trades that exist in Alpaca
               trulyOpenTrades = trulyOpenTrades.filter((t: any) =>
                 alpacaSymbols.has(t.symbol.toUpperCase())
               )
               
-              console.log(`[TRADE-LOGS] After Alpaca cross-reference: ${trulyOpenTrades.length} truly open positions for ${accountType}`)
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`[TRADE-LOGS] After Alpaca cross-reference: ${trulyOpenTrades.length} truly open positions for ${accountType}`)
+              }
             }
           } catch (alpacaError) {
             console.error(`[TRADE-LOGS] Error cross-referencing with Alpaca for ${accountType}:`, alpacaError)
             // Continue with Supabase-only filtering if Alpaca check fails
           }
           
-          console.log(`[TRADE-LOGS] Found ${supabaseTrades?.length || 0} trades with status='open', ${trulyOpenTrades.length} truly open (verified with Alpaca) for ${accountType} account`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[TRADE-LOGS] Found ${supabaseTrades?.length || 0} trades with status='open', ${trulyOpenTrades.length} truly open (verified with Alpaca) for ${accountType} account`)
+          }
           
           if (trulyOpenTrades.length === 0) {
             continue
@@ -583,7 +650,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                     }
                   }
                   
-                  console.log(`[TRADE-LOGS] Fetched prices for ${priceMap.size} symbols`)
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log(`[TRADE-LOGS] Fetched prices for ${priceMap.size} symbols`)
+                  }
                 }
               } catch (priceError) {
                 console.error(`[TRADE-LOGS] Error fetching prices for ${accountType}:`, priceError)
@@ -677,7 +746,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         new Date(b.buy_timestamp).getTime() - new Date(a.buy_timestamp).getTime()
       )
       
-      console.log(`[TRADE-LOGS] Total current trades (aggregated): ${currentTrades.length}`)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[TRADE-LOGS] Total current trades (aggregated): ${currentTrades.length}`)
+      }
     }
 
     // Helper function to sync Alpaca order to Supabase
@@ -748,7 +819,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           if (updateError) {
             console.error(`[SYNC] Error updating order ${orderId}:`, updateError)
               } else {
-            console.log(`[SYNC] Updated order ${orderId} for ${symbol} ${side}`)
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[SYNC] Updated order ${orderId} for ${symbol} ${side}`)
+            }
               }
             } else {
           // Insert new order
@@ -836,7 +909,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           if (insertError) {
             console.error(`[SYNC] Error inserting order ${orderId}:`, insertError)
       } else {
-            console.log(`[SYNC] Inserted new order ${orderId} for ${symbol} ${side}`)
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[SYNC] Inserted new order ${orderId} for ${symbol} ${side}`)
+            }
               }
             }
           } catch (error: any) {
@@ -846,7 +921,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Fetch completed trades from Supabase using optimized database function
     if (view === 'completed' || view === 'all' || !view) {
-      console.log('[TRADE-LOGS] Fetching completed trades from Supabase (optimized)')
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[TRADE-LOGS] Fetching completed trades from Supabase (optimized)')
+      }
       
       const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
       
@@ -864,7 +941,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             continue
           }
           
-          console.log(`[TRADE-LOGS] Found ${buyTrades?.length || 0} completed trades for ${accountType} account`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[TRADE-LOGS] Found ${buyTrades?.length || 0} completed trades for ${accountType} account`)
+          }
           
           if (buyTrades && buyTrades.length > 0) {
             // Helper function to group completed trades by similar buy/sell price and timestamp
@@ -988,13 +1067,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
       )
       
-      console.log(`[TRADE-LOGS] Total completed trades (aggregated): ${completedTrades.length}`)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[TRADE-LOGS] Total completed trades (aggregated): ${completedTrades.length}`)
+      }
     }
 
     // Handle request for individual transactions for a symbol
     const symbolParam = searchParams.get('symbol')
     if (symbolParam && view === 'transactions') {
-      console.log(`[TRADE-LOGS] Fetching all transactions for symbol: ${symbolParam} from Alpaca`)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[TRADE-LOGS] Fetching all transactions for symbol: ${symbolParam} from Alpaca`)
+      }
       
       const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
       const allTransactions: any[] = []
@@ -1102,14 +1185,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return obj
       }
 
-      return NextResponse.json({
-        success: true,
-      data: {
+      const responseData = {
         currentTrades: serializeBigInt(currentTrades),
         completedTrades: serializeBigInt(completedTrades),
         statistics
       }
-    })
+      
+      // Cache the response (skip for transactions view)
+      if (view !== 'transactions') {
+        const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
+        for (const accountType of accountTypes) {
+          const cacheKey = `trade-logs-${userId}-${view || 'all'}-${accountType}`
+          cache.set(cacheKey, {
+            data: responseData,
+            expires: Date.now() + CACHE_TTL
+          })
+        }
+      }
+      
+      return NextResponse.json({
+        success: true,
+        data: responseData
+      })
 
   } catch (error) {
     console.error('Error in GET /api/trade-logs:', error)
