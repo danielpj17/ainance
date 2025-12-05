@@ -66,8 +66,7 @@ export default function DashboardPage() {
             hour: chartPeriod === '1D' ? 'numeric' : undefined,
             minute: chartPeriod === '1D' ? '2-digit' : undefined
           }),
-          portfolio: equity[idx] || 0,
-          benchmark: baseValue * (1 + (equity[idx] - baseValue) / baseValue * 0.8) // Simulated benchmark
+          portfolio: equity[idx] || 0
         }))
         
         setTrendData(transformed)
@@ -367,16 +366,6 @@ export default function DashboardPage() {
                   {chartPeriod === '1A' && 'Performance over the last year'}
                 </CardDescription>
               </div>
-              <div className="flex gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-300"></div>
-                  <span className="text-white/90">Your Portfolio</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-400"></div>
-                  <span className="text-white/90">Benchmark</span>
-                </div>
-              </div>
             </div>
             
             {/* Period Selector */}
@@ -432,29 +421,24 @@ export default function DashboardPage() {
                       <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3}/>
                       <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
                     </linearGradient>
-                    <linearGradient id="benchmarkGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#93c5fd" stopOpacity={0}/>
-                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis dataKey="date" stroke="#9ca3af" />
                   <YAxis 
                     stroke="#9ca3af" 
-                    domain={calculateYAxisDomain(trendData, ['portfolio', 'benchmark'])}
+                    domain={calculateYAxisDomain(trendData, ['portfolio'])}
                   />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '4px' }}
                     labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                    formatter={(value: any, name: string) => [
+                    formatter={(value: any) => [
                       typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value,
-                      name === 'portfolio' ? 'Your Portfolio' : 'Benchmark'
+                      'Portfolio Value'
                     ]}
                     labelFormatter={(label) => `Time: ${label}`}
                     cursor={{ stroke: '#60a5fa', strokeWidth: 1, strokeDasharray: '3 3' }}
                   />
                   <Area type="linear" dataKey="portfolio" stroke="#60a5fa" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
-                  <Area type="linear" dataKey="benchmark" stroke="#93c5fd" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
