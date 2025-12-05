@@ -88,17 +88,19 @@ export default function TradeLogsPage() {
     console.log('[TRADE-LOGS PAGE] fetchTradeData called')
     try {
       const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (!session) {
-        console.warn('[TRADE-LOGS PAGE] No session found')
-        setIsLoading(false)
-        return
+      let session = null
+      try {
+        const { data: { session: sessionData } } = await supabase.auth.getSession()
+        session = sessionData
+        console.log('[TRADE-LOGS PAGE] Session:', session ? 'Found' : 'Not found (will use cookie auth)')
+      } catch (error) {
+        console.warn('[TRADE-LOGS PAGE] Error getting session, will try cookie auth:', error)
       }
       
       console.log('[TRADE-LOGS PAGE] Fetching from API...')
       const response = await fetch('/api/trade-logs?view=all', {
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        credentials: 'include' // Ensure cookies are sent
       })
       
       if (!response.ok) {
@@ -162,47 +164,67 @@ export default function TradeLogsPage() {
     
     const setupRealtime = async () => {
       console.log('[TRADE-LOGS PAGE] Setting up realtime subscription')
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user?.id || !mounted) {
-        console.warn('[TRADE-LOGS PAGE] No session or not mounted, skipping setup')
-        setIsLoading(false)
-        return
+      
+      // Try to get session, but don't block if it's not immediately available
+      let session = null
+      try {
+        const { data: { session: sessionData } } = await supabase.auth.getSession()
+        session = sessionData
+        console.log('[TRADE-LOGS PAGE] Session check:', session ? 'Found' : 'Not found', session?.user?.id)
+      } catch (error) {
+        console.warn('[TRADE-LOGS PAGE] Error getting session:', error)
       }
       
+      // Always try to fetch data, even if session check fails
+      // The API will handle authentication
       console.log('[TRADE-LOGS PAGE] Initial fetchTradeData call')
       await fetchTradeData()
       
-      // Set up realtime subscription for trade_logs table
-      const channel = supabase
-        .channel('trade-logs-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // Listen to INSERT, UPDATE, DELETE
-            schema: 'public',
-            table: 'trade_logs',
-            filter: `user_id=eq.${session.user.id}`
-          },
-          (payload: any) => {
-            console.log('Trade log change detected:', payload.eventType, payload.new || payload.old)
-            // Refresh trade data when any change occurs
-            if (mounted) {
-              fetchTradeData()
+      // Set up realtime subscription only if we have a session
+      if (session?.user?.id && mounted) {
+        const channel = supabase
+          .channel('trade-logs-changes')
+          .on(
+            'postgres_changes',
+            {
+              event: '*', // Listen to INSERT, UPDATE, DELETE
+              schema: 'public',
+              table: 'trade_logs',
+              filter: `user_id=eq.${session.user.id}`
+            },
+            (payload: any) => {
+              console.log('Trade log change detected:', payload.eventType, payload.new || payload.old)
+              // Refresh trade data when any change occurs
+              if (mounted) {
+                fetchTradeData()
+              }
             }
-          }
-        )
-        .subscribe()
+          )
+          .subscribe()
 
-      // Keep the 30 second refresh as backup
-      const interval = setInterval(() => {
-        if (mounted) {
-          fetchTradeData()
+        // Keep the 30 second refresh as backup
+        const interval = setInterval(() => {
+          if (mounted) {
+            fetchTradeData()
+          }
+        }, 30000)
+        
+        return () => {
+          channel.unsubscribe()
+          clearInterval(interval)
         }
-      }, 30000)
-      
-      return () => {
-        channel.unsubscribe()
-        clearInterval(interval)
+      } else {
+        console.log('[TRADE-LOGS PAGE] No session for realtime, but data fetch attempted')
+        // Still set up interval for periodic refresh
+        const interval = setInterval(() => {
+          if (mounted) {
+            fetchTradeData()
+          }
+        }, 30000)
+        
+        return () => {
+          clearInterval(interval)
+        }
       }
     }
     
