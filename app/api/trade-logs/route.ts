@@ -421,48 +421,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Statistics will be calculated from Alpaca data after fetching trades
 
-    // Fetch current positions directly from Alpaca
+    // Fetch current positions from Supabase only (no Alpaca calls)
     if (view === 'current' || view === 'all' || !view) {
-      console.log('[TRADE-LOGS] Fetching current positions from Alpaca')
+      console.log('[TRADE-LOGS] Fetching current positions from Supabase')
       
       // Fetch for both paper and live accounts
       const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
       
       for (const accountType of accountTypes) {
         try {
-          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
-          
-          if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
-            console.log(`[TRADE-LOGS] No API keys for ${accountType} account, skipping`)
-            continue
-          }
-
-          const alpacaClient = createAlpacaClient({
-            apiKey: alpacaKeys.apiKey,
-            secretKey: alpacaKeys.secretKey,
-            baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-            paper: alpacaKeys.paper
-          })
-
-          await alpacaClient.initialize()
-          
-          // Sync all orders to Supabase first (including buy orders for current positions)
-          const allOrders = await alpacaClient.getOrderHistory(limit)
-          console.log(`[SYNC] Syncing ${allOrders.length} orders from ${accountType} account to Supabase...`)
-          for (const order of allOrders) {
-            if (order.status === 'filled' || order.status === 'partially_filled') {
-              await syncOrderToSupabase(order, accountType, supabase, userId)
-              // Small delay to avoid rate limiting
-              await new Promise(resolve => setTimeout(resolve, 50))
-            }
-          }
-          
-          // Get current positions from Alpaca
-          const positions = await alpacaClient.getPositions()
-          console.log(`[TRADE-LOGS] Found ${positions.length} positions in ${accountType} account`)
-          
-          // Fetch open trades from Supabase and aggregate by symbol
-          const { data: supabaseTrades } = await supabase
+          // Fetch open trades from Supabase
+          const { data: supabaseTrades, error: supabaseError } = await supabase
             .from('trade_logs')
             .select('*')
             .eq('user_id', userId)
@@ -470,6 +439,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .eq('action', 'buy')
             .eq('status', 'open')
             .order('timestamp', { ascending: false })
+          
+          if (supabaseError) {
+            console.error(`[TRADE-LOGS] Error fetching from Supabase for ${accountType}:`, supabaseError)
+            continue
+          }
           
           if (supabaseTrades && supabaseTrades.length > 0) {
             // Helper function to group trades by similar price and timestamp
@@ -529,9 +503,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               
               // Process each group as a single trade entry
               for (const trades of tradeGroups) {
-                // Find current position from Alpaca for real-time price
-                const position = positions.find(p => p.symbol.toUpperCase() === symbol)
-                
                 // Aggregate quantities and calculate weighted average buy price
                 const totalQty = trades.reduce((sum, t) => sum + parseFloat(t.qty || '0'), 0)
                 const totalValue = trades.reduce((sum, t) => sum + parseFloat(t.total_value || '0'), 0)
@@ -542,8 +513,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
                 )[0]
                 
-                // Use Alpaca position data if available, otherwise use Supabase data
-                const currentPrice = position ? parseFloat(position.current_price) : avgBuyPrice
+                // For current price, use buy price as fallback (can be enhanced later with separate price fetch)
+                const currentPrice = avgBuyPrice
                 const marketValue = totalQty * currentPrice
                 const unrealizedPl = marketValue - totalValue
                 const unrealizedPlPercent = totalValue > 0 ? ((unrealizedPl / totalValue) * 100) : 0
@@ -592,7 +563,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             }
           }
         } catch (error: any) {
-          console.error(`[TRADE-LOGS] Error fetching positions for ${accountType}:`, error?.message || error)
+          console.error(`[TRADE-LOGS] Error fetching current trades for ${accountType}:`, error?.message || error)
         }
       }
       
@@ -768,195 +739,34 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Fetch completed trades from Alpaca order history
+    // Fetch completed trades from Supabase only (no Alpaca calls)
     if (view === 'completed' || view === 'all' || !view) {
-      console.log('[TRADE-LOGS] Fetching completed trades from Alpaca order history')
+      console.log('[TRADE-LOGS] Fetching completed trades from Supabase')
       
       const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
-      const allOrders: any[] = []
       
-      // Fetch all filled orders from Alpaca for both account types
       for (const accountType of accountTypes) {
         try {
-          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
+          // Fetch completed trades from Supabase (buy orders that have been closed with sell orders)
+          const { data: buyTrades, error: buyError } = await supabase
+            .from('trade_logs')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('account_type', accountType)
+            .eq('action', 'buy')
+            .eq('status', 'closed')
+            .not('sell_price', 'is', null)
+            .not('sell_timestamp', 'is', null)
+            .order('sell_timestamp', { ascending: false })
           
-          if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
-            console.log(`[TRADE-LOGS] No API keys for ${accountType} account, skipping`)
-            continue
-          }
-
-          const alpacaClient = createAlpacaClient({
-            apiKey: alpacaKeys.apiKey,
-            secretKey: alpacaKeys.secretKey,
-            baseUrl: alpacaKeys.paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-            paper: alpacaKeys.paper
-          })
-
-          await alpacaClient.initialize()
-          
-          // Get all filled orders from Alpaca (increased limit to get more history)
-          const orders = await alpacaClient.getOrderHistory(limit)
-          console.log(`[TRADE-LOGS] Found ${orders.length} orders in ${accountType} account`)
-          
-          // Sync all orders to Supabase (store exact Alpaca data)
-          console.log(`[SYNC] Syncing ${orders.length} orders from ${accountType} account to Supabase...`)
-          for (const order of orders) {
-            if (order.status === 'filled' || order.status === 'partially_filled') {
-              await syncOrderToSupabase(order, accountType, supabase, userId)
-              // Small delay to avoid rate limiting
-              await new Promise(resolve => setTimeout(resolve, 50))
-            }
-          }
-          
-          // Filter for filled orders only and add account type
-          const filledOrders = orders
-            .filter(order => order.status === 'filled' || order.status === 'partially_filled')
-            .filter(order => order.filled_qty && parseFloat(order.filled_qty) > 0)
-            .map(order => ({
-              ...order,
-              account_type: accountType
-            }))
-          
-          allOrders.push(...filledOrders)
-        } catch (error: any) {
-          console.error(`[TRADE-LOGS] Error fetching orders for ${accountType}:`, error?.message || error)
-        }
-      }
-      
-      console.log(`[TRADE-LOGS] Total filled orders from Alpaca: ${allOrders.length}`)
-      
-      // Group orders by symbol
-      const ordersBySymbol = new Map<string, any[]>()
-      for (const order of allOrders) {
-        const symbol = order.symbol.toUpperCase()
-        if (!ordersBySymbol.has(symbol)) {
-          ordersBySymbol.set(symbol, [])
-        }
-        ordersBySymbol.get(symbol)!.push(order)
-      }
-      
-      // Try to get decision metrics from Supabase
-      const allSymbols = Array.from(ordersBySymbol.keys())
-      const { data: metricsData } = await supabase
-        .from('trade_logs')
-        .select('symbol, alpaca_order_id, buy_decision_metrics, sell_decision_metrics, strategy, trade_pair_id, account_type')
-        .eq('user_id', userId)
-        .in('symbol', allSymbols)
-        .not('alpaca_order_id', 'is', null)
-      
-      // Create maps for metrics lookup
-      const buyMetricsMap = new Map<string, any>()
-      const sellMetricsMap = new Map<string, any>()
-      const strategyMap = new Map<string, string>()
-      const tradePairMap = new Map<string, string>()
-      
-      if (metricsData) {
-        for (const metric of metricsData) {
-          const key = `${metric.symbol}_${metric.alpaca_order_id}`
-          if (metric.buy_decision_metrics) {
-            buyMetricsMap.set(key, metric.buy_decision_metrics)
-            strategyMap.set(key, metric.strategy)
-            tradePairMap.set(key, metric.trade_pair_id)
-          }
-          if (metric.sell_decision_metrics) {
-            sellMetricsMap.set(key, metric.sell_decision_metrics)
-          }
-        }
-      }
-      
-      // Process each symbol's orders to match buy/sell pairs using FIFO
-      for (const [symbol, orders] of ordersBySymbol) {
-        // Sort orders by filled_at timestamp
-        orders.sort((a, b) => {
-          const timeA = a.filled_at ? new Date(a.filled_at).getTime() : new Date(a.created_at).getTime()
-          const timeB = b.filled_at ? new Date(b.filled_at).getTime() : new Date(b.created_at).getTime()
-          return timeA - timeB
-        })
-        
-        // Separate buy and sell orders
-        const buyOrders = orders.filter(o => o.side === 'buy')
-        const sellOrders = orders.filter(o => o.side === 'sell')
-        
-        console.log(`[TRADE-LOGS] Processing ${symbol}: ${buyOrders.length} buys, ${sellOrders.length} sells`)
-        
-        // Match buy and sell orders using FIFO
-        let buyIndex = 0
-        let sellIndex = 0
-        
-        while (buyIndex < buyOrders.length && sellIndex < sellOrders.length) {
-          const buyOrder = buyOrders[buyIndex]
-          const sellOrder = sellOrders[sellIndex]
-          
-          const buyQty = parseFloat(buyOrder.filled_qty)
-          const sellQty = parseFloat(sellOrder.filled_qty)
-          const buyPrice = parseFloat(buyOrder.filled_avg_price || '0')
-          const sellPrice = parseFloat(sellOrder.filled_avg_price || '0')
-          
-          if (buyQty <= 0 || sellQty <= 0 || buyPrice <= 0 || sellPrice <= 0) {
-            // Skip invalid orders
-            if (buyQty <= 0 || buyPrice <= 0) buyIndex++
-            if (sellQty <= 0 || sellPrice <= 0) sellIndex++
+          if (buyError) {
+            console.error(`[TRADE-LOGS] Error fetching completed trades from Supabase for ${accountType}:`, buyError)
             continue
           }
           
-          // Use the smaller quantity for the trade pair
-          const tradeQty = Math.min(buyQty, sellQty)
-          
-          // Calculate P&L
-          const pl = (sellPrice - buyPrice) * tradeQty
-          const plPercent = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0
-          
-          // Calculate holding duration
-          const buyTime = buyOrder.filled_at ? new Date(buyOrder.filled_at).getTime() : new Date(buyOrder.created_at).getTime()
-          const sellTime = sellOrder.filled_at ? new Date(sellOrder.filled_at).getTime() : new Date(sellOrder.created_at).getTime()
-          const duration = sellTime - buyTime
-          const totalSeconds = Math.floor(duration / 1000)
-          const days = Math.floor(totalSeconds / 86400)
-          const hours = Math.floor((totalSeconds % 86400) / 3600)
-          const minutes = Math.floor((totalSeconds % 3600) / 60)
-          const seconds = totalSeconds % 60
-          const durationStr = days > 0 
-            ? `${days} day${days > 1 ? 's' : ''} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-            : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-          
-          // Get metrics from Supabase if available
-          const buyKey = `${symbol}_${buyOrder.id}`
-          const sellKey = `${symbol}_${sellOrder.id}`
-          const buyMetrics = buyMetricsMap.get(buyKey) || { confidence: 0, reasoning: 'Trade from Alpaca' }
-          const sellMetrics = sellMetricsMap.get(sellKey) || { confidence: 0, reasoning: 'Trade from Alpaca' }
-          const strategy = strategyMap.get(buyKey) || strategyMap.get(sellKey) || 'cash'
-          const tradePairId = tradePairMap.get(buyKey) || tradePairMap.get(sellKey) || crypto.randomUUID()
-          
-          completedTrades.push({
-            id: BigInt(0), // Placeholder - not from database
-            symbol,
-            qty: tradeQty,
-            buy_price: buyPrice,
-            buy_timestamp: buyOrder.filled_at || buyOrder.created_at,
-            sell_price: sellPrice,
-            sell_timestamp: sellOrder.filled_at || sellOrder.created_at,
-            profit_loss: pl,
-            profit_loss_percent: plPercent,
-            holding_duration: durationStr,
-            buy_decision_metrics: buyMetrics,
-            sell_decision_metrics: sellMetrics,
-            strategy,
-            account_type: buyOrder.account_type || 'paper',
-            trade_pair_id: tradePairId
-          })
-          
-          // Update remaining quantities
-          buyOrder.filled_qty = (buyQty - tradeQty).toString()
-          sellOrder.filled_qty = (sellQty - tradeQty).toString()
-          
-          // Move to next order if current one is fully matched
-          if (parseFloat(buyOrder.filled_qty) <= 0) buyIndex++
-          if (parseFloat(sellOrder.filled_qty) <= 0) sellIndex++
-        }
-      }
-      
-      // Helper function to group completed trades by similar buy/sell price and timestamp
-      function groupSimilarCompletedTrades(trades: any[]): any[][] {
+          if (buyTrades && buyTrades.length > 0) {
+            // Helper function to group completed trades by similar buy/sell price and timestamp
+            function groupSimilarCompletedTrades(trades: any[]): any[][] {
         if (trades.length === 0) return []
         
         // Sort by sell timestamp
@@ -998,73 +808,82 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           }
         }
         
-        return groups
-      }
-      
-      // Group by symbol first
-      const completedBySymbol = new Map<string, any[]>()
-      for (const trade of completedTrades) {
-        const symbol = trade.symbol.toUpperCase()
-        if (!completedBySymbol.has(symbol)) {
-          completedBySymbol.set(symbol, [])
-        }
-        completedBySymbol.get(symbol)!.push(trade)
-      }
-      
-      // Aggregate each symbol's completed trades (grouped by similar price/time)
-      const aggregatedCompleted: CompletedTrade[] = []
-      for (const [symbol, allTradesForSymbol] of completedBySymbol) {
-        // Group similar trades together
-        const tradeGroups = groupSimilarCompletedTrades(allTradesForSymbol)
-        
-        // Process each group as a single trade entry
-        for (const trades of tradeGroups) {
-          // Sort by most recent sell
-          trades.sort((a, b) => 
-            new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
-          )
-          
-          // Aggregate quantities and P&L
-          const totalQty = trades.reduce((sum, t) => sum + t.qty, 0)
-          const totalPl = trades.reduce((sum, t) => sum + (t.profit_loss || 0), 0)
-          const totalPlPercent = trades.reduce((sum, t) => sum + (t.profit_loss_percent || 0), 0) / trades.length
-          
-          // Use most recent trade for timestamps and metrics
-          const mostRecent = trades[0]
-          
-          // Store transaction IDs for this grouped trade
-          const transactionIds = trades.map(t => t.id.toString())
-          
-          aggregatedCompleted.push({
-            id: mostRecent.id,
-            symbol,
-            qty: totalQty,
-            buy_price: trades.reduce((sum, t) => sum + (t.buy_price * t.qty), 0) / totalQty, // Weighted avg
-            buy_timestamp: trades.sort((a, b) => 
-              new Date(a.buy_timestamp).getTime() - new Date(b.buy_timestamp).getTime()
-            )[0].buy_timestamp, // Oldest buy
-            sell_price: mostRecent.sell_price,
-            sell_timestamp: mostRecent.sell_timestamp,
-            profit_loss: totalPl,
-            profit_loss_percent: totalPlPercent,
-            holding_duration: mostRecent.holding_duration,
-            buy_decision_metrics: mostRecent.buy_decision_metrics,
-            sell_decision_metrics: mostRecent.sell_decision_metrics,
-            strategy: mostRecent.strategy,
-            account_type: mostRecent.account_type,
-            trade_pair_id: mostRecent.trade_pair_id,
-            transaction_ids: transactionIds, // Store IDs of individual transactions
-            transaction_count: trades.length // Number of transactions in this group
-          })
+              return groups
+            }
+            
+            // Group by symbol first
+            const completedBySymbol = new Map<string, any[]>()
+            for (const trade of buyTrades) {
+              const symbol = trade.symbol.toUpperCase()
+              if (!completedBySymbol.has(symbol)) {
+                completedBySymbol.set(symbol, [])
+              }
+              completedBySymbol.get(symbol)!.push(trade)
+            }
+            
+            // Aggregate each symbol's completed trades (grouped by similar price/time)
+            for (const [symbol, allTradesForSymbol] of completedBySymbol) {
+              // Group similar trades together
+              const tradeGroups = groupSimilarCompletedTrades(allTradesForSymbol)
+              
+              // Process each group as a single trade entry
+              for (const trades of tradeGroups) {
+                // Sort by most recent sell
+                trades.sort((a, b) => 
+                  new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
+                )
+                
+                // Aggregate quantities and P&L
+                const totalQty = trades.reduce((sum, t) => sum + parseFloat(t.qty || '0'), 0)
+                const totalPl = trades.reduce((sum, t) => sum + parseFloat(t.profit_loss || '0'), 0)
+                const totalPlPercent = trades.reduce((sum, t) => {
+                  const pl = parseFloat(t.profit_loss_percent || '0')
+                  return sum + pl
+                }, 0) / trades.length
+                
+                // Use most recent trade for timestamps and metrics
+                const mostRecent = trades[0]
+                
+                // Store transaction IDs for this grouped trade
+                const transactionIds = trades.map(t => t.id.toString())
+                
+                completedTrades.push({
+                  id: BigInt(mostRecent.id),
+                  symbol,
+                  qty: totalQty,
+                  buy_price: trades.reduce((sum, t) => {
+                    const qty = parseFloat(t.qty || '0')
+                    const price = parseFloat(t.buy_price || '0')
+                    return sum + (price * qty)
+                  }, 0) / totalQty, // Weighted avg
+                  buy_timestamp: trades.sort((a, b) => 
+                    new Date(a.buy_timestamp || a.timestamp).getTime() - new Date(b.buy_timestamp || b.timestamp).getTime()
+                  )[0].buy_timestamp || trades[0].timestamp, // Oldest buy
+                  sell_price: parseFloat(mostRecent.sell_price || '0'),
+                  sell_timestamp: mostRecent.sell_timestamp,
+                  profit_loss: totalPl,
+                  profit_loss_percent: totalPlPercent,
+                  holding_duration: mostRecent.holding_duration || '0:0:0',
+                  buy_decision_metrics: mostRecent.buy_decision_metrics || { confidence: 0, reasoning: 'Trade from Supabase' },
+                  sell_decision_metrics: mostRecent.sell_decision_metrics || { confidence: 0, reasoning: 'Trade from Supabase' },
+                  strategy: mostRecent.strategy || 'cash',
+                  account_type: accountType,
+                  trade_pair_id: mostRecent.trade_pair_id,
+                  transaction_ids: transactionIds,
+                  transaction_count: trades.length
+                })
+              }
+            }
+          }
+        } catch (error: any) {
+          console.error(`[TRADE-LOGS] Error fetching completed trades for ${accountType}:`, error?.message || error)
         }
       }
       
       // Sort by most recent sell and limit to 10 for initial display
-      aggregatedCompleted.sort((a, b) => 
+      completedTrades.sort((a, b) => 
         new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
       )
-      
-      completedTrades = aggregatedCompleted
       
       console.log(`[TRADE-LOGS] Total completed trades (aggregated): ${completedTrades.length}`)
     }

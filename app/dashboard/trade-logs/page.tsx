@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -76,10 +76,55 @@ export default function TradeLogsPage() {
   const [showAllCompleted, setShowAllCompleted] = useState(false)
 
   useEffect(() => {
-    fetchTradeData()
-    // Refresh every 30 seconds for current trades
-    const interval = setInterval(() => fetchTradeData(), 30000)
-    return () => clearInterval(interval)
+    let mounted = true
+    const supabase = createClient()
+    
+    const setupRealtime = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id || !mounted) return
+      
+      fetchTradeData()
+      
+      // Set up realtime subscription for trade_logs table
+      const channel = supabase
+        .channel('trade-logs-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'trade_logs',
+            filter: `user_id=eq.${session.user.id}`
+          },
+          (payload: any) => {
+            console.log('Trade log change detected:', payload.eventType, payload.new || payload.old)
+            // Refresh trade data when any change occurs
+            if (mounted) {
+              fetchTradeData()
+            }
+          }
+        )
+        .subscribe()
+
+      // Keep the 30 second refresh as backup
+      const interval = setInterval(() => {
+        if (mounted) {
+          fetchTradeData()
+        }
+      }, 30000)
+      
+      return () => {
+        channel.unsubscribe()
+        clearInterval(interval)
+      }
+    }
+    
+    const cleanupPromise = setupRealtime()
+    
+    return () => {
+      mounted = false
+      cleanupPromise.then(cleanup => cleanup?.())
+    }
   }, [])
 
   const fetchTradeData = async () => {
