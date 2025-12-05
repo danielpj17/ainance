@@ -453,25 +453,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           
           console.log(`[TRADE-LOGS] All trades for ${accountType}: ${allTradesForAccount?.length || 0}`)
           
-          // Now fetch open trades from Supabase
-          // Also filter out any that have a sell_price (which means they're closed)
+          // Use optimized database function for current trades
           const { data: supabaseTrades, error: supabaseError } = await supabase
-            .from('trade_logs')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('account_type', accountType)
-            .eq('action', 'buy')
-            .eq('status', 'open')
-            .is('sell_price', null) // Ensure no sell_price (not closed)
-            .order('timestamp', { ascending: false })
+            .rpc('get_current_trades_optimized', {
+              user_uuid: userId,
+              account_type_param: accountType
+            })
           
           if (supabaseError) {
-            console.error(`[TRADE-LOGS] Error fetching from Supabase for ${accountType}:`, supabaseError)
-              continue
-            }
-            
-          // Additional filter: remove any trades that have sell_timestamp (double-check they're really open)
-          let trulyOpenTrades = (supabaseTrades || []).filter(t => 
+            console.error(`[TRADE-LOGS] Error fetching current trades for ${accountType}:`, supabaseError)
+            continue
+          }
+          
+          // Filter to only truly open trades (no sell_price/timestamp)
+          let trulyOpenTrades = (supabaseTrades || []).filter((t: any) => 
             !t.sell_price && !t.sell_timestamp && t.status === 'open'
           )
             
@@ -494,7 +489,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               console.log(`[TRADE-LOGS] Alpaca has ${alpacaPositions.length} open positions for ${accountType}:`, Array.from(alpacaSymbols))
               
               // Filter to only include trades that exist in Alpaca
-              trulyOpenTrades = trulyOpenTrades.filter(t => 
+              trulyOpenTrades = trulyOpenTrades.filter((t: any) =>
                 alpacaSymbols.has(t.symbol.toUpperCase())
               )
               
@@ -835,7 +830,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
           if (insertError) {
             console.error(`[SYNC] Error inserting order ${orderId}:`, insertError)
-              } else {
+      } else {
             console.log(`[SYNC] Inserted new order ${orderId} for ${symbol} ${side}`)
               }
             }
@@ -844,160 +839,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Fetch completed trades from Supabase only (no Alpaca calls)
+    // Fetch completed trades from Supabase using optimized database function
     if (view === 'completed' || view === 'all' || !view) {
-      console.log('[TRADE-LOGS] Fetching completed trades from Supabase')
+      console.log('[TRADE-LOGS] Fetching completed trades from Supabase (optimized)')
       
       const accountTypes: ('paper' | 'live')[] = ['paper', 'live']
       
       for (const accountType of accountTypes) {
         try {
-          // First check for any closed trades
-          const { data: closedCheck } = await supabase
-            .from('trade_logs')
-            .select('id, symbol, action, status, sell_price, sell_timestamp')
-            .eq('user_id', userId)
-            .eq('account_type', accountType)
-            .eq('status', 'closed')
-            .limit(10)
-          
-          console.log(`[TRADE-LOGS] Closed trades check for ${accountType}: ${closedCheck?.length || 0}`)
-          if (closedCheck && closedCheck.length > 0) {
-            console.log(`[TRADE-LOGS] Sample closed trades:`, closedCheck.map(t => ({ 
-              symbol: t.symbol, 
-              action: t.action, 
-              status: t.status,
-              has_sell_price: !!t.sell_price,
-              has_sell_timestamp: !!t.sell_timestamp
-            })))
-          }
-          
-          // Fetch completed trades from Supabase
-          // Look for buy records that have sell_price (regardless of status, as some might not be marked closed)
-          const { data: buyTradesClosed, error: buyError1 } = await supabase
-            .from('trade_logs')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('account_type', accountType)
-            .eq('action', 'buy')
-            .not('sell_price', 'is', null)
-            .not('sell_timestamp', 'is', null)
-          
-          console.log(`[TRADE-LOGS] Found ${buyTradesClosed?.length || 0} buy records with sell_price for ${accountType}`)
-          
-          // Also check for trades marked as closed (in case status is set but sell_price is missing)
-          const { data: buyTradesClosedStatus, error: buyError2 } = await supabase
-            .from('trade_logs')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('account_type', accountType)
-            .eq('action', 'buy')
-            .eq('status', 'closed')
-          
-          console.log(`[TRADE-LOGS] Found ${buyTradesClosedStatus?.length || 0} buy records with status='closed' for ${accountType}`)
-          
-          // Combine both queries and deduplicate
-          const allBuyTrades = new Map<string, any>()
-          
-          // Add trades with sell_price
-          if (buyTradesClosed) {
-            for (const trade of buyTradesClosed) {
-              const tradeId = typeof trade.id === 'bigint' ? Number(trade.id) : Number(trade.id)
-              allBuyTrades.set(tradeId.toString(), trade)
-            }
-          }
-          
-          // Add trades with status='closed' (may have sell_price or not)
-          if (buyTradesClosedStatus) {
-            for (const trade of buyTradesClosedStatus) {
-              const tradeId = typeof trade.id === 'bigint' ? Number(trade.id) : Number(trade.id)
-              // Only add if it doesn't already exist or if it has sell_price
-              if (!allBuyTrades.has(tradeId.toString()) || trade.sell_price) {
-                allBuyTrades.set(tradeId.toString(), trade)
-              }
-            }
-          }
-          
-          // Convert back to array
-          const buyTradesClosedCombined = Array.from(allBuyTrades.values())
-          
-          // Also check for sell records that might need to be matched
-        const { data: sellTrades, error: sellError } = await supabase
-            .from('trade_logs')
-          .select('*')
-          .eq('user_id', userId)
-            .eq('account_type', accountType)
-          .eq('action', 'sell')
-            .order('timestamp', { ascending: false })
-          
-          console.log(`[TRADE-LOGS] Closed buy records: ${buyTradesClosed?.length || 0}, Sell records: ${sellTrades?.length || 0}`)
-          
-          // Combine both approaches - use closed buy records, and match sell records with open buy records
-          let buyTrades: any[] = buyTradesClosedCombined || []
-          
-          // If we have sell records, try to match them with buy records
-          if (sellTrades && sellTrades.length > 0) {
-            for (const sellTrade of sellTrades) {
-              // Find matching buy record for this sell
-              const { data: matchingBuy } = await supabase
-                .from('trade_logs')
-          .select('*')
-          .eq('user_id', userId)
-                .eq('account_type', accountType)
-                .eq('symbol', sellTrade.symbol)
-                .eq('action', 'buy')
-                .eq('trade_pair_id', sellTrade.trade_pair_id)
-                .order('timestamp', { ascending: true })
-                .limit(1)
-                .single()
-              
-              if (matchingBuy) {
-                // Convert id for comparison
-                const matchId = typeof matchingBuy.id === 'bigint' ? Number(matchingBuy.id) : Number(matchingBuy.id)
-                const exists = buyTrades.some(t => {
-                  const existingId = typeof t.id === 'bigint' ? Number(t.id) : Number(t.id)
-                  return matchId === existingId
-                })
-                
-                if (!exists) {
-                  // Create a completed trade from the matched buy/sell pair
-                  const tradeId = typeof matchingBuy.id === 'bigint' 
-                    ? Number(matchingBuy.id) 
-                    : Number(matchingBuy.id)
-                  
-                  const completedTrade = {
-                    ...matchingBuy,
-                    id: tradeId,
-                    status: 'closed',
-                    sell_price: parseFloat(sellTrade.price || '0'),
-                    sell_timestamp: sellTrade.timestamp,
-                    sell_decision_metrics: sellTrade.sell_decision_metrics,
-                    profit_loss: (parseFloat(sellTrade.price || '0') - parseFloat(matchingBuy.buy_price || '0')) * parseFloat(matchingBuy.qty || '0'),
-                    profit_loss_percent: parseFloat(matchingBuy.buy_price || '0') > 0 
-                      ? ((parseFloat(sellTrade.price || '0') - parseFloat(matchingBuy.buy_price || '0')) / parseFloat(matchingBuy.buy_price || '0')) * 100 
-                      : 0
-                  }
-                  buyTrades.push(completedTrade)
-                }
-              }
-            }
-          }
-          
-          // Sort by sell timestamp
-          buyTrades.sort((a, b) => {
-            const timeA = new Date(a.sell_timestamp || a.timestamp).getTime()
-            const timeB = new Date(b.sell_timestamp || b.timestamp).getTime()
-            return timeB - timeA
-          })
-          
-          const buyError = buyError1 || buyError2 || sellError
+          // Use optimized database function - single query, much faster
+          const { data: buyTrades, error: buyError } = await supabase
+            .rpc('get_completed_trades_optimized', {
+        user_uuid: userId,
+              account_type_param: accountType
+            })
           
           if (buyError) {
-            console.error(`[TRADE-LOGS] Error fetching completed trades from Supabase for ${accountType}:`, buyError)
+            console.error(`[TRADE-LOGS] Error fetching completed trades for ${accountType}:`, buyError)
             continue
           }
           
-          console.log(`[TRADE-LOGS] Found ${buyTrades?.length || 0} completed trades in Supabase for ${accountType} account`)
+          console.log(`[TRADE-LOGS] Found ${buyTrades?.length || 0} completed trades for ${accountType} account`)
           
           if (buyTrades && buyTrades.length > 0) {
             // Helper function to group completed trades by similar buy/sell price and timestamp
