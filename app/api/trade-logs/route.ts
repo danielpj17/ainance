@@ -200,7 +200,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             if (updateError) {
               console.error(`[FIX-PRICES] Error updating buy price for trade ${trade.id}:`, updateError)
               errorCount++
-            } else {
+          } else {
               fixedCount++
               results.push({
                 trade_id: trade.id,
@@ -296,7 +296,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
           // Small delay to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 100))
-        } else {
+          } else {
           console.log(`[FIX-PRICES] ${trade.symbol} ${trade.action}: Price already correct (${filledPrice.toFixed(4)})`)
         }
       } catch (error) {
@@ -383,7 +383,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         message: 'Trade position closed successfully'
       })
 
-    } else {
+              } else {
       return NextResponse.json({ 
         success: false, 
         error: 'Invalid action. Must be "fix-prices", "buy", or "sell"' 
@@ -562,8 +562,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 
                 // Store transaction IDs for this grouped trade
                 const transactionIds = trades.map(t => t.id.toString())
-                
-                currentTrades.push({
+                    
+                    currentTrades.push({
                   id: BigInt(mostRecentTrade.id),
                   symbol,
                   qty: totalQty,
@@ -575,7 +575,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   unrealized_pl_percent: unrealizedPlPercent,
                   holding_duration: holdingDuration,
                   buy_decision_metrics: mostRecentTrade.buy_decision_metrics || {
-                    confidence: 0,
+                        confidence: 0,
                     reasoning: 'Position from Supabase'
                   },
                   strategy: mostRecentTrade.strategy || 'cash',
@@ -667,10 +667,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
           if (updateError) {
             console.error(`[SYNC] Error updating order ${orderId}:`, updateError)
-          } else {
+              } else {
             console.log(`[SYNC] Updated order ${orderId} for ${symbol} ${side}`)
-          }
-        } else {
+              }
+            } else {
           // Insert new order
           // For buy orders, generate new trade_pair_id. For sell orders, try to match with existing buy
           let tradePairId = crypto.randomUUID()
@@ -755,7 +755,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
           if (insertError) {
             console.error(`[SYNC] Error inserting order ${orderId}:`, insertError)
-          } else {
+      } else {
             console.log(`[SYNC] Inserted new order ${orderId} for ${symbol} ${side}`)
           }
         }
@@ -805,12 +805,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             .not('sell_timestamp', 'is', null)
           
           // Also check for sell records that might need to be matched
-          const { data: sellTrades, error: sellError } = await supabase
+        const { data: sellTrades, error: sellError } = await supabase
             .from('trade_logs')
-            .select('*')
-            .eq('user_id', userId)
+          .select('*')
+          .eq('user_id', userId)
             .eq('account_type', accountType)
-            .eq('action', 'sell')
+          .eq('action', 'sell')
             .order('timestamp', { ascending: false })
           
           console.log(`[TRADE-LOGS] Closed buy records: ${buyTradesClosed?.length || 0}, Sell records: ${sellTrades?.length || 0}`)
@@ -824,8 +824,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               // Find matching buy record for this sell
               const { data: matchingBuy } = await supabase
                 .from('trade_logs')
-                .select('*')
-                .eq('user_id', userId)
+          .select('*')
+          .eq('user_id', userId)
                 .eq('account_type', accountType)
                 .eq('symbol', sellTrade.symbol)
                 .eq('action', 'buy')
@@ -975,7 +975,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   trade_pair_id: mostRecent.trade_pair_id,
                   transaction_ids: transactionIds,
                   transaction_count: trades.length
-                })
+                } as any)
               }
             }
           }
@@ -1086,13 +1086,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         best_trade: bestTrade,
         worst_trade: worstTrade
       }
+      }
+
+    // Convert BigInt values to strings for JSON serialization
+    const serializeBigInt = (obj: any): any => {
+      if (obj === null || obj === undefined) return obj
+      if (typeof obj === 'bigint') return obj.toString()
+      if (Array.isArray(obj)) return obj.map(serializeBigInt)
+      if (typeof obj === 'object') {
+        const result: any = {}
+        for (const [key, value] of Object.entries(obj)) {
+          result[key] = serializeBigInt(value)
+        }
+        return result
+      }
+      return obj
     }
 
     return NextResponse.json({
       success: true,
       data: {
-        currentTrades,
-        completedTrades,
+        currentTrades: serializeBigInt(currentTrades),
+        completedTrades: serializeBigInt(completedTrades),
         statistics
       }
     })
