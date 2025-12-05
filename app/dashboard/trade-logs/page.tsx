@@ -27,17 +27,17 @@ export default function TradeLogsPage() {
   // Debug: Log state changes
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[TRADE-LOGS PAGE] State updated:', {
-        currentTrades: currentTrades.length,
-        completedTrades: completedTrades.length,
-        isLoading
-      })
+    console.log('[TRADE-LOGS PAGE] State updated:', {
+      currentTrades: currentTrades.length,
+      completedTrades: completedTrades.length,
+      isLoading
+    })
     }
   }, [currentTrades, completedTrades, isLoading])
 
   const fetchTradeData = async () => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[TRADE-LOGS PAGE] fetchTradeData called')
+    console.log('[TRADE-LOGS PAGE] fetchTradeData called')
     }
     try {
       const supabase = createClient()
@@ -46,7 +46,7 @@ export default function TradeLogsPage() {
         const { data: { session: sessionData } } = await supabase.auth.getSession()
         session = sessionData
         if (process.env.NODE_ENV === 'development') {
-          console.log('[TRADE-LOGS PAGE] Session:', session ? 'Found' : 'Not found (will use cookie auth)')
+        console.log('[TRADE-LOGS PAGE] Session:', session ? 'Found' : 'Not found (will use cookie auth)')
         }
       } catch (error) {
         if (process.env.NODE_ENV === 'development') {
@@ -60,33 +60,37 @@ export default function TradeLogsPage() {
           'Content-Type': 'application/json',
         },
       })
-
+      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
+      const responseData = await response.json()
       if (process.env.NODE_ENV === 'development') {
         console.log('[TRADE-LOGS PAGE] Fetched data:', {
-          currentTrades: data.currentTrades?.length || 0,
-          completedTrades: data.completedTrades?.length || 0,
-          statistics: data.statistics ? 'Present' : 'Missing'
+          success: responseData.success,
+          currentTrades: responseData.data?.currentTrades?.length || 0,
+          completedTrades: responseData.data?.completedTrades?.length || 0,
+          statistics: responseData.data?.statistics ? 'Present' : 'Missing',
+          fullResponse: responseData
         })
       }
 
-      if (data.currentTrades) {
-        setCurrentTrades(data.currentTrades)
-      }
-      if (data.completedTrades) {
-        setCompletedTrades(data.completedTrades)
-      }
-      if (data.statistics) {
-        setStatistics(data.statistics)
+      if (responseData.success && responseData.data) {
+        if (responseData.data.currentTrades) {
+          setCurrentTrades(responseData.data.currentTrades)
+        }
+        if (responseData.data.completedTrades) {
+          setCompletedTrades(responseData.data.completedTrades)
+        }
+        if (responseData.data.statistics) {
+          setStatistics(responseData.data.statistics)
+        }
       }
       setIsLoading(false)
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.error('[TRADE-LOGS PAGE] Error fetching trade data:', error)
+      console.error('[TRADE-LOGS PAGE] Error fetching trade data:', error)
       }
       setIsLoading(false)
     }
@@ -109,7 +113,7 @@ export default function TradeLogsPage() {
         }
       } else {
         // Resume polling and refresh data when tab becomes visible
-        fetchTradeData()
+            fetchTradeData()
         if (pollingIntervalRef.current === null) {
           pollingIntervalRef.current = setInterval(fetchTradeData, 60000) // 60 seconds
         }
@@ -229,7 +233,8 @@ export default function TradeLogsPage() {
     return showAllCompleted ? completedTrades : completedTrades.slice(0, 10)
   }, [completedTrades, showAllCompleted])
 
-  if (!statistics) {
+  // Show loading state only if we're still loading and have no data
+  if (isLoading && !statistics && currentTrades.length === 0 && completedTrades.length === 0) {
     return (
       <div className="container mx-auto p-6">
         <div className="text-center py-12 text-gray-400">Loading trade logs...</div>
@@ -237,11 +242,30 @@ export default function TradeLogsPage() {
     )
   }
 
+  // If we have no statistics but have trades, create default statistics
+  const displayStatistics = statistics || {
+    total_trades: currentTrades.length + completedTrades.length,
+    open_trades: currentTrades.length,
+    closed_trades: completedTrades.length,
+    winning_trades: completedTrades.filter(t => t.profit_loss > 0).length,
+    losing_trades: completedTrades.filter(t => t.profit_loss < 0).length,
+    total_profit_loss: completedTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0),
+    avg_profit_loss: completedTrades.length > 0 
+      ? completedTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0) / completedTrades.length 
+      : 0,
+    win_rate: completedTrades.length > 0
+      ? (completedTrades.filter(t => t.profit_loss > 0).length / completedTrades.length) * 100
+      : 0,
+    avg_holding_duration: completedTrades.length > 0 ? completedTrades[0].holding_duration : '0:0:0',
+    best_trade: completedTrades.length > 0 ? Math.max(...completedTrades.map(t => t.profit_loss)) : 0,
+    worst_trade: completedTrades.length > 0 ? Math.min(...completedTrades.map(t => t.profit_loss)) : 0
+  }
+
   return (
     <div className="container mx-auto p-6">
       <h1 className="text-3xl font-bold text-white mb-8">Trade Logs</h1>
 
-      <TradeStatisticsCards statistics={statistics} formatCurrency={formatCurrency} />
+      <TradeStatisticsCards statistics={displayStatistics} formatCurrency={formatCurrency} />
 
       <Tabs defaultValue="current" className="space-y-6">
         <TabsList className="glass-card">
