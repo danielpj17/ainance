@@ -428,15 +428,20 @@ export default function TradeLogsPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {(showAllCurrent ? currentTrades : currentTrades.slice(0, 10)).map((trade) => (
+                  {(showAllCurrent ? currentTrades : currentTrades.slice(0, 10)).map((trade) => {
+                    if (!trade || !trade.symbol) {
+                      console.warn('[TRADE-LOGS PAGE] Invalid trade object:', trade)
+                      return null
+                    }
+                    return (
                     <div
-                      key={trade.id.toString()}
+                      key={trade.id?.toString() || Math.random()}
                       onClick={() => openTradeDetails(trade)}
                       className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-blue-500 transition-all cursor-pointer"
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
-                          <div className="text-2xl font-bold text-white">{trade.symbol}</div>
+                          <div className="text-2xl font-bold text-white">{trade.symbol || 'N/A'}</div>
                           <Badge className="bg-blue-400">BUY</Badge>
                           <Badge variant="outline" className="border-gray-600 text-gray-400">
                             {trade.qty} shares
@@ -516,7 +521,8 @@ export default function TradeLogsPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                   
                   {currentTrades.length > 10 && (
                     <div className="pt-4 border-t border-gray-700">
@@ -561,15 +567,20 @@ export default function TradeLogsPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {(showAllCompleted ? completedTrades : completedTrades.slice(0, 10)).map((trade) => (
-                    <div
-                      key={trade.id.toString()}
-                      onClick={() => openTradeDetails(trade)}
-                      className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="text-2xl font-bold text-white">{trade.symbol}</div>
+                  {(showAllCompleted ? completedTrades : completedTrades.slice(0, 10)).map((trade) => {
+                    if (!trade || !trade.symbol) {
+                      console.warn('[TRADE-LOGS PAGE] Invalid completed trade object:', trade)
+                      return null
+                    }
+                    return (
+                      <div
+                        key={trade.id?.toString() || Math.random()}
+                        onClick={() => openTradeDetails(trade)}
+                        className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-all cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl font-bold text-white">{trade.symbol || 'N/A'}</div>
                           <Badge variant="outline" className="border-gray-600 text-gray-400">
                             {trade.qty} shares
                           </Badge>
@@ -643,8 +654,9 @@ export default function TradeLogsPage() {
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                      </div>
+                    )
+                  })}
                   
                   {completedTrades.length > 10 && (
                     <div className="pt-4 border-t border-gray-700">
@@ -1261,7 +1273,7 @@ export default function TradeLogsPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
                           <Badge className={transaction.action === 'buy' ? 'bg-blue-400' : 'bg-red-400'}>
-                            {transaction.action.toUpperCase()}
+                            {transaction.action?.toUpperCase() || 'N/A'}
                           </Badge>
                           <div className="text-lg font-bold text-white">
                             {transaction.qty} shares @ {formatCurrency(transaction.price)}
