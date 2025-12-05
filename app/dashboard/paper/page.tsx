@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cursor } from 'recharts'
 
 interface Trade {
   id: number
@@ -614,12 +614,14 @@ export default function PaperTradingPage() {
                       domain={calculateYAxisDomain(chartData, ['value'])}
                     />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
-                      labelStyle={{ color: '#fff' }}
+                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '4px' }}
+                      labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
                       formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
+                      labelFormatter={(label) => `Time: ${label}`}
                     />
+                    <Cursor stroke="#60a5fa" strokeWidth={1} strokeDasharray="3 3" />
                     <Area 
-                      type="monotone" 
+                      type="linear" 
                       dataKey="value" 
                       stroke="#60a5fa" 
                       strokeWidth={3} 

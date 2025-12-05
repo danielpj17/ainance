@@ -39,6 +39,8 @@ export default function TradeTerminalPage() {
   const [limitPrice, setLimitPrice] = useState('')
   const [account, setAccount] = useState<AccountData | null>(null)
   const [signals, setSignals] = useState<Signal[]>([])
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const [mouseX, setMouseX] = useState<number | null>(null)
   const latestPrice = useMemo(() => bars.length ? bars[bars.length-1].close : 0, [bars])
   const priceChange = useMemo(() => {
     if (bars.length < 2) return 0
@@ -284,7 +286,26 @@ export default function TradeTerminalPage() {
               </Button>
             </div>
 
-            <div className="h-80 w-full bg-gradient-to-b from-[#252838] to-[#1a1d2e] rounded-xl p-4 border border-gray-800">
+            <div 
+              className="h-80 w-full bg-gradient-to-b from-[#252838] to-[#1a1d2e] rounded-xl p-4 border border-gray-800 relative"
+              onMouseMove={(e) => {
+                if (bars.length === 0) return
+                const rect = e.currentTarget.getBoundingClientRect()
+                const svgRect = e.currentTarget.querySelector('svg')?.getBoundingClientRect()
+                if (!svgRect) return
+                const x = e.clientX - svgRect.left
+                const svgWidth = svgRect.width
+                const percentage = x / svgWidth
+                const index = Math.round(percentage * (bars.length - 1))
+                const clampedIndex = Math.max(0, Math.min(bars.length - 1, index))
+                setHoverIndex(clampedIndex)
+                setMouseX(e.clientX - rect.left)
+              }}
+              onMouseLeave={() => {
+                setHoverIndex(null)
+                setMouseX(null)
+              }}
+            >
               {bars.length > 0 ? (
                 <>
                   <svg viewBox="0 0 600 280" className="w-full h-full">
@@ -317,6 +338,8 @@ export default function TradeTerminalPage() {
                       fill="none"
                       stroke={priceChange >= 0 ? "#3b82f6" : "#ef4444"}
                       strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                       points={(() => {
                         if (!bars.length) return ''
                         const dataMax = Math.max(...bars.map(b => b.high))
@@ -333,7 +356,53 @@ export default function TradeTerminalPage() {
                         }).join(' ')
                       })()}
                     />
+                    {hoverIndex !== null && (() => {
+                      const dataMax = Math.max(...bars.map(b => b.high))
+                      const dataMin = Math.min(...bars.map(b => b.low))
+                      const range = Math.max(1, dataMax - dataMin)
+                      const padding = range * 0.05
+                      const max = dataMax + padding
+                      const min = dataMin - padding
+                      const paddedRange = max - min
+                      const x = (hoverIndex / (bars.length - 1)) * 600
+                      const bar = bars[hoverIndex]
+                      const y = 280 - ((bar.close - min) / paddedRange) * 260
+                      return (
+                        <>
+                          <line
+                            x1={x}
+                            y1={0}
+                            x2={x}
+                            y2={280}
+                            stroke="#9ca3af"
+                            strokeWidth={1}
+                            strokeDasharray="3 3"
+                            opacity={0.7}
+                          />
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r={4}
+                            fill={priceChange >= 0 ? "#3b82f6" : "#ef4444"}
+                            stroke="#fff"
+                            strokeWidth={2}
+                          />
+                        </>
+                      )
+                    })()}
                   </svg>
+                  {hoverIndex !== null && mouseX !== null && (
+                    <div 
+                      className="absolute bg-[#1a1d2e] border border-gray-600 text-white text-xs p-2 rounded pointer-events-none z-10"
+                      style={{
+                        left: `${Math.min(Math.max(mouseX - 60, 10), (typeof window !== 'undefined' ? window.innerWidth : 1200) - 150)}px`,
+                        top: '10px'
+                      }}
+                    >
+                      <div className="font-bold mb-1">Time: {bars[hoverIndex].time}</div>
+                      <div>Value: <span className="font-mono">${bars[hoverIndex].close.toFixed(2)}</span></div>
+                    </div>
+                  )}
                   <div className="absolute bottom-4 left-4 text-white text-xs bg-[#1a1d2e]/80 p-3 rounded-lg backdrop-blur">
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                       <div>Open: <span className="font-mono">${bars[0].open.toFixed(2)}</span></div>

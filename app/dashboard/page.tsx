@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { TrendingUp, TrendingDown, Activity, DollarSign, AlertTriangle, CheckCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { authFetch } from '@/lib/api-client'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Cursor } from 'recharts'
 
 export const dynamic = 'force-dynamic'
 
@@ -444,11 +444,17 @@ export default function DashboardPage() {
                     domain={calculateYAxisDomain(trendData, ['portfolio', 'benchmark'])}
                   />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
-                    labelStyle={{ color: '#fff' }}
+                    contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '4px' }}
+                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
+                    formatter={(value: any, name: string) => [
+                      typeof value === 'number' ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value,
+                      name === 'portfolio' ? 'Your Portfolio' : 'Benchmark'
+                    ]}
+                    labelFormatter={(label) => `Time: ${label}`}
                   />
-                  <Area type="monotone" dataKey="portfolio" stroke="#60a5fa" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
-                  <Area type="monotone" dataKey="benchmark" stroke="#93c5fd" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
+                  <Cursor stroke="#60a5fa" strokeWidth={1} strokeDasharray="3 3" />
+                  <Area type="linear" dataKey="portfolio" stroke="#60a5fa" strokeWidth={3} fillOpacity={1} fill="url(#portfolioGradient)" />
+                  <Area type="linear" dataKey="benchmark" stroke="#93c5fd" strokeWidth={2} fillOpacity={1} fill="url(#benchmarkGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -510,10 +516,13 @@ export default function DashboardPage() {
                       domain={calculateYAxisDomain(riskData, ['count'])}
                     />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
-                      labelStyle={{ color: '#fff' }}
+                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '4px' }}
+                      labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
+                      formatter={(value: any) => [value, 'Count']}
+                      labelFormatter={(label) => `Symbol: ${label}`}
                     />
-                    <Bar dataKey="count" fill="#60a5fa" radius={[8, 8, 0, 0]} />
+                    <Cursor stroke="#60a5fa" strokeWidth={1} strokeDasharray="3 3" />
+                    <Bar dataKey="count" fill="#60a5fa" radius={[0, 0, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
