@@ -195,6 +195,31 @@ export default function DashboardPage() {
     }
   }
 
+  // Helper function to calculate dynamic Y-axis domain with 5% padding
+  const calculateYAxisDomain = (data: any[], dataKeys: string[]): [number, number] => {
+    if (!data || data.length === 0) return [0, 100]
+    
+    let min = Infinity
+    let max = -Infinity
+    
+    data.forEach((item) => {
+      dataKeys.forEach((key) => {
+        const value = item[key]
+        if (typeof value === 'number' && !isNaN(value)) {
+          min = Math.min(min, value)
+          max = Math.max(max, value)
+        }
+      })
+    })
+    
+    if (min === Infinity || max === -Infinity) return [0, 100]
+    
+    const range = max - min
+    const padding = range * 0.05 // 5% padding
+    
+    return [min - padding, max + padding]
+  }
+
   return (
     <div className="min-h-screen text-white p-8">
       {/* Header */}
@@ -414,7 +439,10 @@ export default function DashboardPage() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis dataKey="date" stroke="#9ca3af" />
-                  <YAxis stroke="#9ca3af" />
+                  <YAxis 
+                    stroke="#9ca3af" 
+                    domain={calculateYAxisDomain(trendData, ['portfolio', 'benchmark'])}
+                  />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
                     labelStyle={{ color: '#fff' }}
@@ -477,7 +505,10 @@ export default function DashboardPage() {
                   <BarChart data={riskData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                     <XAxis dataKey="type" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
+                    <YAxis 
+                      stroke="#9ca3af" 
+                      domain={calculateYAxisDomain(riskData, ['count'])}
+                    />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}
                       labelStyle={{ color: '#fff' }}

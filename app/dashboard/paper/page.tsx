@@ -288,6 +288,31 @@ export default function PaperTradingPage() {
     }
   }
 
+  // Helper function to calculate dynamic Y-axis domain with 5% padding
+  const calculateYAxisDomain = (data: any[], dataKeys: string[]): [number, number] => {
+    if (!data || data.length === 0) return [0, 100]
+    
+    let min = Infinity
+    let max = -Infinity
+    
+    data.forEach((item) => {
+      dataKeys.forEach((key) => {
+        const value = item[key]
+        if (typeof value === 'number' && !isNaN(value)) {
+          min = Math.min(min, value)
+          max = Math.max(max, value)
+        }
+      })
+    })
+    
+    if (min === Infinity || max === -Infinity) return [0, 100]
+    
+    const range = max - min
+    const padding = range * 0.05 // 5% padding
+    
+    return [min - padding, max + padding]
+  }
+
   const formatCurrency = (amount: number | string) => {
     const value = typeof amount === 'string' ? parseFloat(amount) : amount
     return new Intl.NumberFormat('en-US', {
@@ -586,6 +611,7 @@ export default function PaperTradingPage() {
                       stroke="#9ca3af" 
                       tick={{ fontSize: 12 }}
                       tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                      domain={calculateYAxisDomain(chartData, ['value'])}
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '8px' }}

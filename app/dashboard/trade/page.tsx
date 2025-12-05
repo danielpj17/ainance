@@ -298,12 +298,16 @@ export default function TradeTerminalPage() {
                       fill="url(#priceGradient)"
                       points={(() => {
                         if (!bars.length) return ''
-                        const max = Math.max(...bars.map(b => b.high))
-                        const min = Math.min(...bars.map(b => b.low))
-                        const range = Math.max(1, max - min)
+                        const dataMax = Math.max(...bars.map(b => b.high))
+                        const dataMin = Math.min(...bars.map(b => b.low))
+                        const range = Math.max(1, dataMax - dataMin)
+                        const padding = range * 0.05 // 5% padding
+                        const max = dataMax + padding
+                        const min = dataMin - padding
+                        const paddedRange = max - min
                         const points = bars.map((b, i) => {
                           const x = (i/(bars.length-1)) * 600
-                          const y = 280 - ((b.close - min)/range) * 260
+                          const y = 280 - ((b.close - min)/paddedRange) * 260
                           return `${x},${y}`
                         }).join(' ')
                         return points + ` 600,280 0,280`
@@ -315,12 +319,16 @@ export default function TradeTerminalPage() {
                       strokeWidth="3"
                       points={(() => {
                         if (!bars.length) return ''
-                        const max = Math.max(...bars.map(b => b.high))
-                        const min = Math.min(...bars.map(b => b.low))
-                        const range = Math.max(1, max - min)
+                        const dataMax = Math.max(...bars.map(b => b.high))
+                        const dataMin = Math.min(...bars.map(b => b.low))
+                        const range = Math.max(1, dataMax - dataMin)
+                        const padding = range * 0.05 // 5% padding
+                        const max = dataMax + padding
+                        const min = dataMin - padding
+                        const paddedRange = max - min
                         return bars.map((b, i) => {
                           const x = (i/(bars.length-1)) * 600
-                          const y = 280 - ((b.close - min)/range) * 260
+                          const y = 280 - ((b.close - min)/paddedRange) * 260
                           return `${x},${y}`
                         }).join(' ')
                       })()}
