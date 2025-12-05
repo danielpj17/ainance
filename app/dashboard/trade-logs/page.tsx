@@ -9,7 +9,7 @@ import { TrendingUp, TrendingDown, Clock, DollarSign, Activity, Target } from 'l
 import { createClient } from '@/utils/supabase/client'
 
 interface CurrentTrade {
-  id: bigint
+  id: number | string
   symbol: string
   qty: number
   buy_price: number
@@ -28,7 +28,7 @@ interface CurrentTrade {
 }
 
 interface CompletedTrade {
-  id: bigint
+  id: number | string
   symbol: string
   qty: number
   buy_price: number

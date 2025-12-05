@@ -33,7 +33,7 @@ export interface TradeLog {
 }
 
 export interface CurrentTrade {
-  id: bigint
+  id: number | string
   symbol: string
   qty: number
   buy_price: number
@@ -52,7 +52,7 @@ export interface CurrentTrade {
 }
 
 export interface CompletedTrade {
-  id: bigint
+  id: number | string
   symbol: string
   qty: number
   buy_price: number
@@ -562,9 +562,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 
                 // Store transaction IDs for this grouped trade
                 const transactionIds = trades.map(t => t.id.toString())
-                    
-                    currentTrades.push({
-                  id: BigInt(mostRecentTrade.id),
+                
+                // Convert id to number (not BigInt) to avoid serialization issues
+                const tradeId = typeof mostRecentTrade.id === 'bigint' 
+                  ? Number(mostRecentTrade.id) 
+                  : Number(mostRecentTrade.id)
+                
+                currentTrades.push({
+                  id: tradeId,
                   symbol,
                   qty: totalQty,
                   buy_price: avgBuyPrice,
@@ -575,14 +580,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   unrealized_pl_percent: unrealizedPlPercent,
                   holding_duration: holdingDuration,
                   buy_decision_metrics: mostRecentTrade.buy_decision_metrics || {
-                        confidence: 0,
+                    confidence: 0,
                     reasoning: 'Position from Supabase'
                   },
                   strategy: mostRecentTrade.strategy || 'cash',
                   account_type: accountType,
                   trade_pair_id: mostRecentTrade.trade_pair_id,
-                  transaction_ids: transactionIds, // Store IDs of individual transactions
-                  transaction_count: trades.length // Number of transactions in this group
+                  transaction_ids: transactionIds,
+                  transaction_count: trades.length
                 })
               }
             }
@@ -834,20 +839,34 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 .limit(1)
                 .single()
               
-              if (matchingBuy && !buyTrades.find(t => t.id === matchingBuy.id)) {
-                // Create a completed trade from the matched buy/sell pair
-                const completedTrade = {
-                  ...matchingBuy,
-                  status: 'closed',
-                  sell_price: parseFloat(sellTrade.price || '0'),
-                  sell_timestamp: sellTrade.timestamp,
-                  sell_decision_metrics: sellTrade.sell_decision_metrics,
-                  profit_loss: (parseFloat(sellTrade.price || '0') - parseFloat(matchingBuy.buy_price || '0')) * parseFloat(matchingBuy.qty || '0'),
-                  profit_loss_percent: parseFloat(matchingBuy.buy_price || '0') > 0 
-                    ? ((parseFloat(sellTrade.price || '0') - parseFloat(matchingBuy.buy_price || '0')) / parseFloat(matchingBuy.buy_price || '0')) * 100 
-                    : 0
+              if (matchingBuy) {
+                // Convert id for comparison
+                const matchId = typeof matchingBuy.id === 'bigint' ? Number(matchingBuy.id) : Number(matchingBuy.id)
+                const exists = buyTrades.some(t => {
+                  const existingId = typeof t.id === 'bigint' ? Number(t.id) : Number(t.id)
+                  return matchId === existingId
+                })
+                
+                if (!exists) {
+                  // Create a completed trade from the matched buy/sell pair
+                  const tradeId = typeof matchingBuy.id === 'bigint' 
+                    ? Number(matchingBuy.id) 
+                    : Number(matchingBuy.id)
+                  
+                  const completedTrade = {
+                    ...matchingBuy,
+                    id: tradeId,
+                    status: 'closed',
+                    sell_price: parseFloat(sellTrade.price || '0'),
+                    sell_timestamp: sellTrade.timestamp,
+                    sell_decision_metrics: sellTrade.sell_decision_metrics,
+                    profit_loss: (parseFloat(sellTrade.price || '0') - parseFloat(matchingBuy.buy_price || '0')) * parseFloat(matchingBuy.qty || '0'),
+                    profit_loss_percent: parseFloat(matchingBuy.buy_price || '0') > 0 
+                      ? ((parseFloat(sellTrade.price || '0') - parseFloat(matchingBuy.buy_price || '0')) / parseFloat(matchingBuy.buy_price || '0')) * 100 
+                      : 0
+                  }
+                  buyTrades.push(completedTrade)
                 }
-                buyTrades.push(completedTrade)
               }
             }
           }
@@ -952,7 +971,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const transactionIds = trades.map(t => t.id.toString())
                 
                 completedTrades.push({
-                  id: BigInt(mostRecent.id),
+                  id: typeof mostRecent.id === 'bigint' ? mostRecent.id.toString() : Number(mostRecent.id),
                   symbol,
                   qty: totalQty,
                   buy_price: trades.reduce((sum, t) => {
@@ -975,7 +994,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   trade_pair_id: mostRecent.trade_pair_id,
                   transaction_ids: transactionIds,
                   transaction_count: trades.length
-                } as any)
+                })
               }
             }
           }
