@@ -57,7 +57,10 @@ END;
 $$;
 
 -- Function to get current trades (simplified and optimized)
-CREATE OR REPLACE FUNCTION get_current_trades_optimized(
+-- Drop existing function first if it exists (to allow return type changes)
+DROP FUNCTION IF EXISTS get_current_trades_optimized(uuid, text);
+
+CREATE FUNCTION get_current_trades_optimized(
   user_uuid uuid,
   account_type_param text DEFAULT NULL
 )
@@ -76,7 +79,10 @@ RETURNS TABLE (
   strategy text,
   account_type text,
   trade_pair_id uuid,
-  status text
+  status text,
+  total_value numeric,
+  price numeric,
+  "timestamp" timestamptz
 ) 
 LANGUAGE plpgsql
 STABLE
@@ -98,7 +104,10 @@ BEGIN
     t.strategy,
     t.account_type,
     t.trade_pair_id,
-    t.status
+    t.status,
+    t.total_value,
+    t.price,
+    t.timestamp
   FROM trade_logs t
   WHERE t.user_id = user_uuid
     AND t.action = 'buy'

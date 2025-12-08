@@ -526,10 +526,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               continue
             }
             
-          // Filter to only truly open trades (no sell_price/timestamp)
-          let trulyOpenTrades = (supabaseTrades || []).filter((t: any) => 
-            !t.sell_price && !t.sell_timestamp && t.status === 'open'
-          )
+          // Filter to only truly open trades (no sell_price/timestamp) and ensure user_id matches
+          let trulyOpenTrades = (supabaseTrades || []).filter((t: any) => {
+            // Double-check user_id matches (should already be filtered by DB function, but extra safety)
+            const tradeUserId = t.user_id || t.userId
+            if (tradeUserId && tradeUserId !== userId) {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn(`[TRADE-LOGS] Filtering out trade ${t.id} - user_id mismatch: ${tradeUserId} !== ${userId}`)
+              }
+              return false
+            }
+            return !t.sell_price && !t.sell_timestamp && t.status === 'open'
+          })
             
           // Cross-reference with Alpaca's actual positions to verify they're really open
             try {
@@ -963,6 +971,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           }
           
           if (buyTrades && buyTrades.length > 0) {
+            // Filter to ensure user_id matches (extra safety check)
+            const filteredBuyTrades = buyTrades.filter((t: any) => {
+              const tradeUserId = t.user_id || t.userId
+              if (tradeUserId && tradeUserId !== userId) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`[TRADE-LOGS] Filtering out completed trade ${t.id} - user_id mismatch: ${tradeUserId} !== ${userId}`)
+                }
+                return false
+              }
+              return true
+            })
+            
+            if (process.env.NODE_ENV === 'development' && filteredBuyTrades.length !== buyTrades.length) {
+              console.log(`[TRADE-LOGS] Filtered ${buyTrades.length - filteredBuyTrades.length} completed trades due to user_id mismatch`)
+            }
+            
             // Helper function to group completed trades by similar buy/sell price and timestamp
             function groupSimilarCompletedTrades(trades: any[]): any[][] {
         if (trades.length === 0) return []
@@ -1011,7 +1035,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             
             // Group by symbol first
             const completedBySymbol = new Map<string, any[]>()
-            for (const trade of buyTrades) {
+            for (const trade of filteredBuyTrades) {
               const symbol = trade.symbol.toUpperCase()
               if (!completedBySymbol.has(symbol)) {
                 completedBySymbol.set(symbol, [])
@@ -1033,11 +1057,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 
                 // Aggregate quantities and calculate weighted average buy price
                 const totalQty = trades.reduce((sum, t) => sum + parseFloat(t.qty || '0'), 0)
-                const weightedBuyPrice = trades.reduce((sum, t) => {
+                const totalValue = trades.reduce((sum, t) => {
                   const qty = parseFloat(t.qty || '0')
-                  const price = parseFloat(t.buy_price || '0')
-                  return sum + (price * qty)
-                }, 0) / totalQty
+                  let buyPrice = parseFloat(t.buy_price || t.price || '0')
+                  
+                  // Safety check: if buy_price seems wrong (likely stored as total_value instead of per-share),
+                  // try to calculate it from total_value / qty
+                  if (buyPrice > 0 && t.total_value && qty > 0) {
+                    const totalValueNum = parseFloat(t.total_value)
+                    const calculatedPerShare = totalValueNum / qty
+                    
+                    // If buy_price is way higher than calculated per-share (more than 1.5x), it's likely wrong
+                    // Also check if buy_price matches total_value (which would indicate it was stored incorrectly)
+                    if (Math.abs(buyPrice - totalValueNum) < 0.01 || buyPrice > calculatedPerShare * 1.5) {
+                      buyPrice = calculatedPerShare
+                      if (process.env.NODE_ENV === 'development') {
+                        console.log(`[TRADE-LOGS] Corrected buy_price for completed trade ${t.symbol}: was ${buyPrice}, now ${calculatedPerShare} (from total_value ${totalValueNum} / qty ${qty})`)
+                      }
+                    }
+                  }
+                  
+                  return sum + (buyPrice * qty)
+                }, 0)
+                const weightedBuyPrice = totalQty > 0 ? totalValue / totalQty : 0
                 
                 // Use most recent trade for sell price and timestamps
                 const mostRecent = trades[0]
