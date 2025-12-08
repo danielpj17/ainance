@@ -549,7 +549,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           if (process.env.NODE_ENV === 'development') {
             console.log(`[TRADE-LOGS] After filtering for ${accountType}: ${trulyOpenTrades.length} trades (from ${supabaseTrades?.length || 0} total) for user ${userId}`)
             if (trulyOpenTrades.length > 0) {
-              console.log(`[TRADE-LOGS] Sample trades for ${accountType}:`, trulyOpenTrades.slice(0, 3).map(t => ({
+              console.log(`[TRADE-LOGS] Sample trades for ${accountType}:`, trulyOpenTrades.slice(0, 3).map((t: any) => ({
                 symbol: t.symbol,
                 qty: t.qty,
                 buy_price: t.buy_price,
