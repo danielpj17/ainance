@@ -532,12 +532,32 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             const tradeUserId = t.user_id || t.userId
             if (tradeUserId && tradeUserId !== userId) {
               if (process.env.NODE_ENV === 'development') {
-                console.warn(`[TRADE-LOGS] Filtering out trade ${t.id} - user_id mismatch: ${tradeUserId} !== ${userId}`)
+                console.warn(`[TRADE-LOGS] Filtering out trade ${t.id} for ${accountType} - user_id mismatch: ${tradeUserId} !== ${userId}`)
+              }
+              return false
+            }
+            // Also verify account_type matches
+            if (t.account_type && t.account_type !== accountType) {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn(`[TRADE-LOGS] Filtering out trade ${t.id} for ${accountType} - account_type mismatch: ${t.account_type} !== ${accountType}`)
               }
               return false
             }
             return !t.sell_price && !t.sell_timestamp && t.status === 'open'
           })
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[TRADE-LOGS] After filtering for ${accountType}: ${trulyOpenTrades.length} trades (from ${supabaseTrades?.length || 0} total) for user ${userId}`)
+            if (trulyOpenTrades.length > 0) {
+              console.log(`[TRADE-LOGS] Sample trades for ${accountType}:`, trulyOpenTrades.slice(0, 3).map(t => ({
+                symbol: t.symbol,
+                qty: t.qty,
+                buy_price: t.buy_price,
+                account_type: t.account_type,
+                user_id: t.user_id
+              })))
+            }
+          }
             
           // Cross-reference with Alpaca's actual positions to verify they're really open
             try {
@@ -684,16 +704,47 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   
                   // Safety check: if buy_price seems wrong (likely stored as total_value instead of per-share),
                   // try to calculate it from total_value / qty
-                  if (buyPrice > 0 && t.total_value && qty > 0) {
-                    const totalValueNum = parseFloat(t.total_value)
-                    const calculatedPerShare = totalValueNum / qty
+                  if (buyPrice > 0 && qty > 0) {
+                    // Method 1: Use total_value if available
+                    if (t.total_value) {
+                      const totalValueNum = parseFloat(t.total_value)
+                      const calculatedPerShare = totalValueNum / qty
+                      
+                      // If buy_price matches total_value exactly (within 0.01), it was stored incorrectly
+                      if (Math.abs(buyPrice - totalValueNum) < 0.01) {
+                        buyPrice = calculatedPerShare
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log(`[TRADE-LOGS] Corrected buy_price for ${t.symbol}: was ${buyPrice} (matched total_value), now ${calculatedPerShare} (from total_value ${totalValueNum} / qty ${qty})`)
+                        }
+                      }
+                      // If buy_price is way higher than calculated per-share (more than 1.5x), it's likely wrong
+                      else if (buyPrice > calculatedPerShare * 1.5) {
+                        buyPrice = calculatedPerShare
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log(`[TRADE-LOGS] Corrected buy_price for ${t.symbol}: was ${buyPrice}, now ${calculatedPerShare} (from total_value ${totalValueNum} / qty ${qty})`)
+                        }
+                      }
+                    }
                     
-                    // If buy_price is way higher than calculated per-share (more than 1.5x), it's likely wrong
-                    // Also check if buy_price matches total_value (which would indicate it was stored incorrectly)
-                    if (Math.abs(buyPrice - totalValueNum) < 0.01 || buyPrice > calculatedPerShare * 1.5) {
-                      buyPrice = calculatedPerShare
-                      if (process.env.NODE_ENV === 'development') {
-                        console.log(`[TRADE-LOGS] Corrected buy_price for ${t.symbol}: was ${buyPrice}, now ${calculatedPerShare} (from total_value ${totalValueNum} / qty ${qty})`)
+                    // Method 2: Check if buy_price seems unreasonably high compared to current price
+                    // If we have a current price, and buy_price is more than 10x the current price, it's likely wrong
+                    const currentPrice = priceMap.get(t.symbol.toUpperCase())
+                    if (currentPrice && buyPrice > currentPrice * 10) {
+                      // Try to estimate correct buy price from position value
+                      // If we have total_value, use that; otherwise, estimate from current price
+                      if (t.total_value) {
+                        const totalValueNum = parseFloat(t.total_value)
+                        const calculatedPerShare = totalValueNum / qty
+                        buyPrice = calculatedPerShare
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log(`[TRADE-LOGS] Corrected buy_price for ${t.symbol}: was ${buyPrice} (unreasonably high vs current ${currentPrice}), now ${calculatedPerShare} (from total_value ${totalValueNum} / qty ${qty})`)
+                        }
+                      } else {
+                        // Fallback: estimate buy price as slightly above current price (assuming small loss)
+                        buyPrice = currentPrice * 1.1
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log(`[TRADE-LOGS] Estimated buy_price for ${t.symbol}: was ${buyPrice} (unreasonably high vs current ${currentPrice}), now ${buyPrice} (estimated)`)
+                        }
                       }
                     }
                   }
@@ -971,20 +1022,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           }
           
           if (buyTrades && buyTrades.length > 0) {
-            // Filter to ensure user_id matches (extra safety check)
+            // Filter to ensure user_id and account_type matches (extra safety check)
             const filteredBuyTrades = buyTrades.filter((t: any) => {
               const tradeUserId = t.user_id || t.userId
               if (tradeUserId && tradeUserId !== userId) {
                 if (process.env.NODE_ENV === 'development') {
-                  console.warn(`[TRADE-LOGS] Filtering out completed trade ${t.id} - user_id mismatch: ${tradeUserId} !== ${userId}`)
+                  console.warn(`[TRADE-LOGS] Filtering out completed trade ${t.id} for ${accountType} - user_id mismatch: ${tradeUserId} !== ${userId}`)
+                }
+                return false
+              }
+              // Also verify account_type matches
+              if (t.account_type && t.account_type !== accountType) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`[TRADE-LOGS] Filtering out completed trade ${t.id} for ${accountType} - account_type mismatch: ${t.account_type} !== ${accountType}`)
                 }
                 return false
               }
               return true
             })
             
-            if (process.env.NODE_ENV === 'development' && filteredBuyTrades.length !== buyTrades.length) {
-              console.log(`[TRADE-LOGS] Filtered ${buyTrades.length - filteredBuyTrades.length} completed trades due to user_id mismatch`)
+            if (process.env.NODE_ENV === 'development') {
+              if (filteredBuyTrades.length !== buyTrades.length) {
+                console.log(`[TRADE-LOGS] Filtered ${buyTrades.length - filteredBuyTrades.length} completed trades due to user_id/account_type mismatch for ${accountType}`)
+              }
+              console.log(`[TRADE-LOGS] After filtering for ${accountType}: ${filteredBuyTrades.length} completed trades (from ${buyTrades.length} total) for user ${userId}`)
             }
             
             // Helper function to group completed trades by similar buy/sell price and timestamp
