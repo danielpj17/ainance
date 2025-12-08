@@ -672,7 +672,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 // Calculate total value from buy_price * qty (more reliable than total_value field)
                 const totalValue = trades.reduce((sum, t) => {
                   const qty = parseFloat(t.qty || '0')
-                  const buyPrice = parseFloat(t.buy_price || t.price || '0')
+                  let buyPrice = parseFloat(t.buy_price || t.price || '0')
+                  
+                  // Safety check: if buy_price seems wrong (likely stored as total_value instead of per-share),
+                  // try to calculate it from total_value / qty
+                  if (buyPrice > 0 && t.total_value && qty > 0) {
+                    const totalValueNum = parseFloat(t.total_value)
+                    const calculatedPerShare = totalValueNum / qty
+                    
+                    // If buy_price is way higher than calculated per-share (more than 1.5x), it's likely wrong
+                    // Also check if buy_price matches total_value (which would indicate it was stored incorrectly)
+                    if (Math.abs(buyPrice - totalValueNum) < 0.01 || buyPrice > calculatedPerShare * 1.5) {
+                      buyPrice = calculatedPerShare
+                      if (process.env.NODE_ENV === 'development') {
+                        console.log(`[TRADE-LOGS] Corrected buy_price for ${t.symbol}: was ${buyPrice}, now ${calculatedPerShare} (from total_value ${totalValueNum} / qty ${qty})`)
+                      }
+                    }
+                  }
+                  
                   return sum + (buyPrice * qty)
                 }, 0)
                 const avgBuyPrice = totalQty > 0 ? totalValue / totalQty : 0
