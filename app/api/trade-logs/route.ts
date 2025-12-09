@@ -559,8 +559,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             }
           }
             
-          // Cross-reference with Alpaca's actual positions to verify they're really open
-            try {
+          // Cross-reference with Alpaca's actual positions to get REAL position data
+          // Use Alpaca as the source of truth for current positions
+          const alpacaPositionsMap = new Map<string, any>()
+          try {
             const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, accountType)
             if (apiKey && secretKey) {
               const alpacaClient = createAlpacaClient({
@@ -571,18 +573,57 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               })
               await alpacaClient.initialize()
               
-              // Get actual positions from Alpaca
+              // Get actual positions from Alpaca - this is the source of truth
               const alpacaPositions = await alpacaClient.getPositions()
-              const alpacaSymbols = new Set(alpacaPositions.map((p: any) => p.symbol.toUpperCase()))
+              
+              for (const pos of alpacaPositions) {
+                alpacaPositionsMap.set(pos.symbol.toUpperCase(), {
+                  symbol: pos.symbol.toUpperCase(),
+                  qty: parseFloat(pos.qty || '0'),
+                  avg_entry_price: parseFloat(pos.avg_entry_price || '0'),
+                  current_price: parseFloat(pos.current_price || '0'),
+                  market_value: parseFloat(pos.market_value || '0'),
+                  unrealized_pl: parseFloat(pos.unrealized_pl || '0'),
+                  unrealized_plpc: parseFloat(pos.unrealized_plpc || '0') * 100, // Convert to percentage
+                  cost_basis: parseFloat(pos.cost_basis || '0')
+                })
+              }
               
               if (process.env.NODE_ENV === 'development') {
-                console.log(`[TRADE-LOGS] Alpaca has ${alpacaPositions.length} open positions for ${accountType}:`, Array.from(alpacaSymbols))
+                console.log(`[TRADE-LOGS] Alpaca has ${alpacaPositions.length} open positions for ${accountType}:`, Array.from(alpacaPositionsMap.keys()))
               }
               
               // Filter to only include trades that exist in Alpaca
               trulyOpenTrades = trulyOpenTrades.filter((t: any) =>
-                alpacaSymbols.has(t.symbol.toUpperCase())
+                alpacaPositionsMap.has(t.symbol.toUpperCase())
               )
+              
+              // Also mark trades that don't exist in Alpaca as closed in the database
+              const closedSymbols = supabaseTrades?.filter((t: any) => 
+                !alpacaPositionsMap.has(t.symbol.toUpperCase()) && t.status === 'open'
+              ) || []
+              
+              if (closedSymbols.length > 0) {
+                // Mark these trades as closed in the database
+                for (const trade of closedSymbols) {
+                  try {
+                    await supabase
+                      .from('trade_logs')
+                      .update({ 
+                        status: 'closed',
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('id', trade.id)
+                      .eq('user_id', userId)
+                    
+                    if (process.env.NODE_ENV === 'development') {
+                      console.log(`[TRADE-LOGS] Marked trade ${trade.id} (${trade.symbol}) as closed - no longer in Alpaca`)
+                    }
+                  } catch (updateError) {
+                    console.error(`[TRADE-LOGS] Error marking trade ${trade.id} as closed:`, updateError)
+                  }
+                }
+              }
               
               if (process.env.NODE_ENV === 'development') {
                 console.log(`[TRADE-LOGS] After Alpaca cross-reference: ${trulyOpenTrades.length} truly open positions for ${accountType}`)
@@ -642,6 +683,65 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               return groups
             }
             
+            // Use Alpaca positions as the source of truth for current positions
+            // This fixes issues with old trades being aggregated incorrectly
+            if (alpacaPositionsMap.size > 0) {
+              for (const [symbol, alpacaPos] of alpacaPositionsMap) {
+                // Find the most recent trade for this symbol to get decision metrics
+                const tradesForSymbol = trulyOpenTrades.filter((t: any) => t.symbol.toUpperCase() === symbol)
+                const mostRecentTrade = tradesForSymbol.length > 0 
+                  ? tradesForSymbol.sort((a: any, b: any) => 
+                      new Date(b.timestamp || b.buy_timestamp).getTime() - new Date(a.timestamp || a.buy_timestamp).getTime()
+                    )[0]
+                  : null
+                
+                // Calculate holding duration from most recent trade (or use current time if no trade found)
+                const buyTime = mostRecentTrade 
+                  ? new Date(mostRecentTrade.buy_timestamp || mostRecentTrade.timestamp).getTime()
+                  : Date.now() - (24 * 60 * 60 * 1000) // Default to 1 day ago
+                const now = Date.now()
+                const duration = now - buyTime
+                const totalSeconds = Math.floor(duration / 1000)
+                const days = Math.floor(totalSeconds / 86400)
+                const hours = Math.floor((totalSeconds % 86400) / 3600)
+                const minutes = Math.floor((totalSeconds % 3600) / 60)
+                const holdingDuration = days > 0 
+                  ? `${days}d ${hours}h`
+                  : `${hours}h ${minutes}m`
+                
+                // Use Alpaca's data directly - this is the source of truth
+                currentTrades.push({
+                  id: mostRecentTrade?.id || Date.now(),
+                  symbol: symbol,
+                  qty: alpacaPos.qty,
+                  buy_price: alpacaPos.avg_entry_price, // Use Alpaca's entry price
+                  buy_timestamp: mostRecentTrade?.buy_timestamp || mostRecentTrade?.timestamp || new Date().toISOString(),
+                  current_price: alpacaPos.current_price,
+                  current_value: alpacaPos.market_value,
+                  unrealized_pl: alpacaPos.unrealized_pl,
+                  unrealized_pl_percent: alpacaPos.unrealized_plpc,
+                  holding_duration: holdingDuration,
+                  buy_decision_metrics: mostRecentTrade?.buy_decision_metrics || {
+                    confidence: 0,
+                    reasoning: 'Position from Alpaca'
+                  },
+                  strategy: mostRecentTrade?.strategy || 'cash',
+                  account_type: accountType,
+                  trade_pair_id: mostRecentTrade?.trade_pair_id,
+                  transaction_ids: tradesForSymbol.map((t: any) => t.id?.toString()).filter(Boolean),
+                  transaction_count: tradesForSymbol.length
+                })
+                
+                if (process.env.NODE_ENV === 'development') {
+                  console.log(`[TRADE-LOGS] Using Alpaca position for ${symbol}: qty=${alpacaPos.qty}, entry=$${alpacaPos.avg_entry_price}, current=$${alpacaPos.current_price}`)
+                }
+              }
+              
+              // Skip the old trade aggregation logic since we're using Alpaca data
+              continue
+            }
+            
+            // Fallback: If Alpaca positions aren't available, use trade history
             // Group by symbol first
             const tradesBySymbol = new Map<string, any[]>()
             for (const trade of trulyOpenTrades) {
