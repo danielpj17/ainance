@@ -577,15 +577,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               const alpacaPositions = await alpacaClient.getPositions()
               
               for (const pos of alpacaPositions) {
-                alpacaPositionsMap.set(pos.symbol.toUpperCase(), {
-                  symbol: pos.symbol.toUpperCase(),
-                  qty: parseFloat(pos.qty || '0'),
-                  avg_entry_price: parseFloat(pos.avg_entry_price || '0'),
-                  current_price: parseFloat(pos.current_price || '0'),
-                  market_value: parseFloat(pos.market_value || '0'),
-                  unrealized_pl: parseFloat(pos.unrealized_pl || '0'),
-                  unrealized_plpc: parseFloat(pos.unrealized_plpc || '0') * 100, // Convert to percentage
-                  cost_basis: parseFloat(pos.cost_basis || '0')
+                const p = pos as any // Cast to any to access all Alpaca API properties
+                alpacaPositionsMap.set(p.symbol.toUpperCase(), {
+                  symbol: p.symbol.toUpperCase(),
+                  qty: parseFloat(p.qty || '0'),
+                  avg_entry_price: parseFloat(p.avg_entry_price || p.avgEntryPrice || '0'),
+                  current_price: parseFloat(p.current_price || p.currentPrice || '0'),
+                  market_value: parseFloat(p.market_value || p.marketValue || '0'),
+                  unrealized_pl: parseFloat(p.unrealized_pl || p.unrealizedPl || '0'),
+                  unrealized_plpc: parseFloat(p.unrealized_plpc || p.unrealizedPlpc || '0') * 100, // Convert to percentage
+                  cost_basis: parseFloat(p.cost_basis || p.costBasis || '0')
                 })
               }
               
