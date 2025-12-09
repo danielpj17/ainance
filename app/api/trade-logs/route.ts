@@ -474,6 +474,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     let completedTrades: CompletedTrade[] = []
     let statistics: TradeStatistics | null = null
 
+    // Only include trades from November 1, 2025 onwards (ML model started then)
+    const TRADE_CUTOFF_DATE = new Date('2025-11-01T00:00:00Z')
+
     // Statistics will be calculated from Alpaca data after fetching trades
 
     // Fetch current positions from Supabase only (no Alpaca calls)
@@ -528,6 +531,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             
           // Filter to only truly open trades (no sell_price/timestamp) and ensure user_id matches
           let trulyOpenTrades = (supabaseTrades || []).filter((t: any) => {
+            // Filter out trades before the cutoff date (ML model started November 2025)
+            const tradeDate = new Date(t.buy_timestamp || t.timestamp)
+            if (tradeDate < TRADE_CUTOFF_DATE) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`[TRADE-LOGS] Filtering out trade ${t.id} (${t.symbol}) - before cutoff date: ${tradeDate.toISOString()}`)
+              }
+              return false
+            }
+            
             // Double-check user_id matches (should already be filtered by DB function, but extra safety)
             const tradeUserId = t.user_id || t.userId
             if (tradeUserId && tradeUserId !== userId) {
@@ -1125,6 +1137,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           if (buyTrades && buyTrades.length > 0) {
             // Filter to ensure user_id and account_type matches (extra safety check)
             const filteredBuyTrades = buyTrades.filter((t: any) => {
+              // Filter out trades before the cutoff date (ML model started November 2025)
+              const tradeDate = new Date(t.buy_timestamp || t.timestamp)
+              if (tradeDate < TRADE_CUTOFF_DATE) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.log(`[TRADE-LOGS] Filtering out completed trade ${t.id} (${t.symbol}) - before cutoff date: ${tradeDate.toISOString()}`)
+                }
+                return false
+              }
+              
               const tradeUserId = t.user_id || t.userId
               if (tradeUserId && tradeUserId !== userId) {
                 if (process.env.NODE_ENV === 'development') {
