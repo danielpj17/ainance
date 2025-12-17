@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle, Info } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle, Info, X } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -84,6 +84,11 @@ export default function LiveTradingPage() {
   const [hasApiKeys, setHasApiKeys] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<CurrentPosition | null>(null)
   const [showMetricsModal, setShowMetricsModal] = useState(false)
+  const [currentSellMetrics, setCurrentSellMetrics] = useState<any>(null)
+  const [loadingCurrentMetrics, setLoadingCurrentMetrics] = useState(false)
+  const [sellingPosition, setSellingPosition] = useState<string | null>(null)
+  const [showSellConfirm, setShowSellConfirm] = useState(false)
+  const [positionToSell, setPositionToSell] = useState<CurrentPosition | null>(null)
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -342,6 +347,162 @@ export default function LiveTradingPage() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(value)
+  }
+
+  const fetchCurrentSellMetrics = async (symbol: string, currentPrice: number) => {
+    setLoadingCurrentMetrics(true)
+    setCurrentSellMetrics(null)
+    try {
+      // First get technical indicators
+      const indicatorsResponse = await fetch('/api/stocks/indicators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols: [symbol] })
+      })
+      
+      if (!indicatorsResponse.ok) {
+        throw new Error('Failed to fetch indicators')
+      }
+      
+      const indicatorsData = await indicatorsResponse.json()
+      if (!indicatorsData.success || !indicatorsData.indicators || indicatorsData.indicators.length === 0) {
+        throw new Error('No indicators available')
+      }
+      
+      const indicator = indicatorsData.indicators[0]
+      
+      // Prepare features for ML service
+      const features = [{
+        symbol: indicator.symbol,
+        rsi: indicator.rsi,
+        macd: indicator.macd,
+        macd_histogram: indicator.macd_histogram,
+        bb_width: indicator.bb_width,
+        bb_position: indicator.bb_position,
+        ema_trend: indicator.ema_trend,
+        volume_ratio: indicator.volume_ratio,
+        stochastic: indicator.stochastic,
+        price_change_1d: indicator.price_change_1d,
+        price_change_5d: indicator.price_change_5d,
+        price_change_10d: indicator.price_change_10d,
+        volatility_20: indicator.volatility_20,
+        news_sentiment: indicator.news_sentiment || 0,
+        price: currentPrice
+      }]
+      
+      // Call ML service
+      const mlResponse = await fetch('/api/ml/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          features,
+          include_probabilities: true
+        })
+      })
+      
+      if (!mlResponse.ok) {
+        throw new Error('Failed to get ML predictions')
+      }
+      
+      const mlData = await mlResponse.json()
+      if (!mlData.success || !mlData.signals || mlData.signals.length === 0) {
+        throw new Error('No ML signals available')
+      }
+      
+      // Find sell signal for this symbol
+      const sellSignal = mlData.signals.find((s: any) => s.symbol === symbol && s.action === 'sell')
+      
+      if (sellSignal) {
+        // Format as sell decision metrics
+        setCurrentSellMetrics({
+          confidence: sellSignal.confidence || 0,
+          adjusted_confidence: sellSignal.adjusted_confidence || sellSignal.confidence || 0,
+          reasoning: sellSignal.reasoning || 'No reasoning provided',
+          indicators: indicator,
+          probabilities: sellSignal.probabilities || {},
+          news_sentiment: indicator.news_sentiment || 0,
+          market_risk: indicator.market_risk || 0
+        })
+      } else {
+        // If no sell signal, create a hold signal with low confidence
+        setCurrentSellMetrics({
+          confidence: 0.3,
+          adjusted_confidence: 0.3,
+          reasoning: 'Model suggests holding position',
+          indicators: indicator,
+          probabilities: {},
+          news_sentiment: indicator.news_sentiment || 0,
+          market_risk: indicator.market_risk || 0
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching current sell metrics:', error)
+      setCurrentSellMetrics(null)
+    } finally {
+      setLoadingCurrentMetrics(false)
+    }
+  }
+
+  const handleSellPosition = async (position: CurrentPosition) => {
+    setSellingPosition(position.symbol)
+    try {
+      // Execute sell order
+      const response = await fetch('/api/trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: position.symbol,
+          side: 'sell',
+          qty: position.qty,
+          type: 'market',
+          time_in_force: 'day',
+          strategy: position.strategy,
+          account_type: position.account_type
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to execute sell order')
+      }
+      
+      // Close position in trade logs
+      const sb = supabaseRef.current
+      if (sb) {
+        const { data: { session } } = await sb.auth.getSession()
+        await fetch('/api/trade-logs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+          },
+          body: JSON.stringify({
+            action: 'sell',
+            symbol: position.symbol,
+            qty: position.qty,
+            price: data.trade.price,
+            decision_metrics: currentSellMetrics || {},
+            strategy: position.strategy,
+            account_type: position.account_type,
+            trade_pair_id: position.trade_pair_id
+          })
+        })
+      }
+      
+      setMessage({ type: 'success', text: `Successfully sold ${position.qty} shares of ${position.symbol}` })
+      setShowSellConfirm(false)
+      setPositionToSell(null)
+      
+      // Refresh positions
+      await loadCurrentPositions()
+      await loadAccountData()
+    } catch (error: any) {
+      console.error('Error selling position:', error)
+      setMessage({ type: 'error', text: error.message || 'Failed to sell position' })
+    } finally {
+      setSellingPosition(null)
+    }
   }
 
   const formatDuration = (duration: string) => {
@@ -769,20 +930,45 @@ export default function LiveTradingPage() {
                             Strategy: {position.strategy}
                           </div>
                         </div>
-                        {position.buy_decision_metrics && (
+                        <div className="flex items-center gap-2">
+                          {position.buy_decision_metrics && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedPosition(position)
+                                setShowMetricsModal(true)
+                                fetchCurrentSellMetrics(position.symbol, position.current_price)
+                              }}
+                              className="border-green-500 text-green-400 hover:bg-green-500/10"
+                            >
+                              <Info className="h-4 w-4 mr-1" />
+                              View Metrics
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              setSelectedPosition(position)
-                              setShowMetricsModal(true)
+                              setPositionToSell(position)
+                              setShowSellConfirm(true)
                             }}
-                            className="border-green-500 text-green-400 hover:bg-green-500/10"
+                            disabled={sellingPosition === position.symbol}
+                            className="border-red-500 text-red-400 hover:bg-red-500/10"
                           >
-                            <Info className="h-4 w-4 mr-1" />
-                            View Metrics
+                            {sellingPosition === position.symbol ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                Selling...
+                              </>
+                            ) : (
+                              <>
+                                <TrendingDown className="h-4 w-4 mr-1" />
+                                Sell
+                              </>
+                            )}
                           </Button>
-                        )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -799,14 +985,15 @@ export default function LiveTradingPage() {
           <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Buy Decision Metrics: {selectedPosition.symbol}</h2>
+                <h2 className="text-2xl font-bold text-white">Position Metrics: {selectedPosition.symbol}</h2>
                 <button
-                  onClick={() => setShowMetricsModal(false)}
+                  onClick={() => {
+                    setShowMetricsModal(false)
+                    setCurrentSellMetrics(null)
+                  }}
                   className="text-gray-400 hover:text-white transition-colors"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
@@ -1026,6 +1213,257 @@ export default function LiveTradingPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Current Sell Decision Metrics */}
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                  <TrendingDown className="h-5 w-5 text-red-500" />
+                  Current Sell Decision Metrics
+                </h3>
+                {loadingCurrentMetrics ? (
+                  <div className="bg-[#252838] p-8 rounded-lg border border-gray-700 flex items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-blue-500 mr-2" />
+                    <span className="text-gray-400">Fetching current metrics...</span>
+                  </div>
+                ) : currentSellMetrics ? (
+                  <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <div className="text-gray-500 text-sm mb-1">Sell Confidence</div>
+                        <div className="text-2xl font-bold text-white">
+                          {((currentSellMetrics.confidence || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-sm mb-1">Adjusted Confidence</div>
+                        <div className="text-2xl font-bold text-purple-400">
+                          {((currentSellMetrics.adjusted_confidence || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-1">Reasoning</div>
+                      <div className="text-white bg-[#1a1d2e] p-3 rounded border border-gray-700">
+                        {currentSellMetrics.reasoning || 'No reasoning provided'}
+                      </div>
+                    </div>
+
+                    {/* Current Technical Indicators */}
+                    {currentSellMetrics.indicators && (
+                      <div className="mb-4">
+                        <div className="text-gray-500 text-sm mb-2">Current Technical Indicators</div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                          {currentSellMetrics.indicators.rsi !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">RSI</div>
+                              <div className={`font-bold ${
+                                currentSellMetrics.indicators.rsi > 70 
+                                  ? 'text-red-400' 
+                                  : currentSellMetrics.indicators.rsi < 30 
+                                    ? 'text-green-400' 
+                                    : 'text-white'
+                              }`}>
+                                {currentSellMetrics.indicators.rsi.toFixed(2)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {currentSellMetrics.indicators.rsi > 70 ? 'Overbought' : 
+                                 currentSellMetrics.indicators.rsi < 30 ? 'Oversold' : 'Neutral'}
+                              </div>
+                            </div>
+                          )}
+                          {currentSellMetrics.indicators.macd !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">MACD</div>
+                              <div className={`font-bold ${
+                                currentSellMetrics.indicators.macd > 0 
+                                  ? 'text-green-400' 
+                                  : 'text-red-400'
+                              }`}>
+                                {currentSellMetrics.indicators.macd.toFixed(4)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {currentSellMetrics.indicators.macd > 0 ? 'Bullish' : 'Bearish'}
+                              </div>
+                            </div>
+                          )}
+                          {currentSellMetrics.indicators.stochastic !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">Stochastic</div>
+                              <div className={`font-bold ${
+                                currentSellMetrics.indicators.stochastic > 80 
+                                  ? 'text-red-400' 
+                                  : currentSellMetrics.indicators.stochastic < 20 
+                                    ? 'text-green-400' 
+                                    : 'text-white'
+                              }`}>
+                                {currentSellMetrics.indicators.stochastic.toFixed(2)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {currentSellMetrics.indicators.stochastic > 80 ? 'Overbought' : 
+                                 currentSellMetrics.indicators.stochastic < 20 ? 'Oversold' : 'Neutral'}
+                              </div>
+                            </div>
+                          )}
+                          {currentSellMetrics.indicators.bb_position !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">BB Position</div>
+                              <div className={`font-bold ${
+                                currentSellMetrics.indicators.bb_position > 0.9 
+                                  ? 'text-red-400' 
+                                  : currentSellMetrics.indicators.bb_position < 0.1 
+                                    ? 'text-green-400' 
+                                    : 'text-white'
+                              }`}>
+                                {(currentSellMetrics.indicators.bb_position * 100).toFixed(1)}%
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {currentSellMetrics.indicators.bb_position > 0.9 ? 'Upper Band' : 
+                                 currentSellMetrics.indicators.bb_position < 0.1 ? 'Lower Band' : 'Mid Range'}
+                              </div>
+                            </div>
+                          )}
+                          {currentSellMetrics.indicators.volume_ratio !== undefined && (
+                            <div className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                              <div className="text-gray-400 text-xs mb-1">Volume Ratio</div>
+                              <div className={`font-bold ${
+                                currentSellMetrics.indicators.volume_ratio > 2 
+                                  ? 'text-green-400' 
+                                  : currentSellMetrics.indicators.volume_ratio < 0.5 
+                                    ? 'text-yellow-400' 
+                                    : 'text-white'
+                              }`}>
+                                {currentSellMetrics.indicators.volume_ratio.toFixed(2)}x
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {currentSellMetrics.indicators.volume_ratio > 2 ? 'High Volume' : 
+                                 currentSellMetrics.indicators.volume_ratio < 0.5 ? 'Low Volume' : 'Normal'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Current Model Probabilities */}
+                    {currentSellMetrics.probabilities && Object.keys(currentSellMetrics.probabilities).length > 0 && (
+                      <div className="mb-4">
+                        <div className="text-gray-500 text-sm mb-2">Current ML Model Probabilities</div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          {Object.entries(currentSellMetrics.probabilities).map(([action, prob]: [string, any]) => (
+                            <div key={action} className="bg-[#1a1d2e] p-2 rounded border border-gray-700 text-center">
+                              <div className="text-gray-400 text-xs mb-1 capitalize">{action}</div>
+                              <div className={`font-bold ${
+                                action === 'buy' ? 'text-green-400' : 
+                                action === 'sell' ? 'text-red-400' : 
+                                'text-gray-400'
+                              }`}>
+                                {(prob * 100).toFixed(1)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="text-gray-500 mb-1">Current News Sentiment</div>
+                        <div className={`font-bold ${
+                          (currentSellMetrics.news_sentiment || 0) > 0 
+                            ? 'text-green-400' 
+                            : (currentSellMetrics.news_sentiment || 0) < 0 
+                              ? 'text-red-400' 
+                              : 'text-gray-400'
+                        }`}>
+                          {((currentSellMetrics.news_sentiment || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-500 mb-1">Current Market Risk</div>
+                        <div className={`font-bold ${
+                          (currentSellMetrics.market_risk || 0) < 0.3 
+                            ? 'text-green-400' 
+                            : (currentSellMetrics.market_risk || 0) < 0.6 
+                              ? 'text-yellow-400' 
+                              : 'text-red-400'
+                        }`}>
+                          {((currentSellMetrics.market_risk || 0) * 100).toFixed(0)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-gray-500 mb-1">Current Price</div>
+                        <div className="font-bold text-white">
+                          {formatCurrency(selectedPosition.current_price)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                    <p className="text-gray-400 text-sm">Unable to fetch current metrics. Please try again later.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sell Confirmation Modal */}
+      {showSellConfirm && positionToSell && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => {
+          setShowSellConfirm(false)
+          setPositionToSell(null)
+        }}>
+          <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-white mb-4">Confirm Sell</h2>
+              <p className="text-gray-400 mb-6">
+                Are you sure you want to sell <strong className="text-white">{positionToSell.qty} shares</strong> of <strong className="text-white">{positionToSell.symbol}</strong>?
+              </p>
+              <div className="bg-[#252838] p-4 rounded-lg mb-6">
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Current Price:</span>
+                  <span className="text-white font-semibold">{formatCurrency(positionToSell.current_price)}</span>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Position Value:</span>
+                  <span className="text-white font-semibold">{formatCurrency(positionToSell.current_value)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Unrealized P&L:</span>
+                  <span className={`font-semibold ${positionToSell.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatCurrency(positionToSell.unrealized_pl)} ({positionToSell.unrealized_pl_percent >= 0 ? '+' : ''}{positionToSell.unrealized_pl_percent.toFixed(2)}%)
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 border-gray-600 text-gray-400 hover:bg-gray-700"
+                  onClick={() => {
+                    setShowSellConfirm(false)
+                    setPositionToSell(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => handleSellPosition(positionToSell)}
+                  disabled={sellingPosition === positionToSell.symbol}
+                >
+                  {sellingPosition === positionToSell.symbol ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Selling...
+                    </>
+                  ) : (
+                    'Confirm Sell'
+                  )}
+                </Button>
               </div>
             </div>
           </div>
