@@ -7,16 +7,17 @@ export async function GET(req: NextRequest) {
   try {
     console.log('Account API - Starting request')
     
-    // Get account type from query params (default to paper for backwards compatibility)
+    // Get query params
     const { searchParams } = new URL(req.url)
     const accountType = (searchParams.get('account_type') || 'paper') as 'paper' | 'live'
+    const accountId = searchParams.get('account_id') || undefined
     
     // Get user ID from request cookies (strict: demo keys only for demo user)
     const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('Account API - User:', { userId, isDemo, accountType })
+    console.log('Account API - User:', { userId, isDemo, accountType, accountId })
     
-    // Get Alpaca keys (strict: no demo fallback for authenticated users)
-    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType)
+    // Get Alpaca keys (with optional account_id for paper trading)
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType, accountId)
     
     console.log('Account API - Keys available:', { 
       hasApiKey: !!alpacaApiKey, 

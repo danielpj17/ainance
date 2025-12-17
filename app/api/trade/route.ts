@@ -12,6 +12,7 @@ export interface TradeRequest {
   limit_price?: number
   strategy: string
   account_type: string
+  account_id?: string // Optional paper account ID
 }
 
 export interface TradeResponse {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
     const { userId, isDemo } = await getUserIdFromRequest(req)
 
     const body = await req.json()
-    const { symbol, side, qty, type, time_in_force, limit_price, strategy, account_type }: TradeRequest = body
+    const { symbol, side, qty, type, time_in_force, limit_price, strategy, account_type, account_id }: TradeRequest = body
 
     // Validate input
     if (!symbol || !side || !qty || !type || !time_in_force || !strategy || !account_type) {
@@ -39,9 +40,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeResponse
       }, { status: 400 })
     }
 
-    // Get Alpaca keys (strict: no demo fallback for authenticated users)
+    // Get Alpaca keys (with optional account_id for paper trading)
     const alpacaAccountType = account_type === 'live' ? 'live' : 'paper'
-    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper: isPaper } = await getAlpacaKeysForUser(userId, isDemo, alpacaAccountType)
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper: isPaper, accountName, accountNumber } = await getAlpacaKeysForUser(userId, isDemo, alpacaAccountType, account_id)
 
     // Final check to ensure keys are available (NO demo fallback)
     if (!alpacaApiKey || !alpacaSecretKey) {

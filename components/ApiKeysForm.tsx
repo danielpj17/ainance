@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Loader2, Key, Shield, AlertTriangle, Sparkles, ChevronDown, ChevronUp, HelpCircle, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import PaperAccountManager from './PaperAccountManager'
 
 export default function ApiKeysForm() {
   const [loading, setLoading] = useState(false)
@@ -76,8 +77,9 @@ export default function ApiKeysForm() {
     setMessage('')
 
     try {
-      if (!apiKeys.alpacaPaperKey || !apiKeys.alpacaPaperSecret) {
-        setMessage('Paper trading keys are required')
+      // Only save if live keys are provided (paper keys are now managed separately)
+      if (!apiKeys.alpacaLiveKey && !apiKeys.alpacaLiveSecret) {
+        setMessage('Please provide live trading keys to save')
         return
       }
 
@@ -120,16 +122,23 @@ export default function ApiKeysForm() {
   }
 
   return (
-    <Card className="glass-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Key className="h-5 w-5" />
-          Trading API Keys
-        </CardTitle>
-        <CardDescription>
-          Your keys are encrypted at rest. Paper keys are required to run the bot in test mode.
-        </CardDescription>
-      </CardHeader>
+    <div className="space-y-6">
+      {/* Paper Trading Accounts Manager */}
+      {!isDemo && (
+        <PaperAccountManager />
+      )}
+
+      {/* Legacy API Keys Form (for live trading and backward compatibility) */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Key className="h-5 w-5" />
+            Live Trading API Keys
+          </CardTitle>
+          <CardDescription>
+            Configure your live trading API keys. Paper trading accounts are managed above.
+          </CardDescription>
+        </CardHeader>
       <CardContent className="space-y-6">
         {isDemo && (
           <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800">
@@ -226,29 +235,21 @@ export default function ApiKeysForm() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Paper Trading (Required)</h3>
-              <div>
-                <Label htmlFor="alpacaPaperKey">Alpaca Paper API Key</Label>
-                <Input id="alpacaPaperKey" value={apiKeys.alpacaPaperKey} onChange={(e) => setApiKeys(p => ({ ...p, alpacaPaperKey: e.target.value }))} placeholder="PK..." />
-              </div>
-              <div>
-                <Label htmlFor="alpacaPaperSecret">Alpaca Paper Secret</Label>
-                <Input id="alpacaPaperSecret" type="password" value={apiKeys.alpacaPaperSecret} onChange={(e) => setApiKeys(p => ({ ...p, alpacaPaperSecret: e.target.value }))} placeholder="Secret key" />
-              </div>
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Live Trading</h3>
+            <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="text-yellow-700 dark:text-yellow-200">
+                <strong>Warning:</strong> Live trading uses real money. Make sure you understand the risks before enabling live trading.
+              </AlertDescription>
+            </Alert>
+            <div>
+              <Label htmlFor="alpacaLiveKey">Alpaca Live API Key</Label>
+              <Input id="alpacaLiveKey" value={apiKeys.alpacaLiveKey} onChange={(e) => setApiKeys(p => ({ ...p, alpacaLiveKey: e.target.value }))} placeholder="AK... (optional)" />
             </div>
-
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Live Trading (Optional)</h3>
-              <div>
-                <Label htmlFor="alpacaLiveKey">Alpaca Live API Key</Label>
-                <Input id="alpacaLiveKey" value={apiKeys.alpacaLiveKey} onChange={(e) => setApiKeys(p => ({ ...p, alpacaLiveKey: e.target.value }))} placeholder="AK... (optional)" />
-              </div>
-              <div>
-                <Label htmlFor="alpacaLiveSecret">Alpaca Live Secret</Label>
-                <Input id="alpacaLiveSecret" type="password" value={apiKeys.alpacaLiveSecret} onChange={(e) => setApiKeys(p => ({ ...p, alpacaLiveSecret: e.target.value }))} placeholder="Secret key (optional)" />
-              </div>
+            <div>
+              <Label htmlFor="alpacaLiveSecret">Alpaca Live Secret</Label>
+              <Input id="alpacaLiveSecret" type="password" value={apiKeys.alpacaLiveSecret} onChange={(e) => setApiKeys(p => ({ ...p, alpacaLiveSecret: e.target.value }))} placeholder="Secret key (optional)" />
             </div>
           </div>
 
@@ -264,7 +265,7 @@ export default function ApiKeysForm() {
 
           <div className="flex gap-3">
             <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving...</> : 'Save API Keys'}
+              {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving...</> : 'Save Live Trading Keys'}
             </Button>
           </div>
         </form>
@@ -278,7 +279,8 @@ export default function ApiKeysForm() {
           </Alert>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   )
 }
 

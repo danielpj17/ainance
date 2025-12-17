@@ -123,12 +123,14 @@ export async function getUserIdFromRequest(req: NextRequest): Promise<{ userId: 
 /**
  * Get Alpaca API keys for a user.
  * STRICT: Only returns demo keys for demo user. Authenticated users get their own keys or nothing.
+ * @param accountId - Optional paper trading account ID. If provided for paper trading, fetches from paper_trading_accounts table.
  */
 export async function getAlpacaKeysForUser(
   userId: string,
   isDemo: boolean,
-  accountType: 'paper' | 'live' = 'paper'
-): Promise<{ apiKey: string | null; secretKey: string | null; paper: boolean }> {
+  accountType: 'paper' | 'live' = 'paper',
+  accountId?: string
+): Promise<{ apiKey: string | null; secretKey: string | null; paper: boolean; accountName?: string; accountNumber?: string }> {
   const supabase = createClient()
   
   // For demo user ONLY, use environment variables
@@ -143,19 +145,52 @@ export async function getAlpacaKeysForUser(
     return { apiKey, secretKey, paper: accountType === 'paper' }
   }
   
-  // For authenticated users, ONLY use their saved keys from database
-  console.log('getAlpacaKeysForUser - Authenticated user, checking database for keys')
+  // For authenticated users with paper trading account ID, fetch from paper_trading_accounts
+  if (accountType === 'paper' && accountId) {
+    console.log('getAlpacaKeysForUser - Fetching paper account keys for account_id:', accountId)
+    try {
+      const { data: accountKeys, error } = await supabase.rpc('get_paper_account_keys', { 
+        account_uuid: accountId,
+        user_uuid: userId 
+      })
+      
+      if (!error && accountKeys?.[0]) {
+        const keys = accountKeys[0]
+        if (keys.alpaca_api_key && keys.alpaca_api_secret) {
+          console.log('getAlpacaKeysForUser - Found paper account keys')
+          return { 
+            apiKey: keys.alpaca_api_key, 
+            secretKey: keys.alpaca_api_secret, 
+            paper: true,
+            accountName: keys.account_name,
+            accountNumber: keys.alpaca_account_number
+          }
+        }
+      } else if (error) {
+        console.error('getAlpacaKeysForUser - Error fetching paper account keys:', error)
+      }
+    } catch (e) {
+      console.error('getAlpacaKeysForUser - Error:', e)
+    }
+    
+    // If we get here with an account_id specified, keys were not found
+    console.log('getAlpacaKeysForUser - No keys found for paper account')
+    return { apiKey: null, secretKey: null, paper: true }
+  }
+  
+  // For authenticated users without account_id, fallback to user_settings (backward compatibility)
+  console.log('getAlpacaKeysForUser - Authenticated user, checking user_settings for keys')
   try {
     const { data: apiKeys, error } = await supabase.rpc('get_user_api_keys', { user_uuid: userId })
     
     if (!error && apiKeys?.[0]) {
       const keys = apiKeys[0]
       if (accountType === 'paper' && keys.alpaca_paper_key && keys.alpaca_paper_secret) {
-        console.log('getAlpacaKeysForUser - Found paper keys in database')
+        console.log('getAlpacaKeysForUser - Found paper keys in user_settings')
         return { apiKey: keys.alpaca_paper_key, secretKey: keys.alpaca_paper_secret, paper: true }
       }
       if (accountType === 'live' && keys.alpaca_live_key && keys.alpaca_live_secret) {
-        console.log('getAlpacaKeysForUser - Found live keys in database')
+        console.log('getAlpacaKeysForUser - Found live keys in user_settings')
         return { apiKey: keys.alpaca_live_key, secretKey: keys.alpaca_live_secret, paper: false }
       }
     }

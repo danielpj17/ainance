@@ -10,9 +10,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface Trade {
   id: number
@@ -71,6 +73,31 @@ interface CurrentPosition {
   trade_pair_id: string
 }
 
+interface CompletedTrade {
+  id: bigint
+  symbol: string
+  qty: number
+  buy_price: number
+  buy_timestamp: string
+  sell_price: number
+  sell_timestamp: string
+  profit_loss: number
+  profit_loss_percent: number
+  holding_duration: string
+  buy_decision_metrics: any
+  sell_decision_metrics: any
+  strategy: string
+  account_type: string
+  trade_pair_id: string
+}
+
+interface PaperAccount {
+  id: string
+  account_name: string
+  alpaca_account_number: string | null
+  created_at: string
+}
+
 export default function PaperTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])
   const [account, setAccount] = useState<AlpacaAccount | null>(null)
@@ -80,6 +107,7 @@ export default function PaperTradingPage() {
   const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
   const [chartData, setChartData] = useState<any[]>([])
   const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
+  const [completedTrades, setCompletedTrades] = useState<CompletedTrade[]>([])
   const [positionsLoading, setPositionsLoading] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<CurrentPosition | null>(null)
   const [showMetricsModal, setShowMetricsModal] = useState(false)
@@ -88,41 +116,55 @@ export default function PaperTradingPage() {
   const [sellingPosition, setSellingPosition] = useState<string | null>(null)
   const [showSellConfirm, setShowSellConfirm] = useState(false)
   const [positionToSell, setPositionToSell] = useState<CurrentPosition | null>(null)
+  
+  // Paper account selection
+  const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([])
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [accountsLoading, setAccountsLoading] = useState(true)
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
+  // Load paper accounts on mount
   useEffect(() => {
     supabaseRef.current = createClient()
-    loadData()
-    
-    // Set up realtime subscriptions for trades
-    let tradesChannel: any = null
-    if (supabaseRef.current) {
-      tradesChannel = supabaseRef.current
-        .channel('paper-trades')
-        .on('postgres_changes', 
-          { event: 'INSERT', schema: 'public', table: 'trades', filter: 'account_type=eq.paper' },
-          () => loadData()
-        )
-        .subscribe()
-    }
-
-    // Refresh account data every 30 seconds
-    const accountInterval = setInterval(() => {
-      loadAccountData()
-    }, 30000)
-
-    // Refresh positions every 30 seconds
-    const positionsInterval = setInterval(() => {
-      loadCurrentPositions()
-    }, 30000)
-
-    return () => {
-      tradesChannel?.unsubscribe()
-      clearInterval(accountInterval)
-      clearInterval(positionsInterval)
-    }
+    loadPaperAccounts()
   }, [])
+
+  // Load data when account is selected
+  useEffect(() => {
+    if (selectedAccountId) {
+      loadData()
+      
+      // Set up realtime subscriptions for trades
+      let tradesChannel: any = null
+      if (supabaseRef.current) {
+        tradesChannel = supabaseRef.current
+          .channel('paper-trades')
+          .on('postgres_changes', 
+            { event: 'INSERT', schema: 'public', table: 'trades', filter: 'account_type=eq.paper' },
+            () => loadData()
+          )
+          .subscribe()
+      }
+
+      // Refresh account data every 30 seconds
+      const accountInterval = setInterval(() => {
+        loadAccountData()
+      }, 30000)
+
+      // Refresh positions every 30 seconds
+      const positionsInterval = setInterval(() => {
+        loadCurrentPositions()
+        loadCompletedTrades()
+      }, 30000)
+
+      return () => {
+        tradesChannel?.unsubscribe()
+        clearInterval(accountInterval)
+        clearInterval(positionsInterval)
+      }
+    }
+  }, [selectedAccountId])
 
   useEffect(() => {
     if (account) {
@@ -130,10 +172,38 @@ export default function PaperTradingPage() {
     }
   }, [chartPeriod, account])
 
+  const loadPaperAccounts = async () => {
+    try {
+      setAccountsLoading(true)
+      const response = await fetch('/api/paper-accounts')
+      const result = await response.json()
+      
+      if (result.success) {
+        setPaperAccounts(result.data || [])
+        
+        // Auto-select first account if available
+        if (result.data && result.data.length > 0) {
+          setSelectedAccountId(result.data[0].id)
+        } else {
+          setMessage({ type: 'error', text: 'No paper trading accounts found. Please add one in Settings.' })
+        }
+      } else {
+        setMessage({ type: 'error', text: 'Failed to load paper trading accounts' })
+      }
+    } catch (error) {
+      console.error('Error loading paper accounts:', error)
+      setMessage({ type: 'error', text: 'Failed to load paper trading accounts' })
+    } finally {
+      setAccountsLoading(false)
+    }
+  }
+
   const loadData = async () => {
+    if (!selectedAccountId) return
+    
     try {
       setLoading(true)
-      await Promise.all([loadAccountData(), loadTradesData(), loadCurrentPositions()])
+      await Promise.all([loadAccountData(), loadTradesData(), loadCurrentPositions(), loadCompletedTrades()])
     } catch (error) {
       console.error('Error loading data:', error)
       setMessage({ type: 'error', text: 'Failed to load data' })
@@ -143,13 +213,15 @@ export default function PaperTradingPage() {
   }
 
   const loadCurrentPositions = async () => {
+    if (!selectedAccountId) return
+    
     try {
       setPositionsLoading(true)
       const sb = supabaseRef.current
       if (!sb) return
       
       const { data: { session } } = await sb.auth.getSession()
-      const response = await fetch('/api/trade-logs?view=current', {
+      const response = await fetch(`/api/trade-logs?view=current&account_id=${selectedAccountId}`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
       
@@ -158,16 +230,11 @@ export default function PaperTradingPage() {
       console.log('[PAPER TRADING] Positions API response:', {
         success: data.success,
         count: data.data?.currentTrades?.length || 0,
-        sample: data.data?.currentTrades?.[0]
+        accountId: selectedAccountId
       })
       
       if (data.success) {
-        const positions = data.data.currentTrades || []
-        console.log('[PAPER TRADING] Setting positions:', positions.length)
-        // Filter to only show paper account positions
-        const paperPositions = positions.filter((p: any) => p.account_type === 'paper')
-        console.log('[PAPER TRADING] Paper positions after filter:', paperPositions.length)
-        setCurrentPositions(paperPositions)
+        setCurrentPositions(data.data.currentTrades || [])
       }
     } catch (error) {
       console.error('Error loading current positions:', error)
@@ -176,9 +243,33 @@ export default function PaperTradingPage() {
     }
   }
 
-  const loadAccountData = async () => {
+  const loadCompletedTrades = async () => {
+    if (!selectedAccountId) return
+    
     try {
-      const response = await authFetch('/api/account')
+      const sb = supabaseRef.current
+      if (!sb) return
+      
+      const { data: { session } } = await sb.auth.getSession()
+      const response = await fetch(`/api/trade-logs?view=completed&account_id=${selectedAccountId}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        setCompletedTrades(data.data.completedTrades || [])
+      }
+    } catch (error) {
+      console.error('Error loading completed trades:', error)
+    }
+  }
+
+  const loadAccountData = async () => {
+    if (!selectedAccountId) return
+    
+    try {
+      const response = await authFetch(`/api/account?account_id=${selectedAccountId}`)
       const result = await response.json()
       
       console.log('Account API response:', result)
@@ -258,6 +349,8 @@ export default function PaperTradingPage() {
   }
 
   const loadPortfolioHistory = async () => {
+    if (!selectedAccountId) return
+    
     try {
       const timeframeMap = {
         '1D': '5Min',
@@ -266,7 +359,7 @@ export default function PaperTradingPage() {
         '1A': '1W'
       }
       
-      const response = await authFetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}`)
+      const response = await authFetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}&account_id=${selectedAccountId}`)
       const result = await response.json()
       
       if (result.success && result.data) {
@@ -560,9 +653,29 @@ export default function PaperTradingPage() {
     <div className="min-h-screen text-white p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Paper Trading Dashboard</h1>
-          <p className="text-white/80">Practice trading with virtual money - Connected to Alpaca Paper Account</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Paper Trading Dashboard</h1>
+            <p className="text-white/80">Practice trading with virtual money</p>
+          </div>
+          
+          {/* Account Selector */}
+          {paperAccounts.length > 0 && (
+            <div className="ml-4">
+              <Select value={selectedAccountId || ''} onValueChange={setSelectedAccountId}>
+                <SelectTrigger className="w-[280px] bg-black/30 border-white/20">
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {paperAccounts.map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      {acc.account_name} {acc.alpaca_account_number && `(${acc.alpaca_account_number})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right bg-black/30 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">

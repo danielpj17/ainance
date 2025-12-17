@@ -451,8 +451,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const view = searchParams.get('view') // 'current', 'completed', 'all', 'statistics', 'transactions'
     const limit = parseInt(searchParams.get('limit') || '500') // Increased limit for Alpaca orders
     const offset = parseInt(searchParams.get('offset') || '0')
+    const accountId = searchParams.get('account_id') || undefined // Optional paper account ID for filtering
     if (process.env.NODE_ENV === 'development') {
-      console.log('[TRADE-LOGS] Request params: view=' + view + ', limit=' + limit + ', offset=' + offset)
+      console.log('[TRADE-LOGS] Request params: view=' + view + ', limit=' + limit + ', offset=' + offset + ', account_id=' + accountId)
     }
     
     // Check cache (skip for transactions view as it's symbol-specific)
@@ -521,7 +522,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           const { data: supabaseTrades, error: supabaseError } = await supabase
             .rpc('get_current_trades_optimized', {
               user_uuid: userId,
-              account_type_param: accountType
+              account_type_param: accountType,
+              account_uuid: accountId || null
             })
           
           if (supabaseError) {
@@ -772,7 +774,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             if (symbolsToFetch.length > 0) {
               try {
                 // Get Alpaca keys for price fetching
-                const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, accountType)
+                const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, accountType, accountType === 'paper' ? accountId : undefined)
                 if (apiKey && secretKey) {
                   const alpacaClient = createAlpacaClient({
                     apiKey,
@@ -1122,7 +1124,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           const { data: buyTrades, error: buyError } = await supabase
             .rpc('get_completed_trades_optimized', {
         user_uuid: userId,
-              account_type_param: accountType
+              account_type_param: accountType,
+              account_uuid: accountId || null
             })
           
           if (buyError) {
@@ -1327,7 +1330,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // Fetch all orders for this symbol from Alpaca
       for (const accountType of accountTypes) {
         try {
-          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType)
+          const alpacaKeys = await getAlpacaKeysForUser(userId, isDemo, accountType, accountType === 'paper' ? accountId : undefined)
           
           if (!alpacaKeys.apiKey || !alpacaKeys.secretKey) {
             continue
