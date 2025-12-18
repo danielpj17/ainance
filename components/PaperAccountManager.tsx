@@ -28,6 +28,7 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [isDemoMode, setIsDemoMode] = useState(false)
   
   const [formData, setFormData] = useState({
     account_name: '',
@@ -36,6 +37,19 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
   })
 
   useEffect(() => {
+    // Check if in demo mode
+    const checkDemoMode = async () => {
+      try {
+        const response = await fetch('/api/paper-accounts')
+        const result = await response.json()
+        // We're allowing demo mode now, just note it for UI purposes
+        setIsDemoMode(false) // Not restricting anymore
+      } catch (error) {
+        console.error('Error checking demo mode:', error)
+      }
+    }
+    
+    checkDemoMode()
     loadAccounts()
   }, [])
 

@@ -124,9 +124,7 @@ export default function ApiKeysForm() {
   return (
     <div className="space-y-6">
       {/* Paper Trading Accounts Manager */}
-      {!isDemo && (
-        <PaperAccountManager />
-      )}
+      <PaperAccountManager />
 
       {/* Legacy API Keys Form (for live trading and backward compatibility) */}
       <Card className="glass-card">

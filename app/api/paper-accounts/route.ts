@@ -31,15 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     
     console.log('[PAPER-ACCOUNTS] GET - User:', { userId, isDemo })
     
-    // Demo users don't have paper accounts (they use env vars)
-    if (isDemo) {
-      return NextResponse.json({ 
-        success: true, 
-        data: [] 
-      })
-    }
-    
-    // Fetch user's paper accounts
+    // Fetch user's paper accounts (including demo user)
     const { data: accounts, error } = await supabase.rpc('get_user_paper_accounts', {
       user_uuid: userId
     })
@@ -74,14 +66,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { userId, isDemo } = await getUserIdFromRequest(req)
     
     console.log('[PAPER-ACCOUNTS] POST - User:', { userId, isDemo })
-    
-    // Demo users cannot create accounts
-    if (isDemo) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Demo users cannot create paper trading accounts. Please sign in.' 
-      }, { status: 403 })
-    }
     
     const body: CreateAccountRequest = await req.json()
     const { account_name, alpaca_api_key, alpaca_api_secret } = body
@@ -177,14 +161,6 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     const { userId, isDemo } = await getUserIdFromRequest(req)
     
     console.log('[PAPER-ACCOUNTS] PUT - User:', { userId, isDemo })
-    
-    // Demo users cannot update accounts
-    if (isDemo) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Demo users cannot update paper trading accounts. Please sign in.' 
-      }, { status: 403 })
-    }
     
     const { searchParams } = new URL(req.url)
     const accountId = searchParams.get('id')
@@ -294,14 +270,6 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     const { userId, isDemo } = await getUserIdFromRequest(req)
     
     console.log('[PAPER-ACCOUNTS] DELETE - User:', { userId, isDemo })
-    
-    // Demo users cannot delete accounts
-    if (isDemo) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Demo users cannot delete paper trading accounts. Please sign in.' 
-      }, { status: 403 })
-    }
     
     const { searchParams } = new URL(req.url)
     const accountId = searchParams.get('id')
