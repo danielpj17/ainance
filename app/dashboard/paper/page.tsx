@@ -186,13 +186,16 @@ export default function PaperTradingPage() {
           setSelectedAccountId(result.data[0].id)
         } else {
           setMessage({ type: 'error', text: 'No paper trading accounts found. Please add one in Settings.' })
+          setLoading(false) // Stop loading if no accounts
         }
       } else {
         setMessage({ type: 'error', text: 'Failed to load paper trading accounts' })
+        setLoading(false) // Stop loading on error
       }
     } catch (error) {
       console.error('Error loading paper accounts:', error)
       setMessage({ type: 'error', text: 'Failed to load paper trading accounts' })
+      setLoading(false) // Stop loading on error
     } finally {
       setAccountsLoading(false)
     }
@@ -735,6 +738,28 @@ export default function PaperTradingPage() {
           </div>
         </div>
       </div>
+
+      {/* No Accounts Warning */}
+      {!selectedAccountId && paperAccounts.length === 0 && !accountsLoading && (
+        <Alert className="mb-6 border-yellow-500 bg-yellow-950">
+          <AlertDescription className="text-yellow-200">
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4" />
+              <div>
+                <strong>No Paper Trading Accounts Found</strong>
+                <p className="mt-1">Please add a paper trading account in Settings to start trading.</p>
+                <Button 
+                  onClick={() => window.location.href = '/settings'} 
+                  className="mt-2 bg-yellow-600 hover:bg-yellow-700"
+                  size="sm"
+                >
+                  Go to Settings
+                </Button>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {message && (
         <Alert className={`mb-6 ${message.type === 'error' ? 'border-red-500 bg-red-950' : 'border-blue-500 bg-blue-950'}`}>
