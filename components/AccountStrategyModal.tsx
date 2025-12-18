@@ -1,0 +1,284 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { X, Loader2, Save, Settings } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
+
+interface AccountStrategyModalProps {
+  accountId: string
+  accountName: string
+  isOpen: boolean
+  onClose: () => void
+  onSave?: () => void
+}
+
+interface StrategySettings {
+  strategy: 'cash' | '25k_plus'
+  account_type: 'cash' | 'margin'
+  confidence_threshold: number
+  sell_confidence_threshold: number
+  max_exposure: number
+}
+
+export default function AccountStrategyModal({ accountId, accountName, isOpen, onClose, onSave }: AccountStrategyModalProps) {
+  const [settings, setSettings] = useState<StrategySettings>({
+    strategy: 'cash',
+    account_type: 'cash',
+    confidence_threshold: 0.65,
+    sell_confidence_threshold: 0.50,
+    max_exposure: 90
+  })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  useEffect(() => {
+    if (isOpen && accountId) {
+      loadSettings()
+    }
+  }, [isOpen, accountId])
+
+  const loadSettings = async () => {
+    try {
+      setLoading(true)
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const response = await fetch(`/api/account-strategy?account_id=${accountId}`, {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined
+      })
+
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        setSettings(result.data)
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error)
+      setMessage({ type: 'error', text: 'Failed to load settings' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSave = async () => {
+    try {
+      setSaving(true)
+      setMessage(null)
+
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const response = await fetch('/api/account-strategy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        },
+        body: JSON.stringify({
+          account_id: accountId,
+          ...settings
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage({ type: 'success', text: 'Settings saved successfully!' })
+        if (onSave) {
+          setTimeout(() => {
+            onSave()
+            onClose()
+          }, 1000)
+        }
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Failed to save settings' })
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error)
+      setMessage({ type: 'error', text: 'Failed to save settings' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div 
+        className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" 
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-[#1a1d2e] border-b border-gray-700 p-6 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Settings className="h-6 w-6" />
+              Strategy Settings
+            </h2>
+            <p className="text-gray-400 text-sm mt-1">{accountName}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Strategy Type */}
+              <div>
+                <Label htmlFor="strategy" className="text-white">Trading Strategy</Label>
+                <Select value={settings.strategy} onValueChange={(value: any) => setSettings({ ...settings, strategy: value })}>
+                  <SelectTrigger id="strategy" className="bg-[#252838] border-gray-700 text-white mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash Account</SelectItem>
+                    <SelectItem value="25k_plus">$25k+ Account (Pattern Day Trader)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {settings.strategy === 'cash' 
+                    ? 'Limited to 3 day trades per 5 trading days' 
+                    : 'Unlimited day trades (requires $25k+ balance)'}
+                </p>
+              </div>
+
+              {/* Account Type */}
+              <div>
+                <Label htmlFor="account_type" className="text-white">Account Type</Label>
+                <Select value={settings.account_type} onValueChange={(value: any) => setSettings({ ...settings, account_type: value })}>
+                  <SelectTrigger id="account_type" className="bg-[#252838] border-gray-700 text-white mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="margin">Margin</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {settings.account_type === 'cash' 
+                    ? 'Trade with settled funds only' 
+                    : 'Trade with borrowed funds (2x-4x leverage)'}
+                </p>
+              </div>
+
+              {/* Buy Confidence Threshold */}
+              <div>
+                <Label htmlFor="confidence" className="text-white">Buy Confidence Threshold</Label>
+                <div className="flex items-center gap-3 mt-2">
+                  <Input
+                    id="confidence"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={settings.confidence_threshold}
+                    onChange={(e) => setSettings({ ...settings, confidence_threshold: parseFloat(e.target.value) || 0 })}
+                    className="bg-[#252838] border-gray-700 text-white"
+                  />
+                  <span className="text-white min-w-[60px]">{(settings.confidence_threshold * 100).toFixed(0)}%</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Minimum confidence required to execute buy orders
+                </p>
+              </div>
+
+              {/* Sell Confidence Threshold */}
+              <div>
+                <Label htmlFor="sell_confidence" className="text-white">Sell Confidence Threshold</Label>
+                <div className="flex items-center gap-3 mt-2">
+                  <Input
+                    id="sell_confidence"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={settings.sell_confidence_threshold}
+                    onChange={(e) => setSettings({ ...settings, sell_confidence_threshold: parseFloat(e.target.value) || 0 })}
+                    className="bg-[#252838] border-gray-700 text-white"
+                  />
+                  <span className="text-white min-w-[60px]">{(settings.sell_confidence_threshold * 100).toFixed(0)}%</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Minimum confidence required to execute sell orders
+                </p>
+              </div>
+
+              {/* Max Exposure */}
+              <div>
+                <Label htmlFor="max_exposure" className="text-white">Maximum Portfolio Exposure</Label>
+                <div className="flex items-center gap-3 mt-2">
+                  <Input
+                    id="max_exposure"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={settings.max_exposure}
+                    onChange={(e) => setSettings({ ...settings, max_exposure: parseInt(e.target.value) || 0 })}
+                    className="bg-[#252838] border-gray-700 text-white"
+                  />
+                  <span className="text-white min-w-[60px]">{settings.max_exposure}%</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Maximum percentage of buying power to use for trading
+                </p>
+              </div>
+
+              {/* Message */}
+              {message && (
+                <div className={`p-4 rounded-lg ${message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                  {message.text}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-700">
+                <Button
+                  variant="outline"
+                  onClick={onClose}
+                  disabled={saving}
+                  className="border-gray-600 hover:bg-gray-800"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+

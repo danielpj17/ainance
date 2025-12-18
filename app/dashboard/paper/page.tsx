@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown, Settings } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
+import AccountStrategyModal from '@/components/AccountStrategyModal'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -123,6 +124,11 @@ export default function PaperTradingPage() {
   const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [accountsLoading, setAccountsLoading] = useState(true)
+  
+  // Strategy modal state
+  const [showStrategyModal, setShowStrategyModal] = useState(false)
+  const [strategyModalAccountId, setStrategyModalAccountId] = useState<string | null>(null)
+  const [strategyModalAccountName, setStrategyModalAccountName] = useState<string>('')
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -519,11 +525,13 @@ export default function PaperTradingPage() {
           market_risk: indicator.market_risk || 0
         })
       } else {
-        // If no sell signal, create a hold signal with low confidence
+        // If no sell signal, use the actual ML prediction (hold signal)
+        // The ML service returns hold with real confidence, not a hardcoded default
+        const holdSignal = mlData.signals[0]
         setCurrentSellMetrics({
-          confidence: 0.3,
-          adjusted_confidence: 0.3,
-          reasoning: 'Model suggests holding position',
+          confidence: holdSignal.confidence,
+          adjusted_confidence: holdSignal.confidence,
+          reasoning: holdSignal.reasoning || 'Model suggests holding position',
           indicators: indicator,
           probabilities: {},
           news_sentiment: indicator.news_sentiment || 0,
@@ -867,15 +875,38 @@ export default function PaperTradingPage() {
         </Card>
       </div>
 
-      {/* Trading Bot & Portfolio Chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Trading Bot */}
-        <div className="lg:col-span-1 flex flex-col">
-          <TradingBot mode="paper" />
+      {/* Trading Bot for Selected Account */}
+      {selectedAccountId && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-white">Trading Bot</h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setStrategyModalAccountId(selectedAccountId)
+                setStrategyModalAccountName(
+                  paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Account'
+                )
+                setShowStrategyModal(true)
+              }}
+              className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
+            >
+              <Settings className="h-4 w-4 mr-1" />
+              Configure Strategy
+            </Button>
+          </div>
+          <TradingBot 
+            mode="paper" 
+            accountId={selectedAccountId}
+            accountName={paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Paper Account'}
+          />
         </div>
-        
-        {/* Portfolio Chart */}
-        <Card className="lg:col-span-2 glass-card">
+      )}
+
+      {/* Portfolio Chart */}
+      <div className="mb-8">
+        <Card className="glass-card">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -1853,6 +1884,24 @@ export default function PaperTradingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Strategy Configuration Modal */}
+      {showStrategyModal && strategyModalAccountId && (
+        <AccountStrategyModal
+          accountId={strategyModalAccountId}
+          accountName={strategyModalAccountName}
+          isOpen={showStrategyModal}
+          onClose={() => {
+            setShowStrategyModal(false)
+            setStrategyModalAccountId(null)
+            setStrategyModalAccountName('')
+          }}
+          onSave={() => {
+            // Optionally refresh data after settings are saved
+            loadData()
+          }}
+        />
       )}
     </div>
   )

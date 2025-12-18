@@ -47,9 +47,11 @@ export interface BotConfig {
 
 interface TradingBotProps {
   mode: 'paper' | 'live'
+  accountId?: string  // Optional for per-account bots (paper trading)
+  accountName?: string  // Display name for the account
 }
 
-export default function TradingBot({ mode }: TradingBotProps) {
+export default function TradingBot({ mode, accountId, accountName }: TradingBotProps) {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -238,7 +240,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
-      const response = await fetch('/api/trading', {
+      const url = accountId ? `/api/trading?account_id=${accountId}` : '/api/trading'
+      const response = await fetch(url, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
       const data = await response.json()
@@ -319,7 +322,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
           },
           body: JSON.stringify({
             action: 'start',
-            config
+            config,
+            account_id: accountId
           })
         })
       } catch (fetchError: any) {
@@ -393,7 +397,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
         body: JSON.stringify({
-          action: 'stop'
+          action: 'stop',
+          account_id: accountId
         })
       })
       
@@ -439,7 +444,8 @@ export default function TradingBot({ mode }: TradingBotProps) {
           },
           body: JSON.stringify({
             action: 'toggle-always-on',
-            alwaysOn: newAlwaysOn
+            alwaysOn: newAlwaysOn,
+            account_id: accountId
           })
         })
       } catch (fetchError: any) {

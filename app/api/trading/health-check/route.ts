@@ -31,167 +31,128 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // This ensures logs are written and bot state is maintained
     // The executeTradingLoop function will handle the market closed case
 
-    // Get all users with always_on enabled
-    // This works for all always-on users, not just the current user
-    const { data: alwaysOnUsers, error: fetchError } = await supabase.rpc('get_always_on_users')
+    // Get all accounts with always_on enabled
+    const { data: alwaysOnAccounts, error: fetchError } = await supabase.rpc('get_always_on_accounts')
 
     if (fetchError) {
-      console.error('❌ Error fetching always-on users:', fetchError)
+      console.error('❌ Error fetching always-on accounts:', fetchError)
     } else {
-      console.log(`📊 Health check: Found ${alwaysOnUsers?.length || 0} always-on user(s)`)
+      console.log(`📊 Health check: Found ${alwaysOnAccounts?.length || 0} always-on account(s)`)
     }
 
-    // Also get all users with is_running = true (manually started bots)
+    // Also get all accounts with is_running = true (manually started bots)
     // This ensures manually started bots continue running even if not always-on
-    const { data: runningBots, error: runningBotsError } = await supabase
-      .from('bot_state')
-      .select('user_id, config, always_on, is_running')
-      .eq('is_running', true)
+    const { data: runningAccounts, error: runningAccountsError } = await supabase.rpc('get_running_accounts')
 
-    if (runningBotsError) {
-      console.error('❌ Error fetching running bots:', runningBotsError)
+    if (runningAccountsError) {
+      console.error('❌ Error fetching running accounts:', runningAccountsError)
     } else {
-      console.log(`📊 Health check: Found ${runningBots?.length || 0} manually running bot(s)`)
+      console.log(`📊 Health check: Found ${runningAccounts?.length || 0} manually running account(s)`)
     }
 
-    // Combine always-on users and manually started bots
-    const allActiveBots = new Map<string, any>()
+    // Combine always-on accounts and manually started bots
+    const allActiveAccounts = new Map<string, any>()
     
-    // Add always-on users
-    if (alwaysOnUsers && alwaysOnUsers.length > 0) {
-      alwaysOnUsers.forEach((user: any) => {
-        allActiveBots.set(user.user_id, user)
+    // Add always-on accounts
+    if (alwaysOnAccounts && alwaysOnAccounts.length > 0) {
+      alwaysOnAccounts.forEach((account: any) => {
+        allActiveAccounts.set(account.account_id, account)
       })
     }
     
-    // Add manually started bots (is_running = true)
-    if (runningBots && runningBots.length > 0) {
-      runningBots.forEach((bot: any) => {
-        if (!allActiveBots.has(bot.user_id)) {
-          allActiveBots.set(bot.user_id, {
-            user_id: bot.user_id,
-            config: bot.config,
-            always_on: bot.always_on || false
-          })
+    // Add manually started accounts (is_running = true)
+    if (runningAccounts && runningAccounts.length > 0) {
+      runningAccounts.forEach((account: any) => {
+        if (!allActiveAccounts.has(account.account_id)) {
+          allActiveAccounts.set(account.account_id, account)
         }
       })
     }
 
-    if (allActiveBots.size === 0) {
-      console.log('📊 Health check: No active bots found, checking current user...')
-      // No active bots, but check current user anyway
+    if (allActiveAccounts.size === 0) {
+      console.log('📊 Health check: No active accounts found, checking current user...')
+      // No active accounts, but check current user anyway
       return await checkAndRunCurrentUser(supabase, req)
     }
 
-    console.log(`📊 Health check: Found ${allActiveBots.size} active bot(s) to process`)
+    console.log(`📊 Health check: Found ${allActiveAccounts.size} active account(s) to process`)
     const results = []
     
-    // Process each active bot (always-on or manually started)
-    for (const user of Array.from(allActiveBots.values())) {
+    // Process each active account (always-on or manually started)
+    for (const account of Array.from(allActiveAccounts.values())) {
       try {
-        const userId = user.user_id
-        const config = user.config as BotConfig
+        const userId = account.user_id
+        const accountId = account.account_id
+        const config = account.config as BotConfig
 
         if (!config) {
-          console.log(`⚠️  User ${userId} has always-on enabled but no config`)
+          console.log(`⚠️  Account ${accountId} has always-on enabled but no config`)
           continue
         }
 
         // Execute trading loop directly (this keeps the bot running)
-        console.log(`🔄 Health check: Executing trading loop for user ${userId} (Always-On: ${user.always_on})`)
+        console.log(`🔄 Health check: Executing trading loop for account ${accountId} (user: ${userId}, Always-On: ${account.always_on})`)
         
-        // Get API keys - prioritize user-specific keys from database
-        // For authenticated users: use their saved Alpaca keys
-        // For demo mode: fallback to environment variables
-        // News API key is always shared from environment (not user-specific)
-        let alpacaApiKey: string | undefined
-        let alpacaSecretKey: string | undefined
-        const newsApiKey: string | undefined = process.env.NEWS_API_KEY // Always use shared key
-        
-        const isDemo = userId === '00000000-0000-0000-0000-000000000000'
-        
-        // Declare apiKeys outside the if block so it's accessible later
-        let apiKeys: any[] | null = null
-        
-        // For authenticated users, always try database first (user-specific Alpaca keys only)
-        if (!isDemo) {
-          const { data: fetchedApiKeys, error: apiKeysError } = await supabase.rpc('get_user_api_keys', {
-            user_uuid: userId
-          })
+        // Get API keys for this account using account-specific method
+        const { data: accountKeysData, error: accountKeysError } = await supabase.rpc('get_paper_account_keys', {
+          account_uuid: accountId,
+          user_uuid: userId
+        })
 
-          if (apiKeysError) {
-            console.error(`❌ Error fetching API keys for user ${userId}:`, apiKeysError)
-            results.push({
-              userId,
-              success: false,
-              error: `Failed to fetch API keys: ${apiKeysError.message}`
-            })
-            continue
-          }
-
-          apiKeys = fetchedApiKeys
-
-          if (apiKeys?.[0]) {
-            const userKeys = apiKeys[0]
-            alpacaApiKey = userKeys.alpaca_paper_key
-            alpacaSecretKey = userKeys.alpaca_paper_secret
-            // Note: newsApiKey is always from environment, not user-specific
-          }
-        }
-        
-        // Only fallback to environment variables for demo user, not authenticated users
-        if (!alpacaApiKey || !alpacaSecretKey) {
-          if (isDemo) {
-            // Demo mode - use environment variables
-            alpacaApiKey = process.env.ALPACA_PAPER_KEY
-            alpacaSecretKey = process.env.ALPACA_PAPER_SECRET
-          }
-        }
-
-        // Final check to ensure Alpaca keys are available
-        if (!alpacaApiKey || !alpacaSecretKey) {
-          console.log(`⚠️  User ${userId} has no API keys configured (checked env vars${!isDemo ? ' and database' : ''})`)
+        if (accountKeysError) {
+          console.error(`❌ Error fetching API keys for account ${accountId}:`, accountKeysError)
           results.push({
+            accountId,
             userId,
             success: false,
-            error: 'No API keys configured. Please set ALPACA_PAPER_KEY and ALPACA_PAPER_SECRET environment variables or configure in database.'
+            error: `Failed to fetch API keys: ${accountKeysError.message}`
           })
           continue
         }
 
-        // Get all user keys (both paper and live) for getAlpacaKeys function
-        const userKeys = !isDemo && apiKeys?.[0] ? apiKeys[0] : null
-        
-        // Create a keys object with both paper and live keys (for getAlpacaKeys function)
+        if (!accountKeysData || !accountKeysData[0]) {
+          console.log(`⚠️  Account ${accountId} has no API keys configured`)
+          results.push({
+            accountId,
+            userId,
+            success: false,
+            error: 'No API keys configured for this account.'
+          })
+          continue
+        }
+
+        const accountKeys = accountKeysData[0]
         const keys = {
-          alpaca_paper_key: userKeys?.alpaca_paper_key || alpacaApiKey,
-          alpaca_paper_secret: userKeys?.alpaca_paper_secret || alpacaSecretKey,
-          alpaca_live_key: userKeys?.alpaca_live_key || process.env.ALPACA_LIVE_KEY || null,
-          alpaca_live_secret: userKeys?.alpaca_live_secret || process.env.ALPACA_LIVE_SECRET || null,
-          news_api_key: newsApiKey || null
+          alpaca_paper_key: accountKeys.alpaca_api_key,
+          alpaca_paper_secret: accountKeys.alpaca_api_secret,
+          alpaca_live_key: null,
+          alpaca_live_secret: null,
+          news_api_key: process.env.NEWS_API_KEY || null
         }
 
         // Execute trading loop directly
-        console.log(`🚀 Health check: Calling executeTradingLoop for user ${userId}...`)
-        await executeTradingLoop(supabase, userId, config, keys)
-        console.log(`✅ Health check: Trading loop completed for user ${userId}`)
+        console.log(`🚀 Health check: Calling executeTradingLoop for account ${accountId}...`)
+        await executeTradingLoop(supabase, userId, config, keys, accountId)
+        console.log(`✅ Health check: Trading loop completed for account ${accountId}`)
         
         // Update last_run timestamp
-        const { error: updateError } = await supabase.rpc('update_bot_state', {
+        const { error: updateError } = await supabase.rpc('update_account_bot_state', {
+          account_uuid: accountId,
           user_uuid: userId,
           is_running_param: true,
           config_param: config,
           error_param: null,
-          always_on_param: user.always_on
+          always_on_param: account.always_on
         })
 
         if (updateError) {
-          console.error(`⚠️  Error updating bot state for user ${userId}:`, updateError)
+          console.error(`⚠️  Error updating bot state for account ${accountId}:`, updateError)
         } else {
-          console.log(`✅ Health check: Bot state updated for user ${userId}`)
+          console.log(`✅ Health check: Bot state updated for account ${accountId}`)
         }
 
         results.push({
+          accountId,
           userId,
           success: true,
           message: 'Trading loop executed'
@@ -200,10 +161,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         const errorStack = error instanceof Error ? error.stack : undefined
-        console.error(`❌ Error executing trading loop for user ${user.user_id}:`, errorMsg)
+        console.error(`❌ Error executing trading loop for account ${account.account_id}:`, errorMsg)
         console.error('Error stack:', errorStack)
         results.push({
-          userId: user.user_id,
+          accountId: account.account_id,
+          userId: account.user_id,
           success: false,
           error: errorMsg
         })
@@ -212,10 +174,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       success: true,
-      message: `Health check completed for ${allActiveBots.size} active bot(s)`,
+      message: `Health check completed for ${allActiveAccounts.size} active account(s)`,
       results,
       executed: results.filter(r => r.success).length,
-      total: allActiveBots.size
+      total: allActiveAccounts.size
     })
 
   } catch (error) {

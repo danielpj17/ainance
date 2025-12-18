@@ -172,9 +172,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }, { status: 400 })
     }
 
-    const { action, config, alwaysOn }: { action: 'start' | 'stop' | 'toggle-always-on', config?: BotConfig, alwaysOn?: boolean } = body
+    const { action, config, alwaysOn, account_id }: { action: 'start' | 'stop' | 'toggle-always-on', config?: BotConfig, alwaysOn?: boolean, account_id?: string } = body
 
-    console.log('📥 POST /api/trading:', { action, hasConfig: !!config, configKeys: config ? Object.keys(config) : [] })
+    console.log('📥 POST /api/trading:', { action, hasConfig: !!config, configKeys: config ? Object.keys(config) : [], account_id })
 
     if (action === 'start') {
       if (!config) {
@@ -184,10 +184,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           error: 'Configuration is required to start the bot' 
         }, { status: 400 })
       }
-      console.log('🚀 Starting bot with config:', { symbols: config.symbols, interval: config.interval })
-      return await startBot(supabase, userId, config)
+      console.log('🚀 Starting bot with config:', { symbols: config.symbols, interval: config.interval, account_id })
+      return await startBot(supabase, userId, config, account_id)
     } else if (action === 'stop') {
-      return await stopBot(supabase, userId)
+      return await stopBot(supabase, userId, account_id)
     } else if (action === 'toggle-always-on') {
       if (alwaysOn === undefined) {
         return NextResponse.json({ 
@@ -195,7 +195,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           error: 'Missing required parameter: alwaysOn' 
         }, { status: 400 })
       }
-      return await toggleAlwaysOn(supabase, userId, alwaysOn)
+      return await toggleAlwaysOn(supabase, userId, alwaysOn, account_id)
     } else {
       return NextResponse.json({ 
         success: false, 
@@ -221,7 +221,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const { userId, isDemo } = await getUserIdFromRequest(req)
     console.log('📥 GET /api/trading - User detected:', { userId, isDemo })
 
-    const status = await getBotStatus(supabase, userId)
+    // Get account_id from query params if provided
+    const { searchParams } = new URL(req.url)
+    const account_id = searchParams.get('account_id') || undefined
+
+    const status = await getBotStatus(supabase, userId, account_id)
 
     return NextResponse.json({
       success: true,
@@ -238,14 +242,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 // Start the trading bot
-export async function startBot(supabase: any, userId: string, config: BotConfig): Promise<NextResponse> {
+export async function startBot(supabase: any, userId: string, config: BotConfig, accountId?: string): Promise<NextResponse> {
   try {
-    console.log('🚀 startBot called:', { userId, symbols: config?.symbols, interval: config?.interval })
+    console.log('🚀 startBot called:', { userId, accountId, symbols: config?.symbols, interval: config?.interval })
     
     // Stop existing bot if running
     if (botState.intervalId) {
       console.log('⏹️  Stopping existing bot before starting new one')
-      await stopBot(supabase, userId)
+      await stopBot(supabase, userId, accountId)
     }
 
     // Validate configuration
@@ -364,23 +368,45 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     console.log('✅ User verified:', { userId, email: userData.user.email })
 
     // Get current always_on setting (don't change it when starting)
-    const { data: currentState } = await supabase.rpc('get_bot_state', {
-      user_uuid: userId
-    })
-    const currentAlwaysOn = currentState?.[0]?.always_on || false
+    // Use account-level functions if accountId is provided, otherwise use user-level
+    let currentAlwaysOn = false
+    if (accountId) {
+      const { data: currentState } = await supabase.rpc('get_account_bot_state', {
+        account_uuid: accountId,
+        user_uuid: userId
+      })
+      currentAlwaysOn = currentState?.[0]?.always_on || false
+    } else {
+      const { data: currentState } = await supabase.rpc('get_bot_state', {
+        user_uuid: userId
+      })
+      currentAlwaysOn = currentState?.[0]?.always_on || false
+    }
 
     // Store bot state in database - ensure it completes with retry logic
     let updateError = null
     const maxRetries = 3
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const result = await supabase.rpc('update_bot_state', {
-        user_uuid: userId,
-        is_running_param: true,
-        config_param: config,
-        error_param: null,
-        always_on_param: currentAlwaysOn
-      })
+      let result
+      if (accountId) {
+        result = await supabase.rpc('update_account_bot_state', {
+          account_uuid: accountId,
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: null,
+          always_on_param: currentAlwaysOn
+        })
+      } else {
+        result = await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: null,
+          always_on_param: currentAlwaysOn
+        })
+      }
       
       updateError = result.error
       
@@ -430,29 +456,55 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
     // Execute trading loop immediately (don't wait for interval)
     console.log('🚀 Running initial trading loop immediately...')
     try {
-      await executeTradingLoop(supabase, userId, config, keys)
+      await executeTradingLoop(supabase, userId, config, keys, accountId)
       // Update last_run timestamp after successful execution
-      const { error: updateError } = await supabase.rpc('update_bot_state', {
-        user_uuid: userId,
-        is_running_param: true,
-        config_param: config,
-        error_param: null
-      })
-      if (updateError) {
-        console.error('⚠️ Error updating last_run:', updateError)
+      if (accountId) {
+        const { error: updateError } = await supabase.rpc('update_account_bot_state', {
+          account_uuid: accountId,
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: null
+        })
+        if (updateError) {
+          console.error('⚠️ Error updating last_run:', updateError)
+        }
+      } else {
+        const { error: updateError } = await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: null
+        })
+        if (updateError) {
+          console.error('⚠️ Error updating last_run:', updateError)
+        }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       console.error('Initial trading loop error:', errorMessage)
       // Still mark as running, but with error
-      const { error: updateError } = await supabase.rpc('update_bot_state', {
-        user_uuid: userId,
-        is_running_param: true,
-        config_param: config,
-        error_param: errorMessage
-      })
-      if (updateError) {
-        console.error('⚠️ Error updating bot state with error:', updateError)
+      if (accountId) {
+        const { error: updateError } = await supabase.rpc('update_account_bot_state', {
+          account_uuid: accountId,
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: errorMessage
+        })
+        if (updateError) {
+          console.error('⚠️ Error updating bot state with error:', updateError)
+        }
+      } else {
+        const { error: updateError } = await supabase.rpc('update_bot_state', {
+          user_uuid: userId,
+          is_running_param: true,
+          config_param: config,
+          error_param: errorMessage
+        })
+        if (updateError) {
+          console.error('⚠️ Error updating bot state with error:', updateError)
+        }
       }
     }
 
@@ -470,25 +522,45 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
             console.log('⏸️  Market is closed, bot running in standby mode')
             
             // Update bot state to show it's running but market is closed
+            if (accountId) {
+              await supabase.rpc('update_account_bot_state', {
+                account_uuid: accountId,
+                user_uuid: userId,
+                is_running_param: true,
+                config_param: config,
+                error_param: null
+              })
+            } else {
+              await supabase.rpc('update_bot_state', {
+                user_uuid: userId,
+                is_running_param: true,
+                config_param: config,
+                error_param: null
+              })
+            }
+            return
+          }
+          
+          // Execute trading loop
+          await executeTradingLoop(supabase, userId, config, keys, accountId)
+          
+          // Update bot state after each execution
+          if (accountId) {
+            await supabase.rpc('update_account_bot_state', {
+              account_uuid: accountId,
+              user_uuid: userId,
+              is_running_param: true,
+              config_param: config,
+              error_param: null
+            })
+          } else {
             await supabase.rpc('update_bot_state', {
               user_uuid: userId,
               is_running_param: true,
               config_param: config,
               error_param: null
             })
-            return
           }
-          
-          // Execute trading loop
-          await executeTradingLoop(supabase, userId, config, keys)
-          
-          // Update bot state after each execution
-          await supabase.rpc('update_bot_state', {
-            user_uuid: userId,
-            is_running_param: true,
-            config_param: config,
-            error_param: null
-          })
         } catch (error) {
           console.error('Trading loop error:', error)
           
@@ -510,12 +582,22 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
           })
           
           // Update bot state with error
-          await supabase.rpc('update_bot_state', {
-            user_uuid: userId,
-            is_running_param: true,
-            config_param: config,
-            error_param: errorMessage
-          })
+          if (accountId) {
+            await supabase.rpc('update_account_bot_state', {
+              account_uuid: accountId,
+              user_uuid: userId,
+              is_running_param: true,
+              config_param: config,
+              error_param: errorMessage
+            })
+          } else {
+            await supabase.rpc('update_bot_state', {
+              user_uuid: userId,
+              is_running_param: true,
+              config_param: config,
+              error_param: errorMessage
+            })
+          }
         }
       }, config.interval * 1000)
 
@@ -537,15 +619,27 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       })
 
     // Verify the state was saved correctly before returning
-    const { data: verifyState, error: verifyError } = await supabase.rpc('get_bot_state', {
-      user_uuid: userId
-    })
+    let verifyState, verifyError
+    if (accountId) {
+      const result = await supabase.rpc('get_account_bot_state', {
+        account_uuid: accountId,
+        user_uuid: userId
+      })
+      verifyState = result.data
+      verifyError = result.error
+    } else {
+      const result = await supabase.rpc('get_bot_state', {
+        user_uuid: userId
+      })
+      verifyState = result.data
+      verifyError = result.error
+    }
     
     if (verifyError) {
       console.error('⚠️ Error verifying bot state:', verifyError)
     } else {
       const verifiedRunning = verifyState?.[0]?.is_running
-      console.log(`✅ Trading bot started for user ${userId} with symbols: ${config.symbols.join(', ')}`)
+      console.log(`✅ Trading bot started for user ${userId}${accountId ? ` (account: ${accountId})` : ''} with symbols: ${config.symbols.join(', ')}`)
       console.log(`📊 Verified database state: is_running=${verifiedRunning}`)
       
       if (!verifiedRunning) {
@@ -576,12 +670,23 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
       const maxRetries = 2
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        const result = await supabase.rpc('update_bot_state', {
-          user_uuid: userId,
-          is_running_param: false,
-          config_param: null,
-          error_param: errorMessage
-        })
+        let result
+        if (accountId) {
+          result = await supabase.rpc('update_account_bot_state', {
+            account_uuid: accountId,
+            user_uuid: userId,
+            is_running_param: false,
+            config_param: null,
+            error_param: errorMessage
+          })
+        } else {
+          result = await supabase.rpc('update_bot_state', {
+            user_uuid: userId,
+            is_running_param: false,
+            config_param: null,
+            error_param: errorMessage
+          })
+        }
         
         dbUpdateError = result.error
         
@@ -618,7 +723,7 @@ export async function startBot(supabase: any, userId: string, config: BotConfig)
 }
 
 // Stop the trading bot
-async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
+async function stopBot(supabase: any, userId: string, accountId?: string): Promise<NextResponse> {
   try {
     if (botState.intervalId) {
       clearInterval(botState.intervalId)
@@ -627,12 +732,22 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
     }
 
     // Update bot state in database
-    await supabase.rpc('update_bot_state', {
-      user_uuid: userId,
-      is_running_param: false,
-      config_param: null,
-      error_param: null
-    })
+    if (accountId) {
+      await supabase.rpc('update_account_bot_state', {
+        account_uuid: accountId,
+        user_uuid: userId,
+        is_running_param: false,
+        config_param: null,
+        error_param: null
+      })
+    } else {
+      await supabase.rpc('update_bot_state', {
+        user_uuid: userId,
+        is_running_param: false,
+        config_param: null,
+        error_param: null
+      })
+    }
 
     // Log bot stop
     await supabase
@@ -640,10 +755,10 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
       .insert({
         user_id: userId,
         action: 'stop',
-        message: 'Bot stopped by user'
+        message: `Bot stopped by user${accountId ? ` (account: ${accountId})` : ''}`
       })
 
-    console.log(`Trading bot stopped for user ${userId}`)
+    console.log(`Trading bot stopped for user ${userId}${accountId ? ` (account: ${accountId})` : ''}`)
 
     return NextResponse.json({
       success: true,
@@ -660,7 +775,7 @@ async function stopBot(supabase: any, userId: string): Promise<NextResponse> {
 }
 
 // Execute the main trading loop
-export async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any) {
+export async function executeTradingLoop(supabase: any, userId: string, config: BotConfig, apiKeys: any, accountId?: string) {
   try {
     console.log('═══════════════════════════════════════════════════════════')
     console.log('🤖 STARTING ADVANCED SCALPING BOT CYCLE')
@@ -1963,7 +2078,7 @@ async function executeTradeSignal(
 }
 
 // Get bot status
-async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
+async function getBotStatus(supabase: any, userId: string, accountId?: string): Promise<BotStatus> {
   try {
     // Get bot state from database with retry logic
     let botStateData = null
@@ -1971,9 +2086,17 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
     const maxRetries = 3
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const result = await supabase.rpc('get_bot_state', {
-        user_uuid: userId
-      })
+      let result
+      if (accountId) {
+        result = await supabase.rpc('get_account_bot_state', {
+          account_uuid: accountId,
+          user_uuid: userId
+        })
+      } else {
+        result = await supabase.rpc('get_bot_state', {
+          user_uuid: userId
+        })
+      }
       
       botStateData = result.data
       botStateError = result.error
@@ -2114,15 +2237,28 @@ async function getBotStatus(supabase: any, userId: string): Promise<BotStatus> {
 }
 
 // Toggle always-on mode
-async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean): Promise<NextResponse> {
+async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean, accountId?: string): Promise<NextResponse> {
   try {
-    console.log('🔄 toggleAlwaysOn called:', { userId, alwaysOn })
+    console.log('🔄 toggleAlwaysOn called:', { userId, alwaysOn, accountId })
     
     // Update always_on in database
-    let { data, error } = await supabase.rpc('toggle_always_on', {
-      user_uuid: userId,
-      always_on_param: alwaysOn
-    })
+    let data, error
+    if (accountId) {
+      const result = await supabase.rpc('toggle_account_always_on', {
+        account_uuid: accountId,
+        user_uuid: userId,
+        always_on_param: alwaysOn
+      })
+      data = result.data
+      error = result.error
+    } else {
+      const result = await supabase.rpc('toggle_always_on', {
+        user_uuid: userId,
+        always_on_param: alwaysOn
+      })
+      data = result.data
+      error = result.error
+    }
 
     // If RPC function doesn't exist or fails, try direct update as fallback
     if (error) {
@@ -2134,10 +2270,14 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
       })
       
       // Try direct update/insert as fallback
+      const tableName = accountId ? 'account_bot_state' : 'bot_state'
+      const filterKey = accountId ? 'account_id' : 'user_id'
+      const filterValue = accountId || userId
+      
       const { data: existingState, error: selectError } = await supabase
-        .from('bot_state')
-        .select('user_id, always_on')
-        .eq('user_id', userId)
+        .from(tableName)
+        .select(`${filterKey}, always_on`)
+        .eq(filterKey, filterValue)
         .maybeSingle()
       
       if (selectError && selectError.code !== 'PGRST116') {
@@ -2152,9 +2292,9 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
       if (existingState) {
         // Update existing row
         const { error: updateError } = await supabase
-          .from('bot_state')
+          .from(tableName)
           .update({ always_on: alwaysOn, updated_at: new Date().toISOString() })
-          .eq('user_id', userId)
+          .eq(filterKey, filterValue)
         
         if (updateError) {
           console.error('❌ Error updating always-on directly:', updateError)
@@ -2166,14 +2306,13 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
         console.log('✅ Always-on updated using direct update method')
       } else {
         // Insert new row
+        const insertData = accountId
+          ? { account_id: accountId, user_id: userId, always_on: alwaysOn, is_running: false, updated_at: new Date().toISOString() }
+          : { user_id: userId, always_on: alwaysOn, is_running: false, updated_at: new Date().toISOString() }
+        
         const { error: insertError } = await supabase
-          .from('bot_state')
-          .insert({ 
-            user_id: userId, 
-            always_on: alwaysOn, 
-            is_running: false,
-            updated_at: new Date().toISOString() 
-          })
+          .from(tableName)
+          .insert(insertData)
         
         if (insertError) {
           console.error('❌ Error inserting always-on directly:', insertError)
@@ -2197,15 +2336,25 @@ async function toggleAlwaysOn(supabase: any, userId: string, alwaysOn: boolean):
     // Note: In serverless, we can't check botState.intervalId, so we check is_running instead
     if (alwaysOn && isMarketOpen()) {
       try {
-        const { data: botStateData } = await supabase.rpc('get_bot_state', {
-          user_uuid: userId
-        })
+        let botStateData
+        if (accountId) {
+          const result = await supabase.rpc('get_account_bot_state', {
+            account_uuid: accountId,
+            user_uuid: userId
+          })
+          botStateData = result.data
+        } else {
+          const result = await supabase.rpc('get_bot_state', {
+            user_uuid: userId
+          })
+          botStateData = result.data
+        }
 
         const dbBotState = botStateData?.[0]
         if (dbBotState?.config && !dbBotState.is_running) {
           console.log('🔄 Always-on enabled and market is open - attempting to start bot...')
           try {
-            await startBot(supabase, userId, dbBotState.config as BotConfig)
+            await startBot(supabase, userId, dbBotState.config as BotConfig, accountId)
           } catch (error) {
             console.error('⚠️ Error auto-starting bot (non-critical):', error)
             // Don't fail the toggle if auto-start fails
