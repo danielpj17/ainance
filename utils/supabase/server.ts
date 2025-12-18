@@ -133,21 +133,10 @@ export async function getAlpacaKeysForUser(
 ): Promise<{ apiKey: string | null; secretKey: string | null; paper: boolean; accountName?: string; accountNumber?: string }> {
   const supabase = createClient()
   
-  // For demo user ONLY, use environment variables
-  if (isDemo && userId === DEMO_USER_ID) {
-    console.log('getAlpacaKeysForUser - Demo user, using env vars')
-    const apiKey = accountType === 'paper' 
-      ? (process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY || null)
-      : (process.env.ALPACA_LIVE_KEY || null)
-    const secretKey = accountType === 'paper'
-      ? (process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET || null)
-      : (process.env.ALPACA_LIVE_SECRET || null)
-    return { apiKey, secretKey, paper: accountType === 'paper' }
-  }
-  
-  // For authenticated users with paper trading account ID, fetch from paper_trading_accounts
+  // PRIORITY 1: If account_id is provided for paper trading, fetch from paper_trading_accounts
+  // This works for BOTH demo and authenticated users
   if (accountType === 'paper' && accountId) {
-    console.log('getAlpacaKeysForUser - Fetching paper account keys for account_id:', accountId)
+    console.log('getAlpacaKeysForUser - Fetching paper account keys for account_id:', accountId, 'userId:', userId)
     try {
       const { data: accountKeys, error } = await supabase.rpc('get_paper_account_keys', { 
         account_uuid: accountId,
@@ -157,7 +146,7 @@ export async function getAlpacaKeysForUser(
       if (!error && accountKeys?.[0]) {
         const keys = accountKeys[0]
         if (keys.alpaca_api_key && keys.alpaca_api_secret) {
-          console.log('getAlpacaKeysForUser - Found paper account keys')
+          console.log('getAlpacaKeysForUser - Found paper account keys for account:', keys.account_name)
           return { 
             apiKey: keys.alpaca_api_key, 
             secretKey: keys.alpaca_api_secret, 
@@ -178,7 +167,19 @@ export async function getAlpacaKeysForUser(
     return { apiKey: null, secretKey: null, paper: true }
   }
   
-  // For authenticated users without account_id, fallback to user_settings (backward compatibility)
+  // PRIORITY 2: For demo user WITHOUT account_id, use environment variables
+  if (isDemo && userId === DEMO_USER_ID) {
+    console.log('getAlpacaKeysForUser - Demo user without account_id, using env vars')
+    const apiKey = accountType === 'paper' 
+      ? (process.env.ALPACA_PAPER_KEY || process.env.NEXT_PUBLIC_ALPACA_PAPER_KEY || null)
+      : (process.env.ALPACA_LIVE_KEY || null)
+    const secretKey = accountType === 'paper'
+      ? (process.env.ALPACA_PAPER_SECRET || process.env.NEXT_PUBLIC_ALPACA_PAPER_SECRET || null)
+      : (process.env.ALPACA_LIVE_SECRET || null)
+    return { apiKey, secretKey, paper: accountType === 'paper' }
+  }
+  
+  // PRIORITY 3: For authenticated users without account_id, fallback to user_settings (backward compatibility)
   console.log('getAlpacaKeysForUser - Authenticated user, checking user_settings for keys')
   try {
     const { data: apiKeys, error } = await supabase.rpc('get_user_api_keys', { user_uuid: userId })

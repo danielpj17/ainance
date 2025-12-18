@@ -338,6 +338,64 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Update get_completed_trades_optimized to filter by account_id
+create or replace function get_completed_trades_optimized(
+  user_uuid uuid,
+  account_type_param text default null,
+  account_uuid uuid default null
+)
+returns table(
+  id bigint,
+  symbol text,
+  qty numeric,
+  buy_price numeric,
+  buy_timestamp timestamptz,
+  sell_price numeric,
+  sell_timestamp timestamptz,
+  profit_loss numeric,
+  profit_loss_percent numeric,
+  holding_duration interval,
+  buy_decision_metrics jsonb,
+  sell_decision_metrics jsonb,
+  strategy text,
+  account_type text,
+  trade_pair_id uuid,
+  account_id uuid,
+  account_name text
+) as $$
+begin
+  return query
+  select 
+    tl.id,
+    tl.symbol,
+    tl.qty,
+    tl.buy_price,
+    tl.buy_timestamp,
+    tl.sell_price,
+    tl.sell_timestamp,
+    tl.profit_loss,
+    tl.profit_loss_percent,
+    tl.holding_duration,
+    tl.buy_decision_metrics,
+    tl.sell_decision_metrics,
+    tl.strategy,
+    tl.account_type,
+    tl.trade_pair_id,
+    tl.account_id,
+    tl.account_name
+  from trade_logs tl
+  where tl.user_id = user_uuid
+    and tl.action = 'buy'
+    and (
+      (tl.sell_price is not null and tl.sell_timestamp is not null)
+      or tl.status = 'closed'
+    )
+    and (account_type_param is null or tl.account_type = account_type_param)
+    and (account_uuid is null or tl.account_id = account_uuid)
+  order by coalesce(tl.sell_timestamp, tl.updated_at) desc;
+end;
+$$ language plpgsql security definer;
+
 -- Update get_trade_statistics to filter by account_id
 create or replace function get_trade_statistics(
   user_uuid uuid,

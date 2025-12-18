@@ -116,6 +116,8 @@ export default function PaperTradingPage() {
   const [sellingPosition, setSellingPosition] = useState<string | null>(null)
   const [showSellConfirm, setShowSellConfirm] = useState(false)
   const [positionToSell, setPositionToSell] = useState<CurrentPosition | null>(null)
+  const [selectedCompletedTrade, setSelectedCompletedTrade] = useState<CompletedTrade | null>(null)
+  const [showCompletedTradeModal, setShowCompletedTradeModal] = useState(false)
   
   // Paper account selection
   const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([])
@@ -972,129 +974,225 @@ export default function PaperTradingPage() {
         </Card>
       </div>
 
-      {/* Current Positions */}
+      {/* Current Positions & Completed Trades Tabs */}
       <div className="mb-8">
         <Card className="glass-card">
           <CardHeader>
-            <CardTitle className="text-white">Current Positions</CardTitle>
+            <CardTitle className="text-white">Trading Activity</CardTitle>
             <CardDescription className="text-gray-400">
-              Active paper trading positions with real-time P&L
+              View current positions and completed trades for this account
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {positionsLoading ? (
-              <div className="text-center py-8 text-gray-400">
-                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                Loading positions...
-              </div>
-            ) : currentPositions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>No current positions</p>
-                <p className="text-sm mt-1">Start the trading bot to see positions here</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {currentPositions.map((position) => (
-                  <div
-                    key={position.id.toString()}
-                    className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-blue-500 transition-all"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="text-2xl font-bold text-white">{position.symbol}</div>
-                        <Badge className="bg-blue-400">BUY</Badge>
-                        <Badge variant="outline" className="border-gray-600 text-gray-400">
-                          {position.qty} shares
-                        </Badge>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {formatCurrency(position.unrealized_pl)}
-                        </div>
-                        <div className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-500 mb-1">Entry Price</div>
-                        <div className="font-semibold text-white">{formatCurrency(position.buy_price)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500 mb-1">Current Price</div>
-                        <div className="font-semibold text-white">{formatCurrency(position.current_price)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500 mb-1">Position Value</div>
-                        <div className="font-semibold text-white">{formatCurrency(position.current_value)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500 mb-1 flex items-center gap-1">
-                          <Activity className="h-3 w-3" />
-                          Holding Time
-                        </div>
-                        <div className="font-semibold text-white">{formatDuration(position.holding_duration)}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 pt-3 border-t border-gray-700">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 text-xs text-gray-400">
-                          <div>
-                            Bought: {new Date(position.buy_timestamp).toLocaleString()}
-                          </div>
-                          <div className="text-blue-400">
-                            Strategy: {position.strategy}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {position.buy_decision_metrics && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedPosition(position)
-                                setShowMetricsModal(true)
-                                fetchCurrentSellMetrics(position.symbol, position.current_price)
-                              }}
-                              className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
-                            >
-                              <Info className="h-4 w-4 mr-1" />
-                              View Metrics
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setPositionToSell(position)
-                              setShowSellConfirm(true)
-                            }}
-                            disabled={sellingPosition === position.symbol}
-                            className="border-red-500 text-red-400 hover:bg-red-500/10"
-                          >
-                            {sellingPosition === position.symbol ? (
-                              <>
-                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                Selling...
-                              </>
-                            ) : (
-                              <>
-                                <TrendingDown className="h-4 w-4 mr-1" />
-                                Sell
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+            <Tabs defaultValue="current" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="current">Current Positions</TabsTrigger>
+                <TabsTrigger value="completed">Completed Trades</TabsTrigger>
+              </TabsList>
+              
+              {/* Current Positions Tab */}
+              <TabsContent value="current">
+                {positionsLoading ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                    Loading positions...
                   </div>
-                ))}
-              </div>
-            )}
+                ) : currentPositions.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>No current positions</p>
+                    <p className="text-sm mt-1">Start the trading bot to see positions here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {currentPositions.map((position) => (
+                      <div
+                        key={`${position.symbol}-${position.id}`}
+                        className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-blue-500 transition-all"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl font-bold text-white">{position.symbol}</div>
+                            <Badge className="bg-blue-400">BUY</Badge>
+                            <Badge variant="outline" className="border-gray-600 text-gray-400">
+                              {position.qty} shares
+                            </Badge>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {formatCurrency(position.unrealized_pl)}
+                            </div>
+                            <div className={`text-sm ${position.unrealized_pl_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {position.unrealized_pl_percent >= 0 ? '+' : ''}{position.unrealized_pl_percent.toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <div className="text-gray-500 mb-1">Entry Price</div>
+                            <div className="font-semibold text-white">{formatCurrency(position.buy_price)}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 mb-1">Current Price</div>
+                            <div className="font-semibold text-white">{formatCurrency(position.current_price)}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 mb-1">Position Value</div>
+                            <div className="font-semibold text-white">{formatCurrency(position.current_value)}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 mb-1 flex items-center gap-1">
+                              <Activity className="h-3 w-3" />
+                              Holding Time
+                            </div>
+                            <div className="font-semibold text-white">{formatDuration(position.holding_duration)}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-3 border-t border-gray-700">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4 text-xs text-gray-400">
+                              <div>
+                                Bought: {new Date(position.buy_timestamp).toLocaleString()}
+                              </div>
+                              <div className="text-blue-400">
+                                Strategy: {position.strategy}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {position.buy_decision_metrics && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedPosition(position)
+                                    setShowMetricsModal(true)
+                                    fetchCurrentSellMetrics(position.symbol, position.current_price)
+                                  }}
+                                  className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
+                                >
+                                  <Info className="h-4 w-4 mr-1" />
+                                  View Metrics
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setPositionToSell(position)
+                                  setShowSellConfirm(true)
+                                }}
+                                disabled={sellingPosition === position.symbol}
+                                className="border-red-500 text-red-400 hover:bg-red-500/10"
+                              >
+                                {sellingPosition === position.symbol ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    Selling...
+                                  </>
+                                ) : (
+                                  <>
+                                    <TrendingDown className="h-4 w-4 mr-1" />
+                                    Sell
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+              
+              {/* Completed Trades Tab */}
+              <TabsContent value="completed">
+                {positionsLoading ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                    Loading completed trades...
+                  </div>
+                ) : completedTrades.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>No completed trades yet</p>
+                    <p className="text-sm mt-1">Completed trades will appear here after closing positions</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {completedTrades.map((trade) => (
+                      <div
+                        key={`${trade.symbol}-${trade.id}-${trade.sell_timestamp}`}
+                        onClick={() => {
+                          setSelectedCompletedTrade(trade)
+                          setShowCompletedTradeModal(true)
+                        }}
+                        className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-all cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl font-bold text-white">{trade.symbol}</div>
+                            <Badge variant="outline" className="border-gray-600 text-gray-400">
+                              {trade.qty} shares
+                            </Badge>
+                            <Badge className={trade.profit_loss >= 0 ? 'bg-green-600' : 'bg-red-600'}>
+                              {trade.profit_loss >= 0 ? 'WIN' : 'LOSS'}
+                            </Badge>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-xl font-bold ${trade.profit_loss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {formatCurrency(trade.profit_loss)}
+                            </div>
+                            <div className={`text-sm ${trade.profit_loss_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {trade.profit_loss_percent >= 0 ? '+' : ''}{trade.profit_loss_percent.toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <div className="text-gray-500 mb-1">Buy Price</div>
+                            <div className="font-semibold text-white">{formatCurrency(trade.buy_price)}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 mb-1">Sell Price</div>
+                            <div className="font-semibold text-white">{formatCurrency(trade.sell_price)}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 mb-1">Return</div>
+                            <div className={`font-semibold ${trade.profit_loss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {trade.profit_loss_percent >= 0 ? '+' : ''}{trade.profit_loss_percent.toFixed(2)}%
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 mb-1 flex items-center gap-1">
+                              <Activity className="h-3 w-3" />
+                              Duration
+                            </div>
+                            <div className="font-semibold text-white">{formatDuration(trade.holding_duration)}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-3 border-t border-gray-700">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4 text-xs text-gray-400">
+                              <div>
+                                {new Date(trade.buy_timestamp).toLocaleDateString()} → {new Date(trade.sell_timestamp).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div className="text-purple-400 hover:text-purple-300 text-xs">
+                              Click for metrics →
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
@@ -1585,6 +1683,173 @@ export default function PaperTradingPage() {
                   )}
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Completed Trade Details Modal */}
+      {showCompletedTradeModal && selectedCompletedTrade && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => {
+          setShowCompletedTradeModal(false)
+          setSelectedCompletedTrade(null)
+        }}>
+          <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">Trade Details: {selectedCompletedTrade.symbol}</h2>
+                <button
+                  onClick={() => {
+                    setShowCompletedTradeModal(false)
+                    setSelectedCompletedTrade(null)
+                  }}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Trade Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                  <div className="text-gray-500 text-sm mb-1">Profit/Loss</div>
+                  <div className={`text-2xl font-bold ${selectedCompletedTrade.profit_loss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {formatCurrency(selectedCompletedTrade.profit_loss)}
+                  </div>
+                  <div className={`text-sm ${selectedCompletedTrade.profit_loss_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {selectedCompletedTrade.profit_loss_percent >= 0 ? '+' : ''}{selectedCompletedTrade.profit_loss_percent.toFixed(2)}%
+                  </div>
+                </div>
+                <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                  <div className="text-gray-500 text-sm mb-1">Quantity</div>
+                  <div className="text-2xl font-bold text-white">{selectedCompletedTrade.qty}</div>
+                  <div className="text-sm text-gray-400">shares</div>
+                </div>
+                <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                  <div className="text-gray-500 text-sm mb-1">Buy Price</div>
+                  <div className="text-xl font-bold text-white">{formatCurrency(selectedCompletedTrade.buy_price)}</div>
+                </div>
+                <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                  <div className="text-gray-500 text-sm mb-1">Sell Price</div>
+                  <div className="text-xl font-bold text-white">{formatCurrency(selectedCompletedTrade.sell_price)}</div>
+                </div>
+              </div>
+
+              {/* Timestamps */}
+              <div className="bg-[#252838] p-4 rounded-lg border border-gray-700 mb-6">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="text-gray-500 mb-1">Buy Time</div>
+                    <div className="text-white">{new Date(selectedCompletedTrade.buy_timestamp).toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 mb-1">Sell Time</div>
+                    <div className="text-white">{new Date(selectedCompletedTrade.sell_timestamp).toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 mb-1">Holding Duration</div>
+                    <div className="text-white">{formatDuration(selectedCompletedTrade.holding_duration)}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 mb-1">Strategy</div>
+                    <div className="text-blue-400">{selectedCompletedTrade.strategy}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Buy Decision Metrics */}
+              {selectedCompletedTrade.buy_decision_metrics && (
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-blue-500" />
+                    Buy Decision Metrics
+                  </h3>
+                  <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <div className="text-gray-500 text-sm mb-1">Confidence</div>
+                        <div className="text-2xl font-bold text-white">
+                          {((selectedCompletedTrade.buy_decision_metrics.confidence || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-sm mb-1">Adjusted Confidence</div>
+                        <div className="text-2xl font-bold text-purple-400">
+                          {((selectedCompletedTrade.buy_decision_metrics.adjusted_confidence || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-1">Reasoning</div>
+                      <div className="text-white bg-[#1a1d2e] p-3 rounded border border-gray-700">
+                        {selectedCompletedTrade.buy_decision_metrics.reasoning || 'No reasoning provided'}
+                      </div>
+                    </div>
+
+                    {/* Buy Indicators */}
+                    {selectedCompletedTrade.buy_decision_metrics.indicators && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        {Object.entries(selectedCompletedTrade.buy_decision_metrics.indicators).map(([key, value]: [string, any]) => (
+                          <div key={key} className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">{key.toUpperCase()}</div>
+                            <div className="font-bold text-white">
+                              {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Sell Decision Metrics */}
+              {selectedCompletedTrade.sell_decision_metrics && (
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <TrendingDown className="h-5 w-5 text-red-500" />
+                    Sell Decision Metrics
+                  </h3>
+                  <div className="bg-[#252838] p-4 rounded-lg border border-gray-700">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <div className="text-gray-500 text-sm mb-1">Confidence</div>
+                        <div className="text-2xl font-bold text-white">
+                          {((selectedCompletedTrade.sell_decision_metrics.confidence || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-sm mb-1">Adjusted Confidence</div>
+                        <div className="text-2xl font-bold text-purple-400">
+                          {((selectedCompletedTrade.sell_decision_metrics.adjusted_confidence || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <div className="text-gray-500 text-sm mb-1">Reasoning</div>
+                      <div className="text-white bg-[#1a1d2e] p-3 rounded border border-gray-700">
+                        {selectedCompletedTrade.sell_decision_metrics.reasoning || 'No reasoning provided'}
+                      </div>
+                    </div>
+
+                    {/* Sell Indicators */}
+                    {selectedCompletedTrade.sell_decision_metrics.indicators && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        {Object.entries(selectedCompletedTrade.sell_decision_metrics.indicators).map(([key, value]: [string, any]) => (
+                          <div key={key} className="bg-[#1a1d2e] p-2 rounded border border-gray-700">
+                            <div className="text-gray-400 text-xs mb-1">{key.toUpperCase()}</div>
+                            <div className="font-bold text-white">
+                              {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
