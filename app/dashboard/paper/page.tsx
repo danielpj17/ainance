@@ -133,13 +133,21 @@ export default function PaperTradingPage() {
   // Load data when account is selected
   useEffect(() => {
     if (selectedAccountId) {
+      // Clear old data when switching accounts
+      setAccount(null)
+      setCurrentPositions([])
+      setCompletedTrades([])
+      setPortfolioHistory(null)
+      setChartData([])
+      
+      // Load new data
       loadData()
       
       // Set up realtime subscriptions for trades
       let tradesChannel: any = null
       if (supabaseRef.current) {
         tradesChannel = supabaseRef.current
-          .channel('paper-trades')
+          .channel(`paper-trades-${selectedAccountId}`)
           .on('postgres_changes', 
             { event: 'INSERT', schema: 'public', table: 'trades', filter: 'account_type=eq.paper' },
             () => loadData()
@@ -167,10 +175,10 @@ export default function PaperTradingPage() {
   }, [selectedAccountId])
 
   useEffect(() => {
-    if (account) {
+    if (account && selectedAccountId) {
       loadPortfolioHistory()
     }
-  }, [chartPeriod, account])
+  }, [chartPeriod, account, selectedAccountId])
 
   const loadPaperAccounts = async () => {
     try {
@@ -223,6 +231,7 @@ export default function PaperTradingPage() {
       const sb = supabaseRef.current
       if (!sb) return
       
+      console.log('[PAPER TRADING] Loading positions for account_id:', selectedAccountId)
       const { data: { session } } = await sb.auth.getSession()
       const response = await fetch(`/api/trade-logs?view=current&account_id=${selectedAccountId}`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
@@ -233,7 +242,8 @@ export default function PaperTradingPage() {
       console.log('[PAPER TRADING] Positions API response:', {
         success: data.success,
         count: data.data?.currentTrades?.length || 0,
-        accountId: selectedAccountId
+        accountId: selectedAccountId,
+        positions: data.data?.currentTrades
       })
       
       if (data.success) {
@@ -253,12 +263,19 @@ export default function PaperTradingPage() {
       const sb = supabaseRef.current
       if (!sb) return
       
+      console.log('[PAPER TRADING] Loading completed trades for account_id:', selectedAccountId)
       const { data: { session } } = await sb.auth.getSession()
       const response = await fetch(`/api/trade-logs?view=completed&account_id=${selectedAccountId}`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
       
       const data = await response.json()
+      
+      console.log('[PAPER TRADING] Completed trades response:', {
+        success: data.success,
+        count: data.data?.completedTrades?.length || 0,
+        accountId: selectedAccountId
+      })
       
       if (data.success) {
         setCompletedTrades(data.data.completedTrades || [])
@@ -272,10 +289,11 @@ export default function PaperTradingPage() {
     if (!selectedAccountId) return
     
     try {
+      console.log('[PAPER TRADING] Loading account data for account_id:', selectedAccountId)
       const response = await authFetch(`/api/account?account_id=${selectedAccountId}`)
       const result = await response.json()
       
-      console.log('Account API response:', result)
+      console.log('[PAPER TRADING] Account API response:', result)
       
       if (result.success && result.data) {
         console.log('Account data:', result.data)
@@ -665,7 +683,13 @@ export default function PaperTradingPage() {
           {/* Account Selector */}
           {paperAccounts.length > 0 && (
             <div className="ml-4">
-              <Select value={selectedAccountId || ''} onValueChange={setSelectedAccountId}>
+              <Select 
+                value={selectedAccountId || ''} 
+                onValueChange={(value) => {
+                  console.log('[PAPER TRADING] Switching account to:', value)
+                  setSelectedAccountId(value)
+                }}
+              >
                 <SelectTrigger className="w-[280px] bg-black/30 border-white/20">
                   <SelectValue placeholder="Select account" />
                 </SelectTrigger>
@@ -677,6 +701,12 @@ export default function PaperTradingPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {loading && (
+                <div className="text-xs text-blue-400 mt-1 flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading account data...
+                </div>
+              )}
             </div>
           )}
         </div>

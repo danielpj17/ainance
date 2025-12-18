@@ -14,9 +14,10 @@ export async function GET(req: NextRequest) {
     const period = searchParams.get('period') || '1D' // 1D, 1W, 1M, 1A
     const timeframe = searchParams.get('timeframe') || '1Min'
     const accountType = (searchParams.get('account_type') || 'paper') as 'paper' | 'live'
+    const accountId = searchParams.get('account_id') || undefined
 
-    // Get Alpaca keys (strict: no demo fallback for authenticated users)
-    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType)
+    // Get Alpaca keys (with optional account_id for paper trading)
+    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType, accountId)
     
     console.log('Account History API - Account type:', accountType)
     
