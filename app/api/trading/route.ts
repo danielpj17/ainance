@@ -1375,9 +1375,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       // Get current position details
       const position = positions.find((p: any) => p.symbol === sellSignal.symbol)
       if (position) {
-        sellSignal.shares = Math.abs(parseInt(position.qty))
-        sellSignal.allocated_capital = Math.abs(parseFloat(position.market_value))
-        console.log(`   Selling entire position: ${sellSignal.shares} shares = $${sellSignal.allocated_capital.toFixed(2)}`)
+        (sellSignal as any).shares = Math.abs(parseInt(position.qty));
+        (sellSignal as any).allocated_capital = Math.abs(parseFloat(position.market_value))
+        console.log(`   Selling entire position: ${(sellSignal as any).shares} shares = $${(sellSignal as any).allocated_capital.toFixed(2)}`)
         validSellSignals.push(sellSignal)
       } else {
         // Position not found in Alpaca - try to get from trade_logs as fallback
@@ -1395,9 +1395,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             .single()
           
           if (tradeLog && tradeLog.qty) {
-            sellSignal.shares = Math.abs(parseInt(tradeLog.qty))
-            sellSignal.allocated_capital = sellSignal.shares * sellSignal.price
-            console.log(`   Found position in trade_logs: ${sellSignal.shares} shares = $${sellSignal.allocated_capital.toFixed(2)}`)
+            (sellSignal as any).shares = Math.abs(parseInt(tradeLog.qty));
+            (sellSignal as any).allocated_capital = (sellSignal as any).shares * sellSignal.price
+            console.log(`   Found position in trade_logs: ${(sellSignal as any).shares} shares = $${(sellSignal as any).allocated_capital.toFixed(2)}`)
             validSellSignals.push(sellSignal)
           } else {
             console.error(`❌ No open position found for ${sellSignal.symbol} in Alpaca or trade_logs - skipping sell signal`)
