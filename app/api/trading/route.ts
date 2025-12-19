@@ -1399,13 +1399,19 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
 
     // STEP 11: Intelligent Capital Allocation for BUY Signals
     const account = await alpacaClient.getAccount()
-    let availableCash = parseFloat(account.buying_power)
+    // For cash accounts, use actual cash to prevent margin trading
+    // For margin accounts, use buying power which includes margin
+    const isCashAccount = config.accountType === 'cash'
+    let availableCash = isCashAccount 
+      ? parseFloat(account.cash) 
+      : parseFloat(account.buying_power)
     
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`💰 ALLOCATING CAPITAL FOR BUY SIGNALS: ${buySignals.length} candidates`)
     console.log('═══════════════════════════════════════════════════════════')
     
-    console.log(`💰 Available Buying Power: $${availableCash.toFixed(2)}`)
+    console.log(`💰 Account Type: ${isCashAccount ? 'CASH' : 'MARGIN'}`)
+    console.log(`💰 Available ${isCashAccount ? 'Cash' : 'Buying Power'}: $${availableCash.toFixed(2)}`)
     const allocationResult = await allocateCapital(buySignals, availableCash, marketRisk, positions, config, supabase, userId)
     const allocatedBuySignals = allocationResult.signals
     const forcedSells = allocationResult.forcedSells || []
@@ -1883,13 +1889,18 @@ async function executeTradeSignal(
 
     // Get account info for final validation
     const account = await alpacaClient.getAccount()
-    const buyingPower = parseFloat(account.buying_power)
     const cash = parseFloat(account.cash)
+    const buyingPower = parseFloat(account.buying_power)
+    
+    // For cash accounts, use actual cash to prevent margin trading
+    // For margin accounts, use buying power which includes margin
+    const isCashAccount = config.accountType === 'cash'
+    const availableFunds = isCashAccount ? cash : buyingPower
 
-    // For BUY orders, check buying power
+    // For BUY orders, check available funds based on account type
     if (signal.action === 'buy') {
-      if (totalCost > buyingPower) {
-        console.log(`❌ Insufficient buying power for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${buyingPower.toFixed(2)}`)
+      if (totalCost > availableFunds) {
+        console.log(`❌ Insufficient ${isCashAccount ? 'cash' : 'buying power'} for ${signal.symbol}: need $${totalCost.toFixed(2)}, have $${availableFunds.toFixed(2)}`)
         return
       }
       
@@ -1899,7 +1910,7 @@ async function executeTradeSignal(
         quantity: positionSize,
         price: signal.price,
         accountBalance: cash,
-        buyingPower: buyingPower
+        buyingPower: availableFunds
       })
 
       if (!validation.valid) {

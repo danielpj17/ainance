@@ -25,7 +25,7 @@ const CompletedTradeItem = memo(({ trade, onOpenDetails, onFetchTransactions, fo
   return (
     <div
       onClick={() => onOpenDetails(trade)}
-      className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-all cursor-pointer"
+      className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-blue-500 transition-all cursor-pointer"
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
@@ -34,7 +34,7 @@ const CompletedTradeItem = memo(({ trade, onOpenDetails, onFetchTransactions, fo
             {trade.qty} shares
           </Badge>
           {trade.transaction_count && trade.transaction_count > 1 && (
-            <Badge variant="outline" className="border-purple-500/50 text-purple-400 text-xs">
+            <Badge variant="outline" className="border-blue-500/50 text-blue-400 text-xs">
               {trade.transaction_count} transactions
             </Badge>
           )}
@@ -93,11 +93,11 @@ const CompletedTradeItem = memo(({ trade, onOpenDetails, onFetchTransactions, fo
                 e.stopPropagation()
                 onFetchTransactions(trade.symbol)
               }}
-              className="border-purple-500 text-purple-400 hover:bg-purple-500/10"
+              className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
             >
               View Transactions
             </Button>
-            <div className="text-purple-400 hover:text-purple-300 text-xs">
+            <div className="text-blue-400 hover:text-blue-300 text-xs">
               Click card for metrics →
             </div>
           </div>

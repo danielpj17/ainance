@@ -137,7 +137,7 @@ export class SimpleRuleBasedAlgorithm implements TradingAlgorithm {
           confidence = 0.7
           reasoning_parts.push('Oversold (RSI<30)')
         } 
-        // MACD + EMA trend signals
+        // Strong MACD + EMA trend signals
         else if (macd > 0 && ema_trend === 1) {
           signal = 'buy'
           confidence = 0.65
@@ -146,6 +146,22 @@ export class SimpleRuleBasedAlgorithm implements TradingAlgorithm {
           signal = 'sell'
           confidence = 0.65
           reasoning_parts.push('Bearish momentum (MACD-, EMA downtrend)')
+        }
+        // Moderate sell signals (weakening momentum)
+        else if (rsi > 60 && macd < 0) {
+          signal = 'sell'
+          confidence = 0.55
+          reasoning_parts.push('Weakening momentum (RSI>60, MACD negative)')
+        } else if (ema_trend === -1 && rsi > 55) {
+          signal = 'sell'
+          confidence = 0.52
+          reasoning_parts.push('Downtrend forming (EMA down, RSI elevated)')
+        }
+        // Moderate buy signals (strengthening momentum)
+        else if (rsi < 40 && macd > 0) {
+          signal = 'buy'
+          confidence = 0.55
+          reasoning_parts.push('Strengthening momentum (RSI<40, MACD positive)')
         }
         
         // Adjust confidence based on news sentiment
@@ -278,12 +294,19 @@ export class AdvancedRuleBasedAlgorithm implements TradingAlgorithm {
         let action: 'buy' | 'sell' | 'hold' = 'hold'
         let confidence = 0.6
         
+        // More aggressive thresholds for better position management
         if (score >= 2) {
           action = 'buy'
           confidence = Math.min(0.95, 0.6 + (score - 2) * 0.1)
+        } else if (score >= 1) {
+          action = 'buy'
+          confidence = 0.55  // Moderate buy signal
         } else if (score <= -2) {
           action = 'sell'
           confidence = Math.min(0.95, 0.6 + Math.abs(score + 2) * 0.1)
+        } else if (score <= -1) {
+          action = 'sell'
+          confidence = 0.52  // Moderate sell signal - helps exit positions earlier
         }
         
         const reasoning = reasoning_parts.length > 0

@@ -38,18 +38,12 @@ export default function CurrentTradesList({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mb-4 p-2 bg-gray-800 rounded text-xs text-gray-400">
-            Debug: isLoading={isLoading.toString()}, currentTrades.length={currentTrades.length}
-          </div>
-        )}
         {isLoading ? (
           <div className="text-center py-8 text-gray-400">Loading...</div>
         ) : currentTrades.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
             <p>No current positions</p>
-            <p className="text-xs text-gray-600 mt-2">Check console for debug info</p>
           </div>
         ) : (
           <div className="space-y-4">

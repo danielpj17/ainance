@@ -38,18 +38,12 @@ export default function CompletedTradesList({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mb-4 p-2 bg-gray-800 rounded text-xs text-gray-400">
-            Debug: isLoading={isLoading.toString()}, completedTrades.length={completedTrades.length}
-          </div>
-        )}
         {isLoading ? (
           <div className="text-center py-8 text-gray-400">Loading...</div>
         ) : completedTrades.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
             <p>No completed trades yet</p>
-            <p className="text-xs text-gray-600 mt-2">Check console for debug info</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -69,7 +63,7 @@ export default function CompletedTradesList({
                 <Button
                   variant="outline"
                   onClick={() => setShowAllCompleted(!showAllCompleted)}
-                  className="w-full border-purple-500 text-purple-400 hover:bg-purple-500/10"
+                  className="w-full border-blue-500 text-blue-400 hover:bg-blue-500/10"
                 >
                   {showAllCompleted ? 'Show Less' : `See More (${completedTrades.length - 10} more)`}
                 </Button>
