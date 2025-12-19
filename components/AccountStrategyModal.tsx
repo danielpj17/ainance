@@ -23,6 +23,7 @@ interface StrategySettings {
   confidence_threshold: number
   sell_confidence_threshold: number
   max_exposure: number
+  algorithm_type: 'ml_model' | 'rule_based_simple' | 'rule_based_advanced'
 }
 
 export default function AccountStrategyModal({ accountId, accountName, isOpen, onClose, onSave }: AccountStrategyModalProps) {
@@ -31,7 +32,8 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
     account_type: 'cash',
     confidence_threshold: 0.65,
     sell_confidence_threshold: 0.50,
-    max_exposure: 90
+    max_exposure: 90,
+    algorithm_type: 'ml_model'
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -55,8 +57,11 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
 
       const result = await response.json()
 
-      if (result.success && result.data) {
-        setSettings(result.data)
+      if (result.success && result.settings) {
+        setSettings({
+          ...result.settings,
+          algorithm_type: result.settings.algorithm_type || 'ml_model'
+        })
       }
     } catch (error) {
       console.error('Error loading settings:', error)
@@ -75,14 +80,14 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       const { data: { session } } = await supabase.auth.getSession()
 
       const response = await fetch('/api/account-strategy', {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
         },
         body: JSON.stringify({
           account_id: accountId,
-          ...settings
+          settings: settings
         })
       })
 
@@ -173,6 +178,28 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
                   {settings.account_type === 'cash' 
                     ? 'Trade with settled funds only' 
                     : 'Trade with borrowed funds (2x-4x leverage)'}
+                </p>
+              </div>
+
+              {/* Algorithm Type */}
+              <div>
+                <Label htmlFor="algorithm_type" className="text-white">Trading Algorithm</Label>
+                <Select value={settings.algorithm_type} onValueChange={(value: any) => setSettings({ ...settings, algorithm_type: value })}>
+                  <SelectTrigger id="algorithm_type" className="bg-[#252838] border-gray-700 text-white mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ml_model">ML Model (Random Forest)</SelectItem>
+                    <SelectItem value="rule_based_simple">Rule-Based (Simple)</SelectItem>
+                    <SelectItem value="rule_based_advanced">Rule-Based (Advanced)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {settings.algorithm_type === 'ml_model' 
+                    ? 'Uses trained Random Forest model for predictions' 
+                    : settings.algorithm_type === 'rule_based_simple'
+                    ? 'Uses RSI, MACD, and EMA indicators with simple rules'
+                    : 'Uses advanced multi-indicator scoring system'}
                 </p>
               </div>
 

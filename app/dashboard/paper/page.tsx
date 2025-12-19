@@ -880,27 +880,17 @@ export default function PaperTradingPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Trading Bot */}
           <div className="lg:col-span-1 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white">Trading Bot</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setStrategyModalAccountId(selectedAccountId)
-                  setStrategyModalAccountName(
-                    paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Account'
-                  )
-                  setShowStrategyModal(true)
-                }}
-                className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-            </div>
             <TradingBot 
               mode="paper" 
               accountId={selectedAccountId}
               accountName={paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Paper Account'}
+              onConfigureStrategy={() => {
+                setStrategyModalAccountId(selectedAccountId)
+                setStrategyModalAccountName(
+                  paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Account'
+                )
+                setShowStrategyModal(true)
+              }}
             />
           </div>
           

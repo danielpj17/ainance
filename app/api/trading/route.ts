@@ -10,6 +10,7 @@ import { TradingErrorHandler, withRetry } from '@/lib/error-handler'
 import { isDemoMode } from '@/lib/demo-user'
 import { initializeFRED, isFREDInitialized } from '@/lib/fred-data'
 import { StockScanner, getDefaultScalpingStocks } from '@/lib/stock-scanner'
+import { createAlgorithm, AlgorithmType } from '@/lib/trading-algorithms'
 
 export interface BotStatus {
   isRunning: boolean
@@ -1146,13 +1147,33 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       fed_funds_rate: fredIndicators?.fed_funds_rate || 5.0
     }))
 
-    // STEP 7: Get ML Predictions (call ML service directly with retry logic)
-    console.log('🧠 Calling ML prediction service directly...')
-    const ML_SERVICE_URL = (process.env.ML_SERVICE_URL || 'http://localhost:8080').replace(/\/$/, '')
+    // STEP 7: Get Algorithm Type and Make Predictions
+    // Fetch algorithm type from account strategy settings
+    let algorithmType: AlgorithmType = 'ml_model' // Default to ML model
     
-    let mlData: any
+    if (accountId) {
+      try {
+        const { data: strategyData, error: strategyError } = await supabase.rpc('get_account_strategy_settings', {
+          account_uuid: accountId,
+          user_uuid: userId
+        })
+        
+        if (!strategyError && strategyData && strategyData.length > 0) {
+          algorithmType = strategyData[0].algorithm_type || 'ml_model'
+          console.log(`🎯 Using algorithm type: ${algorithmType} for account ${accountId}`)
+        } else {
+          console.log(`⚠️  Could not fetch algorithm type, defaulting to ml_model`)
+        }
+      } catch (error) {
+        console.warn('⚠️  Error fetching algorithm type, defaulting to ml_model:', error)
+      }
+    } else {
+      console.log(`🎯 No account ID provided, using default algorithm: ${algorithmType}`)
+    }
     
-    // Strip enhanced features before sending to ML model
+    console.log(`🧠 Calling ${algorithmType} algorithm...`)
+    
+    // Strip enhanced features before sending to algorithm
     const coreFeatures = enhancedFeatures.map((f: any) => ({
       symbol: f.symbol,
       rsi: f.rsi,
@@ -1171,85 +1192,43 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       price: f.price
     }))
     
-    console.log(`📤 Sending ${coreFeatures.length} features to ML service (from ${enhancedFeatures.length} indicators)`)
+    console.log(`📤 Sending ${coreFeatures.length} features to ${algorithmType} algorithm (from ${enhancedFeatures.length} indicators)`)
     
-    // Retry logic for ML service (handles cold starts)
-    const maxRetries = 2
-    let lastError: any
+    // Create algorithm instance and get predictions
+    const algorithm = createAlgorithm(algorithmType, { 
+      mlServiceUrl: process.env.ML_SERVICE_URL 
+    })
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        if (attempt > 1) {
-          console.log(`🔄 Retry attempt ${attempt}/${maxRetries} for ML service...`)
-        }
-        
-        const mlResponse = await fetch(`${ML_SERVICE_URL}/predict`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            features: coreFeatures,
-            include_probabilities: true
-          }),
-          signal: AbortSignal.timeout(30000) // Increased to 30 seconds for cold starts
-        })
-        
-        if (!mlResponse.ok) {
-          const errorText = await mlResponse.text().catch(() => 'No error details')
-          console.error(`❌ ML service HTTP error ${mlResponse.status}:`, errorText)
-          throw new Error(`ML service returned ${mlResponse.status}: ${errorText.substring(0, 200)}`)
-        }
-        
-        mlData = await mlResponse.json()
-        
-        if (!mlData.success) {
-          console.error('❌ ML service returned error:', mlData.error || 'Unknown error')
-          throw new Error(`ML service error: ${mlData.error || 'Unknown error'}`)
-        }
-        
-        if (!mlData.signals || !Array.isArray(mlData.signals)) {
-          console.error('❌ ML service returned invalid signals:', { 
-            hasSignals: !!mlData.signals, 
-            isArray: Array.isArray(mlData.signals),
-            signalsType: typeof mlData.signals,
-            signalsLength: mlData.signals?.length
-          })
-          throw new Error('ML service did not return valid signals array')
-        }
-        
-        console.log(`✅ ML predictions received: ${mlData.signals.length} signals for ${coreFeatures.length} features (attempt ${attempt})`)
-        
-        // Warn if we got fewer signals than features
-        if (mlData.signals.length < coreFeatures.length) {
-          console.warn(`⚠️  ML service returned ${mlData.signals.length} signals but we sent ${coreFeatures.length} features (${coreFeatures.length - mlData.signals.length} missing)`)
-          const returnedSymbols = new Set(mlData.signals.map((s: any) => s.symbol))
-          const missingSymbols = coreFeatures.filter((f: any) => !returnedSymbols.has(f.symbol))
-          if (missingSymbols.length > 0) {
-            console.warn(`⚠️  Missing signals for: ${missingSymbols.slice(0, 10).map((f: any) => f.symbol).join(', ')}${missingSymbols.length > 10 ? ` ... and ${missingSymbols.length - 10} more` : ''}`)
-          }
-        }
-        
-        break // Success, exit retry loop
-        
-      } catch (error: any) {
-        lastError = error
-        const errorName = error.name || 'Unknown'
-        const errorMessage = error.message || String(error)
-        console.error(`❌ ML service attempt ${attempt} failed [${errorName}]:`, errorMessage)
-        
-        if (error.name === 'TimeoutError' || error.message?.includes('timeout')) {
-          console.error(`⏱️  ML service timed out after 30 seconds - this may indicate the service is overloaded or processing too many symbols`)
-        }
-        
-        if (attempt < maxRetries) {
-          console.log(`⏳ Waiting 3 seconds before retry...`)
-          await new Promise(resolve => setTimeout(resolve, 3000))
-        }
+    const algorithmResponse = await algorithm.predict(coreFeatures)
+    
+    if (!algorithmResponse.success) {
+      console.error(`❌ ${algorithmType} algorithm failed:`, algorithmResponse.error)
+      throw new Error(`${algorithmType} algorithm failed: ${algorithmResponse.error}`)
+    }
+    
+    if (!algorithmResponse.signals || !Array.isArray(algorithmResponse.signals)) {
+      console.error(`❌ ${algorithmType} algorithm returned invalid signals`)
+      throw new Error(`${algorithmType} algorithm did not return valid signals array`)
+    }
+    
+    console.log(`✅ ${algorithmType} predictions received: ${algorithmResponse.signals.length} signals for ${coreFeatures.length} features`)
+    
+    // Warn if we got fewer signals than features
+    if (algorithmResponse.signals.length < coreFeatures.length) {
+      console.warn(`⚠️  ${algorithmType} returned ${algorithmResponse.signals.length} signals but we sent ${coreFeatures.length} features (${coreFeatures.length - algorithmResponse.signals.length} missing)`)
+      const returnedSymbols = new Set(algorithmResponse.signals.map((s: any) => s.symbol))
+      const missingSymbols = coreFeatures.filter((f: any) => !returnedSymbols.has(f.symbol))
+      if (missingSymbols.length > 0) {
+        console.warn(`⚠️  Missing signals for: ${missingSymbols.slice(0, 10).map((f: any) => f.symbol).join(', ')}${missingSymbols.length > 10 ? ` ... and ${missingSymbols.length - 10} more` : ''}`)
       }
     }
     
-    if (!mlData) {
-      console.error('❌ All ML service attempts failed')
-      throw new Error(`ML service unavailable after ${maxRetries} attempts: ${lastError?.message}`)
+    // Convert algorithm response to mlData format for compatibility with rest of code
+    const mlData = {
+      success: true,
+      signals: algorithmResponse.signals,
+      model_version: algorithmResponse.model_version || algorithmType,
+      algorithm_type: algorithmType
     }
 
     // STEP 8: Current positions already retrieved above (moved earlier to include in ML predictions)
@@ -1614,7 +1593,8 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
             market_open: isMarketOpen(),
             in_last_30_minutes: isInLast30Minutes(),
             filtered_buy_count: filteredBuySignals.length,
-            filtered_sell_count: filteredSellSignals.length
+            filtered_sell_count: filteredSellSignals.length,
+            algorithm_type: algorithmType
           }
         }
       }

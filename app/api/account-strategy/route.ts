@@ -1,61 +1,94 @@
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, getUserIdFromRequest } from '@/utils/supabase/server'
+import { getUserIdFromRequest } from '@/utils/supabase/server'
+import { createClient } from '@/utils/supabase/server'
+import { AlgorithmType } from '@/lib/trading-algorithms'
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+interface StrategySettings {
+  strategy: 'cash' | '25k_plus'
+  account_type: 'cash' | 'margin'
+  confidence_threshold: number
+  sell_confidence_threshold: number
+  max_exposure: number
+  algorithm_type: AlgorithmType
+}
+
+/**
+ * GET - Fetch strategy settings for a specific paper trading account
+ */
+export async function GET(req: NextRequest) {
   try {
-    const supabase = await createServerClient(req, {})
+    const supabase = await createClient()
     
-    // Get user ID from request
+    // Get user ID from request cookies
     const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('[ACCOUNT-STRATEGY GET] User detected:', { userId, isDemo })
-
+    console.log('Account Strategy API - GET - User:', { userId, isDemo })
+    
     // Get account_id from query params
     const { searchParams } = new URL(req.url)
-    const account_id = searchParams.get('account_id')
-
-    if (!account_id) {
+    const accountId = searchParams.get('account_id')
+    
+    if (!accountId) {
       return NextResponse.json({
         success: false,
-        error: 'account_id parameter is required'
+        error: 'account_id is required'
       }, { status: 400 })
     }
-
-    // Get strategy settings for this account
+    
+    // Fetch strategy settings using the database function
+    console.log(`Fetching strategy settings for account ${accountId}, user ${userId}`)
+    
     const { data, error } = await supabase.rpc('get_account_strategy_settings', {
-      account_uuid: account_id,
+      account_uuid: accountId,
       user_uuid: userId
     })
-
+    
     if (error) {
-      console.error('[ACCOUNT-STRATEGY GET] Error fetching settings:', error)
+      console.error('Error fetching account strategy settings:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
       return NextResponse.json({
         success: false,
         error: error.message || 'Failed to fetch strategy settings'
       }, { status: 500 })
     }
-
+    
+    console.log('Fetched data from database:', data)
+    
     // If no settings exist, return defaults
     if (!data || data.length === 0) {
+      console.log('No settings found, returning defaults')
       return NextResponse.json({
         success: true,
-        data: {
+        settings: {
           strategy: 'cash',
           account_type: 'cash',
           confidence_threshold: 0.65,
           sell_confidence_threshold: 0.50,
-          max_exposure: 90
-        }
+          max_exposure: 90,
+          algorithm_type: 'ml_model'
+        },
+        exists: false
       })
     }
-
+    
+    const settings = data[0]
+    console.log('Returning settings:', settings)
+    
     return NextResponse.json({
       success: true,
-      data: data[0]
+      settings: {
+        strategy: settings.strategy,
+        account_type: settings.account_type,
+        confidence_threshold: settings.confidence_threshold,
+        sell_confidence_threshold: settings.sell_confidence_threshold,
+        max_exposure: settings.max_exposure,
+        algorithm_type: settings.algorithm_type || 'ml_model'
+      },
+      exists: true
     })
-
+    
   } catch (error: any) {
-    console.error('[ACCOUNT-STRATEGY GET] Error:', error)
+    console.error('Account Strategy API - GET error:', error)
     return NextResponse.json({
       success: false,
       error: error.message || 'Internal server error'
@@ -63,97 +96,140 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+/**
+ * PUT - Update strategy settings for a specific paper trading account
+ */
+export async function PUT(req: NextRequest) {
   try {
-    const supabase = await createServerClient(req, {})
+    const supabase = await createClient()
     
-    // Get user ID from request
+    // Get user ID from request cookies
     const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('[ACCOUNT-STRATEGY POST] User detected:', { userId, isDemo })
-
+    console.log('Account Strategy API - PUT - User:', { userId, isDemo })
+    
+    // Parse request body
     const body = await req.json()
-    const { 
-      account_id,
-      strategy,
-      account_type,
-      confidence_threshold,
-      sell_confidence_threshold,
-      max_exposure
-    } = body
-
+    const { account_id, settings } = body
+    
     if (!account_id) {
       return NextResponse.json({
         success: false,
         error: 'account_id is required'
       }, { status: 400 })
     }
-
-    // Validate parameters
-    if (strategy && !['cash', '25k_plus'].includes(strategy)) {
+    
+    if (!settings) {
       return NextResponse.json({
         success: false,
-        error: 'Invalid strategy. Must be cash or 25k_plus'
+        error: 'settings object is required'
       }, { status: 400 })
     }
-
-    if (account_type && !['cash', 'margin'].includes(account_type)) {
+    
+    // Validate algorithm_type if provided
+    const validAlgorithmTypes: AlgorithmType[] = ['ml_model', 'rule_based_simple', 'rule_based_advanced']
+    if (settings.algorithm_type && !validAlgorithmTypes.includes(settings.algorithm_type)) {
       return NextResponse.json({
         success: false,
-        error: 'Invalid account_type. Must be cash or margin'
+        error: `Invalid algorithm_type. Must be one of: ${validAlgorithmTypes.join(', ')}`
       }, { status: 400 })
     }
-
-    if (confidence_threshold !== undefined && (confidence_threshold < 0 || confidence_threshold > 1)) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid confidence_threshold. Must be between 0 and 1'
-      }, { status: 400 })
+    
+    // Validate numeric ranges
+    if (settings.confidence_threshold !== undefined) {
+      const threshold = parseFloat(settings.confidence_threshold)
+      if (isNaN(threshold) || threshold < 0 || threshold > 1) {
+        return NextResponse.json({
+          success: false,
+          error: 'confidence_threshold must be between 0 and 1'
+        }, { status: 400 })
+      }
     }
-
-    if (sell_confidence_threshold !== undefined && (sell_confidence_threshold < 0 || sell_confidence_threshold > 1)) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid sell_confidence_threshold. Must be between 0 and 1'
-      }, { status: 400 })
+    
+    if (settings.sell_confidence_threshold !== undefined) {
+      const threshold = parseFloat(settings.sell_confidence_threshold)
+      if (isNaN(threshold) || threshold < 0 || threshold > 1) {
+        return NextResponse.json({
+          success: false,
+          error: 'sell_confidence_threshold must be between 0 and 1'
+        }, { status: 400 })
+      }
     }
-
-    if (max_exposure !== undefined && (max_exposure < 0 || max_exposure > 100)) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid max_exposure. Must be between 0 and 100'
-      }, { status: 400 })
+    
+    if (settings.max_exposure !== undefined) {
+      const exposure = parseFloat(settings.max_exposure)
+      if (isNaN(exposure) || exposure < 0 || exposure > 100) {
+        return NextResponse.json({
+          success: false,
+          error: 'max_exposure must be between 0 and 100'
+        }, { status: 400 })
+      }
     }
-
-    // Update strategy settings
-    const { error } = await supabase.rpc('update_account_strategy_settings', {
+    
+    console.log(`Updating strategy settings for account ${account_id}:`, settings)
+    
+    const rpcParams = {
       account_uuid: account_id,
       user_uuid: userId,
-      strategy_param: strategy || null,
-      account_type_param: account_type || null,
-      confidence_threshold_param: confidence_threshold !== undefined ? confidence_threshold : null,
-      sell_confidence_threshold_param: sell_confidence_threshold !== undefined ? sell_confidence_threshold : null,
-      max_exposure_param: max_exposure !== undefined ? max_exposure : null
-    })
-
+      p_strategy: settings.strategy || null,
+      p_account_type: settings.account_type || null,
+      p_confidence_threshold: settings.confidence_threshold !== undefined ? parseFloat(settings.confidence_threshold) : null,
+      p_sell_confidence_threshold: settings.sell_confidence_threshold !== undefined ? parseFloat(settings.sell_confidence_threshold) : null,
+      p_max_exposure: settings.max_exposure !== undefined ? parseFloat(settings.max_exposure) : null,
+      p_algorithm_type: settings.algorithm_type || null
+    }
+    
+    console.log('RPC parameters:', rpcParams)
+    
+    // Update strategy settings using the database function
+    const { data: rpcData, error } = await supabase.rpc('update_account_strategy_settings', rpcParams)
+    
     if (error) {
-      console.error('[ACCOUNT-STRATEGY POST] Error updating settings:', error)
+      console.error('Error updating account strategy settings:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
       return NextResponse.json({
         success: false,
         error: error.message || 'Failed to update strategy settings'
       }, { status: 500 })
     }
-
+    
+    console.log(`✅ Strategy settings updated successfully for account ${account_id}`)
+    console.log('RPC result:', rpcData)
+    
+    // Fetch and return the updated settings
+    const { data: updatedData, error: fetchError } = await supabase.rpc('get_account_strategy_settings', {
+      account_uuid: account_id,
+      user_uuid: userId
+    })
+    
+    if (fetchError || !updatedData || updatedData.length === 0) {
+      // Settings were saved but we couldn't fetch them back
+      return NextResponse.json({
+        success: true,
+        message: 'Settings updated successfully',
+        settings: settings
+      })
+    }
+    
+    const updated = updatedData[0]
+    
     return NextResponse.json({
       success: true,
-      message: 'Strategy settings updated successfully'
+      message: 'Settings updated successfully',
+      settings: {
+        strategy: updated.strategy,
+        account_type: updated.account_type,
+        confidence_threshold: updated.confidence_threshold,
+        sell_confidence_threshold: updated.sell_confidence_threshold,
+        max_exposure: updated.max_exposure,
+        algorithm_type: updated.algorithm_type || 'ml_model'
+      }
     })
-
+    
   } catch (error: any) {
-    console.error('[ACCOUNT-STRATEGY POST] Error:', error)
+    console.error('Account Strategy API - PUT error:', error)
     return NextResponse.json({
       success: false,
       error: error.message || 'Internal server error'
     }, { status: 500 })
   }
 }
-

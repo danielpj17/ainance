@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle, Info, X } from 'lucide-react'
+import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle, Info, X, Settings } from 'lucide-react'
 
 export interface BotStatus {
   isRunning: boolean
@@ -49,9 +49,10 @@ interface TradingBotProps {
   mode: 'paper' | 'live'
   accountId?: string  // Optional for per-account bots (paper trading)
   accountName?: string  // Display name for the account
+  onConfigureStrategy?: () => void  // Optional callback for configure strategy button
 }
 
-export default function TradingBot({ mode, accountId, accountName }: TradingBotProps) {
+export default function TradingBot({ mode, accountId, accountName, onConfigureStrategy }: TradingBotProps) {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,6 +62,7 @@ export default function TradingBot({ mode, accountId, accountName }: TradingBotP
   const [diagnostics, setDiagnostics] = useState<any>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [showInfoModal, setShowInfoModal] = useState(false)
+  const [algorithmType, setAlgorithmType] = useState<string>('ml_model')
   const [config, setConfig] = useState<BotConfig>({
     symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
     interval: 10, // 10 seconds
@@ -255,6 +257,21 @@ export default function TradingBot({ mode, accountId, accountName }: TradingBotP
             lastRun: data.status.lastRun,
             error: data.status.error 
           })
+          
+          // Fetch algorithm type if accountId is provided
+          if (accountId) {
+            try {
+              const strategyResponse = await fetch(`/api/account-strategy?account_id=${accountId}`, {
+                headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+              })
+              const strategyData = await strategyResponse.json()
+              if (strategyData.success && strategyData.settings) {
+                setAlgorithmType(strategyData.settings.algorithm_type || 'ml_model')
+              }
+            } catch (err) {
+              console.error('Error fetching algorithm type:', err)
+            }
+          }
           // If bot was just started and status shows it's not running, 
           // it might be a timing issue - don't overwrite optimistic update immediately
           const wasJustStarted = botStatus?.isRunning && !data.status.isRunning
@@ -594,6 +611,17 @@ export default function TradingBot({ mode, accountId, accountName }: TradingBotP
               <CardTitle className="text-white">
                 Trading Bot - {mode === 'paper' ? 'Paper Trading' : 'Live Trading'}
               </CardTitle>
+              {onConfigureStrategy && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onConfigureStrategy}
+                  className="h-8 w-8 p-0 text-blue-400 hover:text-blue-300"
+                  title="Configure Strategy"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -604,6 +632,7 @@ export default function TradingBot({ mode, accountId, accountName }: TradingBotP
                   }
                 }}
                 className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+                title="Bot Information"
               >
                 <Info className="h-4 w-4" />
               </Button>
@@ -624,6 +653,25 @@ export default function TradingBot({ mode, accountId, accountName }: TradingBotP
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>Bot Error: {botStatus.error}</AlertDescription>
             </Alert>
+          )}
+
+          {/* Account Name and Algorithm Type */}
+          {accountName && (
+            <div className="text-sm text-gray-400">
+              <span className="text-gray-500">Account:</span>{' '}
+              <span className="text-white font-medium">{accountName}</span>
+              {algorithmType && (
+                <>
+                  {' • '}
+                  <span className="text-gray-500">Algorithm:</span>{' '}
+                  <span className="text-blue-400 font-medium">
+                    {algorithmType === 'ml_model' ? 'ML Model' : 
+                     algorithmType === 'rule_based_simple' ? 'Rule-Based (Simple)' : 
+                     'Rule-Based (Advanced)'}
+                  </span>
+                </>
+              )}
+            </div>
           )}
 
           {/* Last Run Time */}
