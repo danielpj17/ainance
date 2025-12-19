@@ -875,38 +875,37 @@ export default function PaperTradingPage() {
         </Card>
       </div>
 
-      {/* Trading Bot for Selected Account */}
+      {/* Trading Bot & Portfolio Chart */}
       {selectedAccountId && (
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-white">Trading Bot</h2>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setStrategyModalAccountId(selectedAccountId)
-                setStrategyModalAccountName(
-                  paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Account'
-                )
-                setShowStrategyModal(true)
-              }}
-              className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
-            >
-              <Settings className="h-4 w-4 mr-1" />
-              Configure Strategy
-            </Button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Trading Bot */}
+          <div className="lg:col-span-1 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">Trading Bot</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setStrategyModalAccountId(selectedAccountId)
+                  setStrategyModalAccountName(
+                    paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Account'
+                  )
+                  setShowStrategyModal(true)
+                }}
+                className="border-blue-500 text-blue-400 hover:bg-blue-500/10"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+            <TradingBot 
+              mode="paper" 
+              accountId={selectedAccountId}
+              accountName={paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Paper Account'}
+            />
           </div>
-          <TradingBot 
-            mode="paper" 
-            accountId={selectedAccountId}
-            accountName={paperAccounts.find(a => a.id === selectedAccountId)?.account_name || 'Paper Account'}
-          />
-        </div>
-      )}
-
-      {/* Portfolio Chart */}
-      <div className="mb-8">
-        <Card className="glass-card">
+          
+          {/* Portfolio Chart */}
+          <Card className="lg:col-span-2 glass-card">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -1003,7 +1002,8 @@ export default function PaperTradingPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      )}
 
       {/* Current Positions & Completed Trades Tabs */}
       <div className="mb-8">
