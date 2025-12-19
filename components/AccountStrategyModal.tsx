@@ -51,20 +51,27 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
 
+      console.log('📂 Loading strategy settings for account:', accountId)
+
       const response = await fetch(`/api/account-strategy?account_id=${accountId}`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined
       })
 
       const result = await response.json()
+      console.log('📂 Loaded strategy settings:', result)
 
       if (result.success && result.settings) {
-        setSettings({
+        const loadedSettings = {
           ...result.settings,
           algorithm_type: result.settings.algorithm_type || 'ml_model'
-        })
+        }
+        setSettings(loadedSettings)
+        console.log('✅ Settings applied to modal:', loadedSettings)
+      } else {
+        console.warn('⚠️ No settings found, using defaults')
       }
     } catch (error) {
-      console.error('Error loading settings:', error)
+      console.error('❌ Error loading settings:', error)
       setMessage({ type: 'error', text: 'Failed to load settings' })
     } finally {
       setLoading(false)
@@ -79,6 +86,11 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
 
+      console.log('💾 Saving strategy settings:', {
+        account_id: accountId,
+        settings: settings
+      })
+
       const response = await fetch('/api/account-strategy', {
         method: 'PUT',
         headers: {
@@ -92,20 +104,23 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       })
 
       const result = await response.json()
+      console.log('💾 Save response:', result)
 
       if (result.success) {
-        setMessage({ type: 'success', text: 'Settings saved successfully!' })
+        setMessage({ type: 'success', text: 'Settings saved! Restart the bot to apply changes.' })
+        console.log('✅ Strategy settings saved successfully')
         if (onSave) {
           setTimeout(() => {
             onSave()
             onClose()
-          }, 1000)
+          }, 2000) // Give user time to read the message
         }
       } else {
+        console.error('❌ Failed to save settings:', result.error)
         setMessage({ type: 'error', text: result.error || 'Failed to save settings' })
       }
     } catch (error) {
-      console.error('Error saving settings:', error)
+      console.error('❌ Error saving settings:', error)
       setMessage({ type: 'error', text: 'Failed to save settings' })
     } finally {
       setSaving(false)

@@ -228,6 +228,36 @@ sequenceDiagram
 3. **Testing**: Compare algorithm performance across different accounts
 4. **Reliability**: No automatic fallback prevents silent failures
 5. **Transparency**: Algorithm type is logged in diagnostics for debugging
+6. **Unified Thresholds**: Same confidence thresholds apply to all algorithms for fair comparison
+
+## Confidence Thresholds
+
+**Important:** Your configured confidence thresholds apply to ALL algorithms equally:
+
+- **BUY Confidence Threshold** (default: 65%)
+  - Adjusted upward based on market risk (VIX, yield curve, Fed rates)
+  - Higher risk = higher threshold = more selective buying
+  
+- **SELL Confidence Threshold** (default: 50%)
+  - Adjusted downward based on market risk
+  - Higher risk = lower threshold = easier selling to protect capital
+
+**Priority Order:**
+1. Account-specific settings (from Strategy Modal)
+2. Global user settings (fallback)
+3. Hardcoded defaults (65% BUY, 50% SELL)
+
+**Example:**
+```
+Account Settings: BUY=70%, SELL=55%
+Market Risk: 20% (low-moderate)
+
+Final Thresholds:
+- BUY: 70% + (20% × 15%) = 73%
+- SELL: 55% - (20% × 15%) = 52%
+
+All algorithms must meet these thresholds to execute trades.
+```
 
 ## Next Steps (Optional Enhancements)
 

@@ -30,6 +30,7 @@ export interface BotStatus {
   marketOpen?: boolean
   nextMarketOpen?: string
   alwaysOn?: boolean
+  config?: BotConfig | null
 }
 
 export interface BotConfig {
@@ -64,16 +65,17 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
   const [showInfoModal, setShowInfoModal] = useState(false)
   const [algorithmType, setAlgorithmType] = useState<string>('ml_model')
   const [config, setConfig] = useState<BotConfig>({
-    symbols: ['AAPL', 'MSFT', 'TSLA', 'SPY'],
-    interval: 10, // 10 seconds
+    symbols: [], // Will be loaded from account settings or bot status
+    interval: 60, // Bot uses 60 seconds
     settings: {
-      strategy: mode === 'paper' ? 'cash' : '25k_plus',
+      strategy: 'cash', // Will be loaded from account settings
       account_type: 'cash',
       max_exposure: 90
     },
     accountType: mode,
-    strategy: mode === 'paper' ? 'cash' : '25k_plus'
+    strategy: 'cash'
   })
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   
   // Check market hours
   const checkMarketHours = () => {
@@ -138,8 +140,53 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
     }
   }
 
-  // Fetch bot status on component mount
+  // Load account settings on mount
   useEffect(() => {
+    const loadAccountSettings = async () => {
+      if (accountId) {
+        try {
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          
+          console.log('🔄 Loading account settings for account:', accountId)
+          const strategyResponse = await fetch(`/api/account-strategy?account_id=${accountId}`, {
+            headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+          })
+          const strategyData = await strategyResponse.json()
+          
+          console.log('📥 Account settings response:', strategyData)
+          
+          if (strategyData.success && strategyData.settings) {
+            // Update config with actual settings from database
+            const newConfig = {
+              symbols: [], // Will show actual scanned stocks from bot status
+              interval: 60, // Bot uses 60 seconds
+              settings: {
+                strategy: strategyData.settings.strategy || 'cash',
+                account_type: strategyData.settings.account_type || 'cash',
+                confidence_threshold: strategyData.settings.confidence_threshold || 0.65,
+                max_exposure: strategyData.settings.max_exposure || 90
+              },
+              accountType: mode,
+              strategy: strategyData.settings.strategy || 'cash'
+            }
+            setConfig(newConfig)
+            setSettingsLoaded(true)
+            console.log('✅ Loaded account settings into config:', newConfig)
+          } else {
+            console.warn('⚠️ No account settings found, using defaults')
+            setSettingsLoaded(true)
+          }
+        } catch (err) {
+          console.error('❌ Error loading account settings:', err)
+          setSettingsLoaded(true)
+        }
+      } else {
+        setSettingsLoaded(true)
+      }
+    }
+    
+    loadAccountSettings()
     fetchBotStatus()
     
     // Check market hours on mount and every minute
@@ -284,6 +331,10 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
             // Wait a bit longer before updating
             setTimeout(() => {
               setBotStatus(data.status)
+              // Update config if it's in the status
+              if (data.status.config) {
+                setConfig(data.status.config)
+              }
             }, 1000)
           } else if (alwaysOnChanged) {
             // Always-on was just toggled, wait a bit to ensure database is updated
@@ -293,9 +344,20 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
             })
             setTimeout(() => {
               setBotStatus(data.status)
+              // Update config if it's in the status
+              if (data.status.config) {
+                setConfig(data.status.config)
+              }
             }, 1500)
           } else {
             setBotStatus(data.status)
+            // Update config if it's in the status
+            if (data.status.config) {
+              console.log('📝 Updating config from bot status:', data.status.config)
+              setConfig(data.status.config)
+            } else {
+              console.warn('⚠️ No config in bot status, bot may need to be restarted')
+            }
           }
           setError(null)
         }
@@ -329,6 +391,35 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       
+      // Fetch account settings to get correct strategy before starting
+      let botConfig = { ...config }
+      if (accountId) {
+        try {
+          const strategyResponse = await fetch(`/api/account-strategy?account_id=${accountId}`, {
+            headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+          })
+          const strategyData = await strategyResponse.json()
+          if (strategyData.success && strategyData.settings) {
+            // Update config with actual settings
+            botConfig = {
+              symbols: [], // Will be populated by scanner in backend
+              interval: 60, // 60 seconds between cycles
+              settings: {
+                strategy: strategyData.settings.strategy || 'cash',
+                account_type: strategyData.settings.account_type || 'cash',
+                confidence_threshold: strategyData.settings.confidence_threshold,
+                max_exposure: strategyData.settings.max_exposure
+              },
+              accountType: mode,
+              strategy: strategyData.settings.strategy || 'cash'
+            }
+            console.log('📝 Starting bot with account strategy settings:', botConfig)
+          }
+        } catch (err) {
+          console.error('Error fetching account settings, using defaults:', err)
+        }
+      }
+      
       let response: Response
       try {
         response = await fetch('/api/trading', {
@@ -339,7 +430,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
           },
           body: JSON.stringify({
             action: 'start',
-            config,
+            config: botConfig,
             account_id: accountId
           })
         })
@@ -776,19 +867,47 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <span className="text-gray-400">Symbols:</span>
-                      <div className="text-white font-medium">{config.symbols.join(', ')}</div>
+                      <div className="text-white font-medium">
+                        {!settingsLoaded ? (
+                          <span className="text-gray-500">Loading...</span>
+                        ) : botStatus?.config?.symbols && botStatus.config.symbols.length > 0 ? (
+                          `${botStatus.config.symbols.length} stocks (scanned dynamically)`
+                        ) : (
+                          <span>70+ stocks <span className="text-gray-500 text-xs">(scanned during bot run)</span></span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <span className="text-gray-400">Interval:</span>
-                      <div className="text-white font-medium">{config.interval}s</div>
+                      <div className="text-white font-medium">
+                        {!settingsLoaded ? (
+                          <span className="text-gray-500">Loading...</span>
+                        ) : (
+                          `${botStatus?.config?.interval || config.interval}s`
+                        )}
+                      </div>
                     </div>
                     <div>
                       <span className="text-gray-400">Strategy:</span>
-                      <div className="text-white font-medium">{config.settings.strategy}</div>
+                      <div className="text-white font-medium">
+                        {!settingsLoaded ? (
+                          <span className="text-gray-500">Loading...</span>
+                        ) : (
+                          <span className={botStatus?.config?.settings?.strategy || config.settings.strategy === '25k_plus' ? 'text-green-400' : ''}>
+                            {botStatus?.config?.settings?.strategy || config.settings.strategy}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <span className="text-gray-400">Account:</span>
-                      <div className="text-white font-medium">{config.settings.account_type}</div>
+                      <div className="text-white font-medium">
+                        {!settingsLoaded ? (
+                          <span className="text-gray-500">Loading...</span>
+                        ) : (
+                          botStatus?.config?.settings?.account_type || config.settings.account_type
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="pt-2 border-t border-gray-700">

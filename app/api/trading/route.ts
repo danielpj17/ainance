@@ -22,6 +22,7 @@ export interface BotStatus {
   marketOpen?: boolean
   nextMarketOpen?: string
   alwaysOn?: boolean
+  config?: BotConfig | null
 }
 
 export interface BotConfig {
@@ -253,13 +254,24 @@ export async function startBot(supabase: any, userId: string, config: BotConfig,
       await stopBot(supabase, userId, accountId)
     }
 
-    // Validate configuration
-    if (!config || !config.symbols || config.symbols.length === 0) {
-      console.error('❌ Invalid config:', { hasConfig: !!config, symbols: config?.symbols })
+    // Validate configuration exists
+    // Note: symbols array can be empty - the stock scanner will populate it during execution
+    if (!config) {
+      console.error('❌ Invalid config: config object is null or undefined')
       return NextResponse.json({ 
         success: false, 
-        error: 'No symbols specified for trading' 
+        error: 'Invalid bot configuration' 
       }, { status: 400 })
+    }
+    
+    // Initialize symbols array if not provided
+    if (!config.symbols) {
+      config.symbols = []
+      console.log('📝 Symbols array not provided, will be populated by stock scanner')
+    } else if (config.symbols.length > 0) {
+      console.log(`📋 Starting with ${config.symbols.length} predefined symbols: ${config.symbols.join(', ')}`)
+    } else {
+      console.log('📝 Symbols array empty, will be populated by stock scanner')
     }
 
     // Verify user exists in auth.users (skip for demo mode)
@@ -794,91 +806,64 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     await alpacaClient.initialize()
     console.log('✅ Alpaca client initialized (', alpacaKeys.paper ? 'PAPER' : 'LIVE', 'trading)')
 
-    // Get user's confidence threshold from settings (needed for logging even when market is closed)
-    let baseConfidenceThreshold = 0.55 // Default for BUY
+    // Get confidence thresholds - prioritize per-account settings over global settings
+    let baseConfidenceThreshold = 0.65 // Default for BUY
     let baseSellConfidenceThreshold = 0.50 // Default for SELL (lower for easier exits)
+    
     try {
-      // First try to get both columns, but handle case where sell_confidence_threshold doesn't exist
-      let { data: userSettings, error: settingsError } = await supabase
-        .from('user_settings')
-        .select('confidence_threshold, sell_confidence_threshold')
-        .eq('user_id', userId)
-        .single()
+      // If accountId is provided, try to get account-specific settings first
+      if (accountId) {
+        console.log(`🔍 Fetching account-specific strategy settings for account ${accountId}...`)
+        const { data: accountSettings, error: accountError } = await supabase.rpc('get_account_strategy_settings', {
+          account_uuid: accountId,
+          user_uuid: userId
+        })
+        
+        if (!accountError && accountSettings && accountSettings.length > 0) {
+          const settings = accountSettings[0]
+          if (settings.confidence_threshold !== null && settings.confidence_threshold !== undefined) {
+            baseConfidenceThreshold = Number(settings.confidence_threshold)
+            console.log(`✅ Using BUY confidence from account settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+          }
+          if (settings.sell_confidence_threshold !== null && settings.sell_confidence_threshold !== undefined) {
+            baseSellConfidenceThreshold = Number(settings.sell_confidence_threshold)
+            console.log(`✅ Using SELL confidence from account settings: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
+          }
+        } else {
+          console.log(`⚠️  No account-specific settings found, falling back to user settings`)
+          // Fall through to user_settings below
+        }
+      }
       
-      // If error is due to missing column, try again with just confidence_threshold
-      if (settingsError && settingsError.code === '42703') {
-        console.log('⚠️  sell_confidence_threshold column does not exist, fetching only confidence_threshold')
-        const { data: settingsWithoutSell, error: errorWithoutSell } = await supabase
+      // If no account settings or no accountId, fall back to global user_settings
+      if (!accountId || baseConfidenceThreshold === 0.65) {
+        console.log(`🔍 Fetching global user settings for ${userId}...`)
+        const { data: userSettings, error: settingsError } = await supabase
           .from('user_settings')
-          .select('confidence_threshold')
+          .select('confidence_threshold, sell_confidence_threshold')
           .eq('user_id', userId)
           .single()
-        userSettings = settingsWithoutSell
-        settingsError = errorWithoutSell
-      }
-      
-      console.log(`🔍 Fetching user settings for ${userId}...`)
-      console.log(`   Query result:`, { 
-        hasData: !!userSettings, 
-        error: settingsError ? { message: settingsError.message, code: settingsError.code } : null,
-        confidence_threshold: userSettings?.confidence_threshold,
-        sell_confidence_threshold: userSettings?.sell_confidence_threshold
-      })
-      
-      if (settingsError) {
-        if (settingsError.code === 'PGRST116') {
-          // No rows found - user has no settings yet
-          console.log(`ℹ️  No user_settings row found for user ${userId}, using defaults`)
-        } else {
-          console.warn('⚠️  Error fetching user settings:', settingsError.message, settingsError.code)
-        }
-      } else if (userSettings) {
-        // Settings found - check if confidence_threshold exists and is a valid number
-        const confThreshold = userSettings.confidence_threshold
-        const sellConfThreshold = userSettings.sell_confidence_threshold
         
-        if (confThreshold !== null && confThreshold !== undefined && !isNaN(Number(confThreshold))) {
-          baseConfidenceThreshold = Number(confThreshold)
-          console.log(`✅ Using confidence threshold from settings: ${baseConfidenceThreshold} (${(baseConfidenceThreshold * 100).toFixed(1)}%)`)
-        } else {
-          console.log(`⚠️  User settings exist but confidence_threshold is invalid:`, confThreshold)
-          console.log(`   Using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+        if (!settingsError && userSettings) {
+          if (userSettings.confidence_threshold !== null && userSettings.confidence_threshold !== undefined) {
+            baseConfidenceThreshold = Number(userSettings.confidence_threshold)
+            console.log(`✅ Using BUY confidence from user settings: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
+          }
+          if (userSettings.sell_confidence_threshold !== null && userSettings.sell_confidence_threshold !== undefined) {
+            baseSellConfidenceThreshold = Number(userSettings.sell_confidence_threshold)
+            console.log(`✅ Using SELL confidence from user settings: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
+          }
+        } else if (settingsError?.code !== 'PGRST116') {
+          console.warn('⚠️  Error fetching user settings:', settingsError)
         }
-        
-        if (sellConfThreshold !== null && sellConfThreshold !== undefined && !isNaN(Number(sellConfThreshold))) {
-          baseSellConfidenceThreshold = Number(sellConfThreshold)
-          console.log(`✅ Using sell confidence threshold from settings: ${baseSellConfidenceThreshold} (${(baseSellConfidenceThreshold * 100).toFixed(1)}%)`)
-        } else {
-          console.log(`⚠️  User settings exist but sell_confidence_threshold is invalid or missing:`, sellConfThreshold)
-          console.log(`   Using default: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
-        }
-      } else {
-        console.log(`ℹ️  No user settings returned, using default: ${(baseConfidenceThreshold * 100).toFixed(1)}%`)
       }
     } catch (error) {
-      console.warn('⚠️  Could not fetch confidence threshold from settings, using default:', error)
+      console.warn('⚠️  Could not fetch confidence thresholds, using defaults:', error)
     }
     
-    // Log the final values being used for diagnostics
-    console.log(`📊 DIAGNOSTICS VALUES: Confidence=${(baseConfidenceThreshold * 100).toFixed(1)}%, Sell=${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
-    
-    // Double-check: Query again with full select to see what's actually in the database
-    try {
-      const { data: verifySettings } = await supabase
-        .from('user_settings')
-        .select('*')
-        .eq('user_id', userId)
-        .single()
-      if (verifySettings) {
-        console.log(`🔍 VERIFICATION - Full user_settings from DB:`, {
-          confidence_threshold: verifySettings.confidence_threshold,
-          sell_confidence_threshold: verifySettings.sell_confidence_threshold,
-          updated_at: verifySettings.updated_at
-        })
-      }
-    } catch (verifyError) {
-      console.warn('Could not verify settings:', verifyError)
-    }
+    // Log the final values being used
+    console.log(`📊 FINAL THRESHOLDS: BUY=${(baseConfidenceThreshold * 100).toFixed(1)}%, SELL=${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
+    console.log(`   These thresholds apply to ALL algorithms (ML Model, Simple, Advanced)`)
 
     // STEP 2: Get FRED Economic Indicators (fetch even when market is closed for accurate diagnostics)
     let fredIndicators: any = null
@@ -2197,7 +2182,8 @@ async function getBotStatus(supabase: any, userId: string, accountId?: string): 
       error: dbBotState.error || undefined,
       marketOpen,
       nextMarketOpen: nextMarketOpen.toISOString(),
-      alwaysOn: dbBotState.always_on || false
+      alwaysOn: dbBotState.always_on || false,
+      config: dbBotState.config || null
     }
 
   } catch (error) {
