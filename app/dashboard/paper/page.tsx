@@ -109,6 +109,9 @@ export default function PaperTradingPage() {
   const [chartData, setChartData] = useState<any[]>([])
   const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
   const [completedTrades, setCompletedTrades] = useState<CompletedTrade[]>([])
+  const [displayedCompletedTrades, setDisplayedCompletedTrades] = useState<CompletedTrade[]>([])
+  const [completedTradesPage, setCompletedTradesPage] = useState(1)
+  const TRADES_PER_PAGE = 10
   const [positionsLoading, setPositionsLoading] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<CurrentPosition | null>(null)
   const [showMetricsModal, setShowMetricsModal] = useState(false)
@@ -286,12 +289,30 @@ export default function PaperTradingPage() {
       })
       
       if (data.success) {
-        setCompletedTrades(data.data.completedTrades || [])
+        const trades = data.data.completedTrades || []
+        // Sort by most recent first (should already be sorted from API, but ensure it)
+        trades.sort((a: CompletedTrade, b: CompletedTrade) => 
+          new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
+        )
+        setCompletedTrades(trades)
+        // Reset pagination and show first page
+        setCompletedTradesPage(1)
+        setDisplayedCompletedTrades(trades.slice(0, TRADES_PER_PAGE))
       }
     } catch (error) {
       console.error('Error loading completed trades:', error)
     }
   }
+
+  // Load more completed trades
+  const loadMoreCompletedTrades = () => {
+    const nextPage = completedTradesPage + 1
+    const startIndex = 0
+    const endIndex = nextPage * TRADES_PER_PAGE
+    setDisplayedCompletedTrades(completedTrades.slice(startIndex, endIndex))
+    setCompletedTradesPage(nextPage)
+  }
+
 
   const loadAccountData = async () => {
     if (!selectedAccountId) return
@@ -1124,6 +1145,26 @@ export default function PaperTradingPage() {
                         </div>
                       </div>
                     ))}
+
+                    {/* See More Button */}
+                    {completedTrades.length > displayedCompletedTrades.length && (
+                      <div className="flex justify-center pt-4">
+                        <button
+                          onClick={loadMoreCompletedTrades}
+                          className="px-6 py-3 bg-blue-400 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+                        >
+                          See More
+                          <Activity className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Showing X of Y */}
+                    {completedTrades.length > 0 && (
+                      <div className="text-center text-sm text-gray-400 pt-2">
+                        Showing {displayedCompletedTrades.length} of {completedTrades.length} completed trades
+                      </div>
+                    )}
                   </div>
                 )}
               </TabsContent>
@@ -1135,7 +1176,7 @@ export default function PaperTradingPage() {
                     <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                     Loading completed trades...
                   </div>
-                ) : completedTrades.length === 0 ? (
+                ) : displayedCompletedTrades.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
                     <p>No completed trades yet</p>
@@ -1143,14 +1184,14 @@ export default function PaperTradingPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {completedTrades.map((trade) => (
+                    {displayedCompletedTrades.map((trade) => (
                       <div
                         key={`${trade.symbol}-${trade.id}-${trade.sell_timestamp}`}
                         onClick={() => {
                           setSelectedCompletedTrade(trade)
                           setShowCompletedTradeModal(true)
                         }}
-                        className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-purple-500 transition-all cursor-pointer"
+                        className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-blue-400 transition-all cursor-pointer"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -1179,7 +1220,12 @@ export default function PaperTradingPage() {
                           </div>
                           <div>
                             <div className="text-gray-500 mb-1">Sell Price</div>
-                            <div className="font-semibold text-white">{formatCurrency(trade.sell_price)}</div>
+                            <div className="font-semibold text-white">
+                              {trade.sell_price && trade.sell_price > 0 
+                                ? formatCurrency(trade.sell_price) 
+                                : <span className="text-yellow-500">Pending</span>
+                              }
+                            </div>
                           </div>
                           <div>
                             <div className="text-gray-500 mb-1">Return</div>
@@ -1200,16 +1246,40 @@ export default function PaperTradingPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4 text-xs text-gray-400">
                               <div>
-                                {new Date(trade.buy_timestamp).toLocaleDateString()} → {new Date(trade.sell_timestamp).toLocaleDateString()}
+                                {new Date(trade.buy_timestamp).toLocaleDateString()} → {
+                                  trade.sell_timestamp && new Date(trade.sell_timestamp).getTime() > new Date('1971-01-01').getTime()
+                                    ? new Date(trade.sell_timestamp).toLocaleDateString()
+                                    : <span className="text-yellow-500">Pending</span>
+                                }
                               </div>
                             </div>
-                            <div className="text-purple-400 hover:text-purple-300 text-xs">
+                            <div className="text-blue-400 hover:text-blue-300 text-xs">
                               Click for metrics →
                             </div>
                           </div>
                         </div>
                       </div>
                     ))}
+
+                    {/* See More Button */}
+                    {completedTrades.length > displayedCompletedTrades.length && (
+                      <div className="flex justify-center pt-4">
+                        <button
+                          onClick={loadMoreCompletedTrades}
+                          className="px-6 py-3 bg-blue-400 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+                        >
+                          See More
+                          <Activity className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Showing X of Y */}
+                    {completedTrades.length > 0 && (
+                      <div className="text-center text-sm text-gray-400 pt-2">
+                        Showing {displayedCompletedTrades.length} of {completedTrades.length} completed trades
+                      </div>
+                    )}
                   </div>
                 )}
               </TabsContent>
