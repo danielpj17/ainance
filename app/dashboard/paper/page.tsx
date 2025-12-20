@@ -651,20 +651,22 @@ export default function PaperTradingPage() {
   }
 
   const calculateProfitLoss = () => {
-    if (!account || !portfolioHistory) {
-      // Fallback to today's change if no history
-      if (!account) return { amount: 0, percentage: 0 }
-      const equity = parseFloat(account.equity || '0')
-      const lastEquity = parseFloat(account.last_equity || account.equity || '0')
-      const amount = equity - lastEquity
-      const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
+    if (!account) return { amount: 0, percentage: 0 }
+    
+    const currentValue = parseFloat(account.equity || '0')
+    
+    // If we have portfolio history with data points, use the first equity value as the base
+    if (portfolioHistory && portfolioHistory.equity && portfolioHistory.equity.length > 0) {
+      const baseValue = portfolioHistory.equity[0]
+      const amount = currentValue - baseValue
+      const percentage = baseValue > 0 ? (amount / baseValue) * 100 : 0
       return { amount, percentage }
     }
     
-    const currentValue = parseFloat(account.equity || '0')
-    const baseValue = portfolioHistory.base_value || currentValue
-    const amount = currentValue - baseValue
-    const percentage = baseValue > 0 ? (amount / baseValue) * 100 : 0
+    // Fallback to last_equity (previous day's close)
+    const lastEquity = parseFloat(account.last_equity || account.equity || '0')
+    const amount = currentValue - lastEquity
+    const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
     
     return { amount, percentage }
   }
@@ -777,10 +779,10 @@ export default function PaperTradingPage() {
                 Year
               </button>
             </div>
-            <Badge className={profitLoss.amount >= 0 ? "bg-blue-400 hover:bg-blue-500 text-white" : "bg-red-600 hover:bg-red-700 text-white"}>
+            <Badge className={profitLoss.amount >= 0 ? "bg-green-600 hover:bg-green-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}>
               {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1 text-white" /> : <ArrowDownRight className="h-3 w-3 mr-1 text-white" />}
-              <span className="mr-1 text-white">{formatCurrency(profitLoss.amount)}</span>
-              <span className="text-white">({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)</span>
+              <span className="mr-1 text-white font-semibold">{formatCurrency(profitLoss.amount)}</span>
+              <span className="text-white font-semibold">({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)</span>
             </Badge>
           </div>
         </div>
@@ -835,7 +837,7 @@ export default function PaperTradingPage() {
             <div className="text-3xl font-bold text-white">
               {account ? formatCurrency(account.equity) : '$0.00'}
             </div>
-            <p className={`text-xs flex items-center gap-1 mt-1 ${profitLoss.amount >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
+            <p className={`text-xs flex items-center gap-1 mt-1 font-semibold ${profitLoss.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {profitLoss.amount >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
               {formatCurrency(profitLoss.amount)} ({profitLoss.percentage >= 0 ? '+' : ''}{profitLoss.percentage.toFixed(2)}%)
             </p>
