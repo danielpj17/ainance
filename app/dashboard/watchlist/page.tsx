@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Search, Plus, Trash2, TrendingUp, TrendingDown, Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { getCompanyName } from '@/lib/stock-names'
 
 interface StockQuote {
   symbol: string
@@ -427,7 +428,12 @@ export default function WatchlistPage() {
                         className="border-b border-gray-800 hover:bg-[#252838] transition-colors"
                       >
                         <td className="py-4 px-4">
-                          <span className="font-bold text-white">{symbol.symbol}</span>
+                          <div>
+                            <span className="font-bold text-white">{symbol.symbol}</span>
+                            {getCompanyName(symbol.symbol) && (
+                              <div className="text-xs text-gray-400 mt-0.5">{getCompanyName(symbol.symbol)}</div>
+                            )}
+                          </div>
                         </td>
                         <td className="py-4 px-4 text-right text-white">
                           {quote ? `$${formatPrice(quote.price)}` : (

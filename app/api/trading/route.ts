@@ -1468,7 +1468,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     for (const signal of signals) {
       try {
         await withRetry(
-          () => executeTradeSignal(supabase, userId, signal, alpacaClient, config),
+          () => executeTradeSignal(supabase, userId, signal, alpacaClient, config, accountId),
           {
             operation: 'execute_trade_signal',
             symbol: signal.symbol,
@@ -1878,7 +1878,8 @@ async function executeTradeSignal(
   userId: string,
   signal: any, // Extended signal with shares and allocated_capital
   alpacaClient: any,
-  config: BotConfig
+  config: BotConfig,
+  accountId?: string
 ) {
   try {
     // Use pre-allocated position size from capital allocation
@@ -2006,6 +2007,20 @@ async function executeTradeSignal(
     }
 
     if (signal.action === 'buy') {
+      // Get account name if accountId is provided
+      let accountName: string | null = null
+      if (accountId) {
+        const { data: accountData } = await supabase
+          .from('paper_trading_accounts')
+          .select('account_name')
+          .eq('id', accountId)
+          .single()
+        
+        if (accountData) {
+          accountName = accountData.account_name
+        }
+      }
+      
       // Create new trade log entry for buy
       const { error: logError } = await supabase
         .from('trade_logs')
@@ -2024,7 +2039,9 @@ async function executeTradeSignal(
           strategy: config.strategy,
           account_type: config.accountType,
           alpaca_order_id: order.id,
-          order_status: order.status
+          order_status: order.status,
+          account_id: accountId || null,
+          account_name: accountName
         })
 
       if (logError) {

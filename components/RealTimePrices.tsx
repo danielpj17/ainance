@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { getCompanyName } from '@/lib/stock-names';
 
 interface RealTimePricesProps {
   initialSymbols?: string[];
@@ -140,6 +141,9 @@ export default function RealTimePrices({
                   <div className="flex items-start justify-between">
                     <div>
                       <CardTitle className="text-lg">{symbol}</CardTitle>
+                      {getCompanyName(symbol) && (
+                        <div className="text-xs text-muted-foreground mt-0.5">{getCompanyName(symbol)}</div>
+                      )}
                       <CardDescription className="text-2xl font-bold mt-1">
                         {formatPrice(price)}
                       </CardDescription>

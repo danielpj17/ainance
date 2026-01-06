@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Clock } from 'lucide-react'
 import { CompletedTrade } from '../types'
+import { getCompanyName } from '@/lib/stock-names'
 
 interface CompletedTradeItemProps {
   trade: CompletedTrade
@@ -29,7 +30,12 @@ const CompletedTradeItem = memo(({ trade, onOpenDetails, onFetchTransactions, fo
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          <div className="text-2xl font-bold text-white">{trade.symbol || 'N/A'}</div>
+          <div>
+            <div className="text-2xl font-bold text-white">{trade.symbol || 'N/A'}</div>
+            {getCompanyName(trade.symbol) && (
+              <div className="text-sm text-gray-400">{getCompanyName(trade.symbol)}</div>
+            )}
+          </div>
           <Badge variant="outline" className="border-gray-600 text-gray-400">
             {trade.qty} shares
           </Badge>

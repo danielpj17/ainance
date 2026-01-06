@@ -2,6 +2,7 @@
 
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import { CurrentTrade, CompletedTrade } from '../types'
+import { getCompanyName } from '@/lib/stock-names'
 
 interface TradeDetailsModalProps {
   trade: CurrentTrade | CompletedTrade
@@ -17,7 +18,12 @@ export default function TradeDetailsModal({ trade, onClose, formatCurrency }: Tr
       <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">Trade Details: {trade.symbol}</h2>
+            <div>
+              <h2 className="text-2xl font-bold text-white">Trade Details: {trade.symbol}</h2>
+              {getCompanyName(trade.symbol) && (
+                <div className="text-sm text-gray-400 mt-1">{getCompanyName(trade.symbol)}</div>
+              )}
+            </div>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition-colors"

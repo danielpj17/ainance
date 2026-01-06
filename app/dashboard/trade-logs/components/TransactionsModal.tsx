@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Activity } from 'lucide-react'
+import { getCompanyName } from '@/lib/stock-names'
 
 interface Transaction {
   id?: string
@@ -33,7 +34,12 @@ export default function TransactionsModal({ symbol, transactions, loadingTransac
       <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">All Transactions: {symbol}</h2>
+            <div>
+              <h2 className="text-2xl font-bold text-white">All Transactions: {symbol}</h2>
+              {getCompanyName(symbol) && (
+                <div className="text-sm text-gray-400 mt-1">{getCompanyName(symbol)}</div>
+              )}
+            </div>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition-colors"
@@ -50,6 +56,9 @@ export default function TransactionsModal({ symbol, transactions, loadingTransac
             <div className="text-center py-8 text-gray-500">
               <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
               <p>No transactions found for {symbol}</p>
+              {getCompanyName(symbol) && (
+                <p className="text-xs text-gray-400 mt-1">{getCompanyName(symbol)}</p>
+              )}
             </div>
           ) : (
             <div className="space-y-4">

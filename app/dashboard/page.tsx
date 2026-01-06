@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown, Activity, DollarSign, AlertTriangle, CheckCir
 import { createClient } from '@/utils/supabase/client'
 import { authFetch } from '@/lib/api-client'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
+import { getCompanyName } from '@/lib/stock-names'
 
 export const dynamic = 'force-dynamic'
 
@@ -562,7 +563,12 @@ export default function DashboardPage() {
                       <Badge variant={signal.action === 'buy' ? 'default' : 'destructive'} className={signal.action === 'buy' ? 'bg-blue-400 text-white' : 'bg-red-500 text-white'}>
                         {signal.action.toUpperCase()}
                       </Badge>
-                      <span className="font-bold text-white">{signal.symbol}</span>
+                      <div>
+                        <span className="font-bold text-white">{signal.symbol}</span>
+                        {getCompanyName(signal.symbol) && (
+                          <div className="text-xs text-white/60">{getCompanyName(signal.symbol)}</div>
+                        )}
+                      </div>
                     </div>
                     <span className="text-sm text-white/80">{(signal.confidence * 100).toFixed(0)}%</span>
                   </div>

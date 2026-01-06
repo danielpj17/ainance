@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Play, Square, Activity, AlertTriangle, CheckCircle, XCircle, Info, X, Settings } from 'lucide-react'
+import { getCompanyName } from '@/lib/stock-names'
 
 export interface BotStatus {
   isRunning: boolean
@@ -1010,7 +1011,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
                                         <ul className="list-disc list-inside ml-2 mt-0.5">
                                           {diag.data.filtered_signals.buy.slice(0, 3).map((f: any, idx: number) => (
                                             <li key={idx} className="text-xs">
-                                              {f.symbol}: {(f.base_confidence * 100).toFixed(1)}% base
+                                              {f.symbol}{getCompanyName(f.symbol) ? ` (${getCompanyName(f.symbol)})` : ''}: {(f.base_confidence * 100).toFixed(1)}% base
                                               {f.sentiment_boost > 0 && ` + ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
                                               {f.sentiment_boost < 0 && ` ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
                                               {' '}= {(f.adjusted_confidence * 100).toFixed(1)}% (need {(f.threshold * 100).toFixed(1)}%)
@@ -1039,7 +1040,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
                                         <ul className="list-disc list-inside ml-2 mt-0.5">
                                           {diag.data.filtered_signals.sell.slice(0, 3).map((f: any, idx: number) => (
                                             <li key={idx} className="text-xs">
-                                              {f.symbol}: {(f.base_confidence * 100).toFixed(1)}% base
+                                              {f.symbol}{getCompanyName(f.symbol) ? ` (${getCompanyName(f.symbol)})` : ''}: {(f.base_confidence * 100).toFixed(1)}% base
                                               {f.sentiment_boost > 0 && ` + ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
                                               {f.sentiment_boost < 0 && ` ${(f.sentiment_boost * 100).toFixed(1)}% sentiment`}
                                               {' '}= {(f.adjusted_confidence * 100).toFixed(1)}% (need {(f.threshold * 100).toFixed(1)}%)

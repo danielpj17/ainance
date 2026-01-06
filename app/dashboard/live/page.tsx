@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Shield, AlertTriangle, Info, X } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { getCompanyName } from '@/lib/stock-names'
 
 interface Trade {
   id: number
@@ -882,7 +883,12 @@ export default function LiveTradingPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="text-2xl font-bold text-white">{position.symbol}</div>
+                        <div>
+                          <div className="text-2xl font-bold text-white">{position.symbol}</div>
+                          {getCompanyName(position.symbol) && (
+                            <div className="text-sm text-gray-400">{getCompanyName(position.symbol)}</div>
+                          )}
+                        </div>
                         <Badge className="bg-green-400">BUY</Badge>
                         <Badge variant="outline" className="border-gray-600 text-gray-400">
                           {position.qty} shares
@@ -985,7 +991,12 @@ export default function LiveTradingPage() {
           <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Position Metrics: {selectedPosition.symbol}</h2>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Position Metrics: {selectedPosition.symbol}</h2>
+                  {getCompanyName(selectedPosition.symbol) && (
+                    <div className="text-sm text-gray-400 mt-1">{getCompanyName(selectedPosition.symbol)}</div>
+                  )}
+                </div>
                 <button
                   onClick={() => {
                     setShowMetricsModal(false)
@@ -1421,7 +1432,8 @@ export default function LiveTradingPage() {
             <div className="p-6">
               <h2 className="text-xl font-bold text-white mb-4">Confirm Sell</h2>
               <p className="text-gray-400 mb-6">
-                Are you sure you want to sell <strong className="text-white">{positionToSell.qty} shares</strong> of <strong className="text-white">{positionToSell.symbol}</strong>?
+                Are you sure you want to sell <strong className="text-white">{positionToSell.qty} shares</strong> of <strong className="text-white">{positionToSell.symbol}</strong>
+                {getCompanyName(positionToSell.symbol) && ` (${getCompanyName(positionToSell.symbol)})`}?
               </p>
               <div className="bg-[#252838] p-4 rounded-lg mb-6">
                 <div className="flex justify-between mb-2">

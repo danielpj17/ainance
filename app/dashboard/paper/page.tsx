@@ -16,6 +16,7 @@ import AccountStrategyModal from '@/components/AccountStrategyModal'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getCompanyName } from '@/lib/stock-names'
 
 interface Trade {
   id: number
@@ -1042,7 +1043,12 @@ export default function PaperTradingPage() {
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="text-2xl font-bold text-white">{position.symbol}</div>
+                            <div>
+                              <div className="text-2xl font-bold text-white">{position.symbol}</div>
+                              {getCompanyName(position.symbol) && (
+                                <div className="text-sm text-gray-400">{getCompanyName(position.symbol)}</div>
+                              )}
+                            </div>
                             <Badge className="bg-blue-400">BUY</Badge>
                             <Badge variant="outline" className="border-gray-600 text-gray-400">
                               {position.qty} shares
@@ -1163,7 +1169,12 @@ export default function PaperTradingPage() {
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3">
-                            <div className="text-2xl font-bold text-white">{trade.symbol}</div>
+                            <div>
+                              <div className="text-2xl font-bold text-white">{trade.symbol}</div>
+                              {getCompanyName(trade.symbol) && (
+                                <div className="text-sm text-gray-400">{getCompanyName(trade.symbol)}</div>
+                              )}
+                            </div>
                             <Badge variant="outline" className="border-gray-600 text-gray-400">
                               {trade.qty} shares
                             </Badge>
@@ -1255,7 +1266,12 @@ export default function PaperTradingPage() {
           <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Position Metrics: {selectedPosition.symbol}</h2>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Position Metrics: {selectedPosition.symbol}</h2>
+                  {getCompanyName(selectedPosition.symbol) && (
+                    <div className="text-sm text-gray-400 mt-1">{getCompanyName(selectedPosition.symbol)}</div>
+                  )}
+                </div>
                 <button
                   onClick={() => {
                     setShowMetricsModal(false)
