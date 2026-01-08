@@ -1,5 +1,6 @@
--- Fix completed trades to only return trades with valid sell data
--- and ensure they're sorted by most recent first
+-- Fix completed trades to include trades with NULL account_id
+-- This ensures recent trades without account_id set will still show up
+-- when filtering by account_id
 
 -- Drop ALL existing versions of the function using a DO block
 DO $$ 
@@ -17,7 +18,7 @@ BEGIN
     END LOOP;
 END $$;
 
--- Recreate with stricter validation
+-- Recreate with fix for NULL account_id trades
 CREATE OR REPLACE FUNCTION get_completed_trades_optimized(
   user_uuid uuid,
   account_type_param text DEFAULT NULL,
@@ -93,5 +94,4 @@ GRANT EXECUTE ON FUNCTION get_completed_trades_optimized TO authenticated;
 GRANT EXECUTE ON FUNCTION get_completed_trades_optimized TO service_role;
 
 -- Add comment
-COMMENT ON FUNCTION get_completed_trades_optimized IS 'Returns completed trades with valid sell data, sorted by most recent first. Filters out trades with missing or invalid sell price/timestamp.';
-
+COMMENT ON FUNCTION get_completed_trades_optimized IS 'Returns completed trades with valid sell data, sorted by most recent first. Includes trades with NULL account_id when filtering by account_uuid to ensure all trades are visible.';

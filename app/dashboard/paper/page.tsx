@@ -557,14 +557,22 @@ export default function PaperTradingPage() {
   const handleSellPosition = async (position: CurrentPosition) => {
     setSellingPosition(position.symbol)
     try {
-      // Execute sell order
+      // Determine if this is a short position (negative qty)
+      const isShort = position.qty < 0
+      const absQty = Math.abs(position.qty)
+      
+      // For short positions, we need to buy back to close (side: 'buy')
+      // For long positions, we sell to close (side: 'sell')
+      const side = isShort ? 'buy' : 'sell'
+      
+      // Execute order to close position
       const response = await fetch('/api/trade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           symbol: position.symbol,
-          side: 'sell',
-          qty: position.qty,
+          side: side,
+          qty: absQty, // Use absolute value for order quantity
           type: 'market',
           time_in_force: 'day',
           strategy: position.strategy,
@@ -575,7 +583,7 @@ export default function PaperTradingPage() {
       const data = await response.json()
       
       if (!data.success) {
-        throw new Error(data.error || 'Failed to execute sell order')
+        throw new Error(data.error || 'Failed to execute order')
       }
       
       // Close position in trade logs
@@ -589,9 +597,9 @@ export default function PaperTradingPage() {
             ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
           },
           body: JSON.stringify({
-            action: 'sell',
+            action: 'sell', // Always 'sell' for closing in trade logs
             symbol: position.symbol,
-            qty: position.qty,
+            qty: absQty, // Use absolute value
             price: data.trade.price,
             decision_metrics: currentSellMetrics || {},
             strategy: position.strategy,
@@ -601,7 +609,8 @@ export default function PaperTradingPage() {
         })
       }
       
-      setMessage({ type: 'success', text: `Successfully sold ${position.qty} shares of ${position.symbol}` })
+      const actionText = isShort ? 'bought back' : 'sold'
+      setMessage({ type: 'success', text: `Successfully ${actionText} ${absQty} shares of ${position.symbol}` })
       setShowSellConfirm(false)
       setPositionToSell(null)
       
@@ -609,8 +618,8 @@ export default function PaperTradingPage() {
       await loadCurrentPositions()
       await loadAccountData()
     } catch (error: any) {
-      console.error('Error selling position:', error)
-      setMessage({ type: 'error', text: error.message || 'Failed to sell position' })
+      console.error('Error closing position:', error)
+      setMessage({ type: 'error', text: error.message || 'Failed to close position' })
     } finally {
       setSellingPosition(null)
     }
@@ -1049,9 +1058,11 @@ export default function PaperTradingPage() {
                                 <div className="text-sm text-gray-400">{getCompanyName(position.symbol)}</div>
                               )}
                             </div>
-                            <Badge className="bg-blue-400">BUY</Badge>
+                            <Badge className={position.qty < 0 ? "bg-red-500" : "bg-blue-400"}>
+                              {position.qty < 0 ? "SHORT" : "LONG"}
+                            </Badge>
                             <Badge variant="outline" className="border-gray-600 text-gray-400">
-                              {position.qty} shares
+                              {Math.abs(position.qty)} shares
                             </Badge>
                           </div>
                           <div className="text-right">
@@ -1075,7 +1086,9 @@ export default function PaperTradingPage() {
                           </div>
                           <div>
                             <div className="text-gray-500 mb-1">Position Value</div>
-                            <div className="font-semibold text-white">{formatCurrency(position.current_value)}</div>
+                            <div className={`font-semibold ${position.qty < 0 ? 'text-red-400' : 'text-white'}`}>
+                              {formatCurrency(Math.abs(position.current_value))} {position.qty < 0 ? '(Short)' : ''}
+                            </div>
                           </div>
                           <div>
                             <div className="text-gray-500 mb-1 flex items-center gap-1">
@@ -1090,7 +1103,7 @@ export default function PaperTradingPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4 text-xs text-gray-400">
                               <div>
-                                Bought: {new Date(position.buy_timestamp).toLocaleString()}
+                                {position.qty < 0 ? "Short sold" : "Bought"}: {new Date(position.buy_timestamp).toLocaleString()}
                               </div>
                               <div className="text-blue-400">
                                 Strategy: {position.strategy}
@@ -1125,12 +1138,12 @@ export default function PaperTradingPage() {
                                 {sellingPosition === position.symbol ? (
                                   <>
                                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                    Selling...
+                                    {position.qty < 0 ? 'Buying back...' : 'Selling...'}
                                   </>
                                 ) : (
                                   <>
                                     <TrendingDown className="h-4 w-4 mr-1" />
-                                    Sell
+                                    {position.qty < 0 ? 'Buy Back' : 'Sell'}
                                   </>
                                 )}
                               </Button>
@@ -1705,22 +1718,35 @@ export default function PaperTradingPage() {
         }}>
           <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
-              <h2 className="text-xl font-bold text-white mb-4">Confirm Sell</h2>
+              <h2 className="text-xl font-bold text-white mb-4">
+                {positionToSell.qty < 0 ? 'Confirm Buy Back (Close Short)' : 'Confirm Sell'}
+              </h2>
               <p className="text-gray-400 mb-6">
-                Are you sure you want to sell <strong className="text-white">{positionToSell.qty} shares</strong> of <strong className="text-white">{positionToSell.symbol}</strong>?
+                Are you sure you want to {positionToSell.qty < 0 ? 'buy back' : 'sell'} <strong className="text-white">{Math.abs(positionToSell.qty)} shares</strong> of <strong className="text-white">{positionToSell.symbol}</strong>?
+                {positionToSell.qty < 0 && (
+                  <span className="block mt-2 text-sm text-yellow-400">This will close your short position by buying back the shares.</span>
+                )}
               </p>
               <div className="bg-[#252838] p-4 rounded-lg mb-6">
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Position Type:</span>
+                  <span className={`font-semibold ${positionToSell.qty < 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                    {positionToSell.qty < 0 ? 'SHORT' : 'LONG'}
+                  </span>
+                </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-400">Current Price:</span>
                   <span className="text-white font-semibold">{formatCurrency(positionToSell.current_price)}</span>
                 </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-400">Position Value:</span>
-                  <span className="text-white font-semibold">{formatCurrency(positionToSell.current_value)}</span>
+                  <span className={`font-semibold ${positionToSell.qty < 0 ? 'text-red-400' : 'text-white'}`}>
+                    {formatCurrency(Math.abs(positionToSell.current_value))} {positionToSell.qty < 0 ? '(Short)' : ''}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Unrealized P&L:</span>
-                  <span className={`font-semibold ${positionToSell.unrealized_pl >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                  <span className={`font-semibold ${positionToSell.unrealized_pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {formatCurrency(positionToSell.unrealized_pl)} ({positionToSell.unrealized_pl_percent >= 0 ? '+' : ''}{positionToSell.unrealized_pl_percent.toFixed(2)}%)
                   </span>
                 </div>
@@ -1737,17 +1763,17 @@ export default function PaperTradingPage() {
                   Cancel
                 </Button>
                 <Button
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  className={`flex-1 ${positionToSell.qty < 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'} text-white`}
                   onClick={() => handleSellPosition(positionToSell)}
                   disabled={sellingPosition === positionToSell.symbol}
                 >
                   {sellingPosition === positionToSell.symbol ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Selling...
+                      {positionToSell.qty < 0 ? 'Buying back...' : 'Selling...'}
                     </>
                   ) : (
-                    'Confirm Sell'
+                    positionToSell.qty < 0 ? 'Confirm Buy Back' : 'Confirm Sell'
                   )}
                 </Button>
               </div>
