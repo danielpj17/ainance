@@ -326,7 +326,7 @@ export default function PaperTradingPage() {
         })
         
         // Clean up timestamps for positions that no longer exist
-        const currentKeys = new Set(mergedPositions.map(p => getPositionKey(p)))
+        const currentKeys = new Set(mergedPositions.map((p: CurrentPosition) => getPositionKey(p)))
         for (const [key] of originalTimestampsRef.current.entries()) {
           if (!currentKeys.has(key)) {
             originalTimestampsRef.current.delete(key)
