@@ -406,15 +406,33 @@ export default function PaperTradingPage() {
         const timestamps = result.data.timestamp || []
         const equity = result.data.equity || []
         
-        const transformed = timestamps.map((ts: number, idx: number) => ({
-          time: new Date(ts * 1000).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: chartPeriod === '1D' ? 'numeric' : undefined,
-            minute: chartPeriod === '1D' ? '2-digit' : undefined
-          }),
-          value: equity[idx] || 0
-        }))
+        const transformed = timestamps.map((ts: number, idx: number) => {
+          const date = new Date(ts * 1000)
+          let timeLabel: string
+          
+          if (chartPeriod === '1D') {
+            // For day view, only show time
+            timeLabel = date.toLocaleString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          } else {
+            // For other views, show date and time
+            timeLabel = date.toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          }
+          
+          return {
+            time: timeLabel,
+            value: equity[idx] || 0
+          }
+        })
         
         setChartData(transformed)
       }
@@ -1086,8 +1104,8 @@ export default function PaperTradingPage() {
                           </div>
                           <div>
                             <div className="text-gray-500 mb-1">Position Value</div>
-                            <div className={`font-semibold ${position.qty < 0 ? 'text-red-400' : 'text-white'}`}>
-                              {formatCurrency(Math.abs(position.current_value))} {position.qty < 0 ? '(Short)' : ''}
+                            <div className="font-semibold text-white">
+                              {formatCurrency(Math.abs(position.current_value))}
                             </div>
                           </div>
                           <div>
@@ -1740,8 +1758,8 @@ export default function PaperTradingPage() {
                 </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-400">Position Value:</span>
-                  <span className={`font-semibold ${positionToSell.qty < 0 ? 'text-red-400' : 'text-white'}`}>
-                    {formatCurrency(Math.abs(positionToSell.current_value))} {positionToSell.qty < 0 ? '(Short)' : ''}
+                  <span className="font-semibold text-white">
+                    {formatCurrency(Math.abs(positionToSell.current_value))}
                   </span>
                 </div>
                 <div className="flex justify-between">

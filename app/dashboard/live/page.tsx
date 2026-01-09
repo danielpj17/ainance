@@ -298,15 +298,33 @@ export default function LiveTradingPage() {
         const timestamps = result.data.timestamp || []
         const equity = result.data.equity || []
         
-        const transformed = timestamps.map((ts: number, idx: number) => ({
-          time: new Date(ts * 1000).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: chartPeriod === '1D' ? 'numeric' : undefined,
-            minute: chartPeriod === '1D' ? '2-digit' : undefined
-          }),
-          value: equity[idx] || 0
-        }))
+        const transformed = timestamps.map((ts: number, idx: number) => {
+          const date = new Date(ts * 1000)
+          let timeLabel: string
+          
+          if (chartPeriod === '1D') {
+            // For day view, only show time
+            timeLabel = date.toLocaleString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          } else {
+            // For other views, show date and time
+            timeLabel = date.toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          }
+          
+          return {
+            time: timeLabel,
+            value: equity[idx] || 0
+          }
+        })
         
         setChartData(transformed)
       }
