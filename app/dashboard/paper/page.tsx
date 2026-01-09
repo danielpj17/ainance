@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -112,6 +112,11 @@ export default function PaperTradingPage() {
   const [completedTrades, setCompletedTrades] = useState<CompletedTrade[]>([])
   const [showAllCompleted, setShowAllCompleted] = useState(false)
   const [positionsLoading, setPositionsLoading] = useState(false)
+  const [completedTradesLoading, setCompletedTradesLoading] = useState(false)
+  // Store original timestamps to prevent them from ever changing
+  const originalTimestampsRef = useRef<Map<string, { buy_timestamp: string, symbol: string, qty: number, buy_price: number }>>(new Map())
+  // Track last refresh time
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null)
   const [selectedPosition, setSelectedPosition] = useState<CurrentPosition | null>(null)
   const [showMetricsModal, setShowMetricsModal] = useState(false)
   const [currentSellMetrics, setCurrentSellMetrics] = useState<any>(null)
@@ -149,6 +154,8 @@ export default function PaperTradingPage() {
       setCompletedTrades([])
       setPortfolioHistory(null)
       setChartData([])
+      // Clear stored timestamps when switching accounts
+      originalTimestampsRef.current.clear()
       
       // Load new data
       loadData()
@@ -237,7 +244,12 @@ export default function PaperTradingPage() {
     if (!selectedAccountId) return
     
     try {
-      setPositionsLoading(true)
+      // Only show loading on initial load, not on refresh
+      const isInitialLoad = currentPositions.length === 0
+      if (isInitialLoad) {
+        setPositionsLoading(true)
+      }
+      
       const sb = supabaseRef.current
       if (!sb) return
       
@@ -257,7 +269,75 @@ export default function PaperTradingPage() {
       })
       
       if (data.success) {
-        setCurrentPositions(data.data.currentTrades || [])
+        const newPositions = data.data.currentTrades || []
+        // Create a stable key for each position (symbol + qty + buy_price)
+        const getPositionKey = (pos: CurrentPosition) => `${pos.symbol}-${pos.qty}-${pos.buy_price.toFixed(2)}`
+        
+        // Preserve existing buy_timestamp values to prevent them from updating on refresh
+        // Match by symbol + qty + buy_price as stable identifier (IDs may change from API)
+        const mergedPositions = newPositions.map((newPos: CurrentPosition) => {
+          const positionKey = getPositionKey(newPos)
+          
+          // First, check if we have an original timestamp stored for this position
+          const originalTimestamp = originalTimestampsRef.current.get(positionKey)
+          if (originalTimestamp) {
+            // Always use the original timestamp we stored for this position
+            return {
+              ...newPos,
+              buy_timestamp: originalTimestamp.buy_timestamp
+            }
+          }
+          
+          // If not in ref, check existing positions
+          const existingPos = currentPositions.find(p => {
+            const existingKey = getPositionKey(p)
+            return existingKey === positionKey
+          })
+          
+          // If position exists in current state, use its timestamp and store it
+          if (existingPos && existingPos.buy_timestamp) {
+            // Store this timestamp so it never changes
+            originalTimestampsRef.current.set(positionKey, {
+              buy_timestamp: existingPos.buy_timestamp,
+              symbol: existingPos.symbol,
+              qty: existingPos.qty,
+              buy_price: existingPos.buy_price
+            })
+            return {
+              ...newPos,
+              buy_timestamp: existingPos.buy_timestamp
+            }
+          }
+          
+          // For new positions, use the timestamp from API but store it immediately
+          // This ensures it won't change on subsequent refreshes
+          const timestampToUse = newPos.buy_timestamp || new Date().toISOString()
+          originalTimestampsRef.current.set(positionKey, {
+            buy_timestamp: timestampToUse,
+            symbol: newPos.symbol,
+            qty: newPos.qty,
+            buy_price: newPos.buy_price
+          })
+          
+          return {
+            ...newPos,
+            buy_timestamp: timestampToUse
+          }
+        })
+        
+        // Clean up timestamps for positions that no longer exist
+        const currentKeys = new Set(mergedPositions.map(p => getPositionKey(p)))
+        for (const [key] of originalTimestampsRef.current.entries()) {
+          if (!currentKeys.has(key)) {
+            originalTimestampsRef.current.delete(key)
+          }
+        }
+        
+        // Update positions atomically without clearing first
+        // Sorting is handled by useMemo for stable rendering
+        setCurrentPositions(mergedPositions)
+        // Update last refresh time
+        setLastRefreshTime(new Date())
       }
     } catch (error) {
       console.error('Error loading current positions:', error)
@@ -270,6 +350,12 @@ export default function PaperTradingPage() {
     if (!selectedAccountId) return
     
     try {
+      // Only show loading on initial load, not on refresh
+      const isInitialLoad = completedTrades.length === 0
+      if (isInitialLoad) {
+        setCompletedTradesLoading(true)
+      }
+      
       const sb = supabaseRef.current
       if (!sb) return
       
@@ -288,15 +374,45 @@ export default function PaperTradingPage() {
       })
       
       if (data.success) {
-        const trades = data.data.completedTrades || []
-        // Sort by most recent first (should already be sorted from API, but ensure it)
-        trades.sort((a: CompletedTrade, b: CompletedTrade) => 
-          new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
-        )
-        setCompletedTrades(trades)
+        const newTrades = data.data.completedTrades || []
+        // Create a stable key for each trade (symbol + qty + buy_price + sell_price)
+        const getTradeKey = (trade: CompletedTrade) => 
+          `${trade.symbol}-${trade.qty}-${trade.buy_price.toFixed(2)}-${trade.sell_price.toFixed(2)}`
+        
+        // Preserve existing timestamps - use a separate ref or same pattern
+        const mergedTrades = newTrades.map((newTrade: CompletedTrade) => {
+          const tradeKey = getTradeKey(newTrade)
+          
+          // Check existing trades first
+          const existingTrade = completedTrades.find(t => {
+            const existingKey = getTradeKey(t)
+            return existingKey === tradeKey
+          })
+          
+          // If trade exists, preserve its timestamps
+          if (existingTrade) {
+            return {
+              ...newTrade,
+              buy_timestamp: existingTrade.buy_timestamp,
+              sell_timestamp: existingTrade.sell_timestamp
+            }
+          }
+          
+          // For new trades, use timestamps from API
+          return newTrade
+        })
+        // Update completed trades atomically without clearing first
+        // Sorting is handled by useMemo
+        setCompletedTrades(mergedTrades)
+        // Update last refresh time if this is the initial load
+        if (completedTrades.length === 0) {
+          setLastRefreshTime(new Date())
+        }
       }
     } catch (error) {
       console.error('Error loading completed trades:', error)
+    } finally {
+      setCompletedTradesLoading(false)
     }
   }
 
@@ -706,6 +822,23 @@ export default function PaperTradingPage() {
     return account[field] || defaultValue
   }
 
+  // Memoize sorted positions and completed trades to prevent unnecessary re-renders
+  const sortedCurrentPositions = useMemo(() => {
+    return [...currentPositions].sort((a, b) => {
+      const timeDiff = new Date(b.buy_timestamp).getTime() - new Date(a.buy_timestamp).getTime()
+      if (timeDiff !== 0) return timeDiff
+      return Number(b.id) - Number(a.id)
+    })
+  }, [currentPositions])
+
+  const sortedCompletedTrades = useMemo(() => {
+    return [...completedTrades].sort((a, b) => {
+      const timeDiff = new Date(b.sell_timestamp).getTime() - new Date(a.sell_timestamp).getTime()
+      if (timeDiff !== 0) return timeDiff
+      return Number(b.id) - Number(a.id)
+    })
+  }, [completedTrades])
+
   if (loading) {
     return (
       <div className="min-h-screen text-white p-8">
@@ -995,11 +1128,16 @@ export default function PaperTradingPage() {
                       textAnchor="end"
                       height={80}
                       tickFormatter={(value) => {
-                        // If in day view, extract only time from the formatted string
-                        // The value should already be formatted, but ensure we only show time
+                        // If in day view, ensure we only show time
+                        // The value should already be formatted correctly, but strip date if present
                         if (chartPeriod === '1D' && typeof value === 'string') {
-                          // Remove any date part if present (e.g., "Jan 8, " from "Jan 8, 7:40 AM")
-                          return value.replace(/^[^,]+,?\s*/, '')
+                          // Only remove date part if there's a comma (indicating date, time format)
+                          // e.g., "Jan 8, 7:40 AM" -> "7:40 AM"
+                          if (value.includes(',')) {
+                            return value.split(',').pop()?.trim() || value
+                          }
+                          // If no comma, it's already just time, return as-is
+                          return value
                         }
                         return value
                       }}
@@ -1045,10 +1183,27 @@ export default function PaperTradingPage() {
       <div className="mb-8">
         <Card className="glass-card">
           <CardHeader>
-            <CardTitle className="text-white">Trading Activity</CardTitle>
-            <CardDescription className="text-gray-400">
-              View current positions and completed trades for this account
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white">Trading Activity</CardTitle>
+                <CardDescription className="text-gray-400">
+                  View current positions and completed trades for this account
+                </CardDescription>
+              </div>
+              {lastRefreshTime && (
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">Last refreshed</div>
+                  <div className="text-xs text-gray-400 font-mono">
+                    {lastRefreshTime.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: true
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="current" className="w-full">
@@ -1059,7 +1214,7 @@ export default function PaperTradingPage() {
               
               {/* Current Positions Tab */}
               <TabsContent value="current">
-                {positionsLoading ? (
+                {positionsLoading && currentPositions.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                     Loading positions...
@@ -1072,9 +1227,9 @@ export default function PaperTradingPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {currentPositions.map((position) => (
+                    {sortedCurrentPositions.map((position) => (
                       <div
-                        key={`${position.symbol}-${position.id}`}
+                        key={`position-${position.id}-${position.trade_pair_id || position.symbol}`}
                         className="p-4 bg-[#252838] rounded-lg border border-gray-700 hover:border-blue-500 transition-all"
                       >
                         <div className="flex items-start justify-between mb-3">
@@ -1185,7 +1340,7 @@ export default function PaperTradingPage() {
               
               {/* Completed Trades Tab */}
               <TabsContent value="completed">
-                {positionsLoading ? (
+                {completedTradesLoading && completedTrades.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                     Loading completed trades...
@@ -1198,9 +1353,9 @@ export default function PaperTradingPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {(showAllCompleted ? completedTrades : completedTrades.slice(0, 10)).map((trade) => (
+                    {(showAllCompleted ? sortedCompletedTrades : sortedCompletedTrades.slice(0, 10)).map((trade) => (
                       <div
-                        key={`${trade.symbol}-${trade.id}-${trade.sell_timestamp}`}
+                        key={`trade-${trade.id}-${trade.trade_pair_id || trade.symbol}`}
                         onClick={() => {
                           setSelectedCompletedTrade(trade)
                           setShowCompletedTradeModal(true)
@@ -1281,14 +1436,14 @@ export default function PaperTradingPage() {
                     ))}
 
                     {/* See More Button */}
-                    {completedTrades.length > 10 && (
+                    {sortedCompletedTrades.length > 10 && (
                       <div className="pt-4 border-t border-gray-700">
                         <Button
                           variant="outline"
                           onClick={() => setShowAllCompleted(!showAllCompleted)}
                           className="w-full border-blue-500 text-blue-400 hover:bg-blue-500/10"
                         >
-                          {showAllCompleted ? 'Show Less' : `See More (${completedTrades.length - 10} more)`}
+                          {showAllCompleted ? 'Show Less' : `See More (${sortedCompletedTrades.length - 10} more)`}
                         </Button>
                       </div>
                     )}

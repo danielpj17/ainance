@@ -835,11 +835,16 @@ export default function LiveTradingPage() {
                       textAnchor="end"
                       height={80}
                       tickFormatter={(value) => {
-                        // If in day view, extract only time from the formatted string
-                        // The value should already be formatted, but ensure we only show time
+                        // If in day view, ensure we only show time
+                        // The value should already be formatted correctly, but strip date if present
                         if (chartPeriod === '1D' && typeof value === 'string') {
-                          // Remove any date part if present (e.g., "Jan 8, " from "Jan 8, 7:40 AM")
-                          return value.replace(/^[^,]+,?\s*/, '')
+                          // Only remove date part if there's a comma (indicating date, time format)
+                          // e.g., "Jan 8, 7:40 AM" -> "7:40 AM"
+                          if (value.includes(',')) {
+                            return value.split(',').pop()?.trim() || value
+                          }
+                          // If no comma, it's already just time, return as-is
+                          return value
                         }
                         return value
                       }}
