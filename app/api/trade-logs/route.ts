@@ -714,6 +714,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   ? `${days}d ${hours}h`
                   : `${hours}h ${minutes}m`
                 
+                // Calculate position value consistently for both long and short positions
+                // For shorts, market_value is typically negative in Alpaca, so use absolute value
+                const absQty = Math.abs(alpacaPos.qty)
+                const positionValue = Math.abs(alpacaPos.current_price * absQty)
+                
+                // Alpaca's unrealized_pl and unrealized_plpc are already correctly calculated for shorts
+                // But ensure we're using the right sign for display
+                const isShort = alpacaPos.qty < 0
+                
                 // Use Alpaca's data directly - this is the source of truth
                 currentTrades.push({
                   id: mostRecentTrade?.id || `${symbol}-${Date.now()}`,
@@ -722,9 +731,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   buy_price: alpacaPos.avg_entry_price, // Use Alpaca's entry price
                   buy_timestamp: mostRecentTrade?.buy_timestamp || mostRecentTrade?.timestamp || new Date().toISOString(),
                   current_price: alpacaPos.current_price,
-                  current_value: alpacaPos.market_value,
-                  unrealized_pl: alpacaPos.unrealized_pl,
-                  unrealized_pl_percent: alpacaPos.unrealized_plpc,
+                  current_value: positionValue, // Use calculated absolute value for consistent display
+                  unrealized_pl: alpacaPos.unrealized_pl, // Alpaca already calculates this correctly
+                  unrealized_pl_percent: alpacaPos.unrealized_plpc, // Alpaca already calculates this correctly
                   holding_duration: holdingDuration,
                   buy_decision_metrics: mostRecentTrade?.buy_decision_metrics || {
                     confidence: 0,

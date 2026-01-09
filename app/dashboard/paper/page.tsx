@@ -411,8 +411,8 @@ export default function PaperTradingPage() {
           let timeLabel: string
           
           if (chartPeriod === '1D') {
-            // For day view, only show time
-            timeLabel = date.toLocaleString('en-US', {
+            // For day view, only show time (use toLocaleTimeString to ensure no date)
+            timeLabel = date.toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
               hour12: true
@@ -994,6 +994,15 @@ export default function PaperTradingPage() {
                       angle={-45}
                       textAnchor="end"
                       height={80}
+                      tickFormatter={(value) => {
+                        // If in day view, extract only time from the formatted string
+                        // The value should already be formatted, but ensure we only show time
+                        if (chartPeriod === '1D' && typeof value === 'string') {
+                          // Remove any date part if present (e.g., "Jan 8, " from "Jan 8, 7:40 AM")
+                          return value.replace(/^[^,]+,?\s*/, '')
+                        }
+                        return value
+                      }}
                     />
                     <YAxis 
                       stroke="#9ca3af" 
@@ -1105,7 +1114,7 @@ export default function PaperTradingPage() {
                           <div>
                             <div className="text-gray-500 mb-1">Position Value</div>
                             <div className="font-semibold text-white">
-                              {formatCurrency(Math.abs(position.current_value))}
+                              {formatCurrency(position.current_value)}
                             </div>
                           </div>
                           <div>
@@ -1759,7 +1768,7 @@ export default function PaperTradingPage() {
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-400">Position Value:</span>
                   <span className="font-semibold text-white">
-                    {formatCurrency(Math.abs(positionToSell.current_value))}
+                    {formatCurrency(positionToSell.current_value)}
                   </span>
                 </div>
                 <div className="flex justify-between">

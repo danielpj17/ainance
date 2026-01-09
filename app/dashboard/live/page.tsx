@@ -303,8 +303,8 @@ export default function LiveTradingPage() {
           let timeLabel: string
           
           if (chartPeriod === '1D') {
-            // For day view, only show time
-            timeLabel = date.toLocaleString('en-US', {
+            // For day view, only show time (use toLocaleTimeString to ensure no date)
+            timeLabel = date.toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
               hour12: true
@@ -834,6 +834,15 @@ export default function LiveTradingPage() {
                       angle={-45}
                       textAnchor="end"
                       height={80}
+                      tickFormatter={(value) => {
+                        // If in day view, extract only time from the formatted string
+                        // The value should already be formatted, but ensure we only show time
+                        if (chartPeriod === '1D' && typeof value === 'string') {
+                          // Remove any date part if present (e.g., "Jan 8, " from "Jan 8, 7:40 AM")
+                          return value.replace(/^[^,]+,?\s*/, '')
+                        }
+                        return value
+                      }}
                     />
                     <YAxis 
                       stroke="#9ca3af" 
