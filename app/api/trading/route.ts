@@ -1947,6 +1947,7 @@ async function executeTradeSignal(
 
     // Wait for order to fill and get actual execution price
     let actualPrice = signal.price // Fallback to signal price
+    let orderFillTimestamp: string | null = null // Track when order was actually filled
     if (order && order.id) {
       console.log(`⏳ Waiting for order ${order.id} to fill...`)
       const filledPrice = await alpacaClient.waitForOrderFill(order.id, 10000) // Wait up to 10 seconds
@@ -1961,6 +1962,16 @@ async function executeTradeSignal(
           console.log(`✅ Got filled price from order status: $${actualPrice.toFixed(4)}`)
         } else {
           console.warn(`⚠️  Could not get filled price for order ${order.id}, using signal price $${signal.price.toFixed(4)}`)
+        }
+      }
+      
+      // Get the final order status to retrieve the actual fill timestamp
+      const finalOrderStatus = await alpacaClient.getOrder(order.id)
+      if (finalOrderStatus) {
+        // Use filled_at if available (when order is filled), otherwise use submitted_at (when order was placed)
+        orderFillTimestamp = finalOrderStatus.filled_at || finalOrderStatus.submitted_at || finalOrderStatus.created_at || null
+        if (orderFillTimestamp) {
+          console.log(`📅 Order timestamp: ${orderFillTimestamp} (${finalOrderStatus.filled_at ? 'filled' : 'submitted'})`)
         }
       }
     }
@@ -2022,6 +2033,9 @@ async function executeTradeSignal(
       }
       
       // Create new trade log entry for buy
+      // Use the actual order fill timestamp from Alpaca, not the current time
+      const tradeTimestamp = orderFillTimestamp || order.filled_at || order.submitted_at || order.created_at || new Date().toISOString()
+      
       const { error: logError } = await supabase
         .from('trade_logs')
         .insert({
@@ -2031,9 +2045,9 @@ async function executeTradeSignal(
           qty: positionSize,
           price: actualPrice, // Use actual execution price
           total_value: positionSize * actualPrice, // Use actual execution price
-          timestamp: new Date().toISOString(),
+          timestamp: tradeTimestamp, // Use actual order fill/submit time from Alpaca
           status: 'open',
-          buy_timestamp: new Date().toISOString(),
+          buy_timestamp: tradeTimestamp, // Use actual order fill/submit time from Alpaca
           buy_price: actualPrice, // Use actual execution price
           buy_decision_metrics: decisionMetrics,
           strategy: config.strategy,
@@ -2048,7 +2062,12 @@ async function executeTradeSignal(
         console.error('Error logging to trade_logs:', logError)
       }
     } else if (signal.action === 'sell') {
+      // Use the actual order fill timestamp from Alpaca for the sell
+      const sellTimestamp = orderFillTimestamp || order.filled_at || order.submitted_at || order.created_at || new Date().toISOString()
+      
       // Update existing trade log entry for sell
+      // Note: The close_trade_position function uses now() for sell_timestamp, but we should ideally pass the actual fill time
+      // For now, we'll update it manually after closing to use the actual order fill time
       const { error: closeError } = await supabase.rpc('close_trade_position', {
         user_uuid: userId,
         symbol_param: signal.symbol,
@@ -2056,6 +2075,26 @@ async function executeTradeSignal(
         sell_price_param: actualPrice, // Use actual execution price
         sell_metrics: decisionMetrics
       })
+      
+      // Update the sell_timestamp to use the actual order fill time instead of now()
+      if (!closeError && orderFillTimestamp) {
+        const { error: updateTimestampError } = await supabase
+          .from('trade_logs')
+          .update({ 
+            sell_timestamp: sellTimestamp 
+          })
+          .eq('user_id', userId)
+          .eq('symbol', signal.symbol)
+          .eq('status', 'closed')
+          .order('sell_timestamp', { ascending: false })
+          .limit(1)
+        
+        if (updateTimestampError) {
+          console.warn('Could not update sell_timestamp with actual fill time:', updateTimestampError)
+        } else {
+          console.log(`✅ Updated sell_timestamp to actual fill time: ${sellTimestamp}`)
+        }
+      }
 
       if (closeError) {
         console.error('Error closing trade in trade_logs:', closeError)

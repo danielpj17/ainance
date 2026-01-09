@@ -692,56 +692,202 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             // This fixes issues with old trades being aggregated incorrectly
             if (alpacaPositionsMap.size > 0) {
               for (const [symbol, alpacaPos] of alpacaPositionsMap) {
-                // Find the most recent trade for this symbol to get decision metrics
+                const isShort = alpacaPos.qty < 0
                 const tradesForSymbol = trulyOpenTrades.filter((t: any) => t.symbol.toUpperCase() === symbol)
+                
+                // Find the earliest trade that opened this position (for buy_timestamp)
+                // For long positions, find earliest 'buy' action
+                // For short positions, find earliest 'sell' action (short selling)
+                let earliestOpeningTrade: any = null
+                if (tradesForSymbol.length > 0) {
+                  const openingTrades = tradesForSymbol.filter((t: any) => 
+                    isShort ? t.action === 'sell' : t.action === 'buy'
+                  )
+                  
+                  if (openingTrades.length > 0) {
+                    // Sort by timestamp ascending to get the earliest trade
+                    earliestOpeningTrade = openingTrades.sort((a: any, b: any) => {
+                      const timeA = new Date(a.timestamp || a.buy_timestamp || a.created_at || 0).getTime()
+                      const timeB = new Date(b.timestamp || b.buy_timestamp || b.created_at || 0).getTime()
+                      return timeA - timeB
+                    })[0]
+                  }
+                }
+                
+                // Find the most recent trade for decision metrics (still useful for latest metrics)
                 const mostRecentTrade = tradesForSymbol.length > 0 
                   ? tradesForSymbol.sort((a: any, b: any) => 
-                      new Date(b.timestamp || b.buy_timestamp).getTime() - new Date(a.timestamp || a.buy_timestamp).getTime()
+                      new Date(b.timestamp || b.buy_timestamp || b.created_at || 0).getTime() - new Date(a.timestamp || a.buy_timestamp || a.created_at || 0).getTime()
                     )[0]
                   : null
                 
-                // Calculate holding duration from most recent trade (or use current time if no trade found)
-                const buyTime = mostRecentTrade 
-                  ? new Date(mostRecentTrade.buy_timestamp || mostRecentTrade.timestamp).getTime()
-                  : Date.now() - (24 * 60 * 60 * 1000) // Default to 1 day ago
-                const now = Date.now()
-                const duration = now - buyTime
-                const totalSeconds = Math.floor(duration / 1000)
-                const days = Math.floor(totalSeconds / 86400)
-                const hours = Math.floor((totalSeconds % 86400) / 3600)
-                const minutes = Math.floor((totalSeconds % 3600) / 60)
-                const holdingDuration = days > 0 
-                  ? `${days}d ${hours}h`
-                  : `${hours}h ${minutes}m`
+                // Use the earliest opening trade timestamp for position creation time
+                // Fallback to querying all trade_logs for this symbol if not found in trulyOpenTrades
+                let positionCreationTimestamp: string | null = null
+                let earliestOpeningTradeFromDB: any = null
+                
+                if (earliestOpeningTrade) {
+                  earliestOpeningTradeFromDB = earliestOpeningTrade
+                  positionCreationTimestamp = earliestOpeningTrade.timestamp || earliestOpeningTrade.buy_timestamp || earliestOpeningTrade.created_at
+                } else {
+                  // Query database for the earliest trade that opened this position
+                  try {
+                    const { data: earliestTradeQuery, error: queryError } = await supabase
+                      .from('trade_logs')
+                      .select('timestamp, created_at, action, alpaca_order_id, id')
+                      .eq('user_id', userId)
+                      .eq('symbol', symbol)
+                      .eq('account_type', accountType)
+                      .eq('action', isShort ? 'sell' : 'buy')
+                      .order('timestamp', { ascending: true })
+                      .limit(1)
+                    
+                    // Handle both single result and array results
+                    const earliestTrade = Array.isArray(earliestTradeQuery) 
+                      ? earliestTradeQuery[0] 
+                      : earliestTradeQuery
+                    
+                    if (!queryError && earliestTrade) {
+                      earliestOpeningTradeFromDB = earliestTrade
+                      positionCreationTimestamp = earliestTrade.timestamp || earliestTrade.created_at
+                    } else if (process.env.NODE_ENV === 'development') {
+                      console.warn(`[TRADE-LOGS] Could not find earliest trade for ${symbol}:`, queryError?.message || 'No results')
+                    }
+                  } catch (queryError) {
+                    if (process.env.NODE_ENV === 'development') {
+                      console.warn(`[TRADE-LOGS] Error querying earliest trade for ${symbol}:`, queryError)
+                    }
+                  }
+                }
+                
+                // If we have an alpaca_order_id, try to get the actual fill time from Alpaca
+                // This fixes positions that were created before our timestamp fix
+                // Only check if timestamp seems suspicious (very recent, within last few hours)
+                // This avoids unnecessary API calls while still fixing incorrect timestamps
+                if (earliestOpeningTradeFromDB?.alpaca_order_id && positionCreationTimestamp) {
+                  try {
+                    const dbTimestamp = new Date(positionCreationTimestamp).getTime()
+                    const now = Date.now()
+                    const timeDiff = now - dbTimestamp
+                    const threeHours = 3 * 60 * 60 * 1000
+                    
+                    // Check Alpaca for actual fill time if:
+                    // 1. Timestamp is within last 3 hours (might be incorrectly logged)
+                    // 2. We have an order ID to verify
+                    // Note: We'll update the DB after fetching, so this only happens once per position
+                    if (timeDiff < threeHours) {
+                      const { apiKey, secretKey } = await getAlpacaKeysForUser(userId, isDemo, accountType, accountId)
+                      if (apiKey && secretKey) {
+                        try {
+                          const alpacaClientForOrder = createAlpacaClient({
+                            apiKey,
+                            secretKey,
+                            baseUrl: accountType === 'paper' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+                            paper: accountType === 'paper'
+                          })
+                          await alpacaClientForOrder.initialize()
+                          
+                          const actualOrder = await alpacaClientForOrder.getOrder(earliestOpeningTradeFromDB.alpaca_order_id)
+                          if (actualOrder) {
+                            // Use filled_at if available (order was filled), otherwise submitted_at
+                            const actualFillTime = actualOrder.filled_at || actualOrder.submitted_at || actualOrder.created_at
+                            
+                            if (actualFillTime) {
+                              const actualTime = new Date(actualFillTime).getTime()
+                              const dbTime = new Date(positionCreationTimestamp).getTime()
+                              
+                              // Only update if there's a significant difference (> 1 minute)
+                              // This avoids unnecessary updates for positions created correctly
+                              if (Math.abs(actualTime - dbTime) > 60000) { // 1 minute difference
+                                const originalTimestamp = positionCreationTimestamp
+                                positionCreationTimestamp = actualFillTime
+                                
+                                // Update the database record with the correct timestamp for future queries
+                                await supabase
+                                  .from('trade_logs')
+                                  .update({
+                                    timestamp: actualFillTime,
+                                    buy_timestamp: actualFillTime,
+                                    updated_at: new Date().toISOString()
+                                  })
+                                  .eq('id', earliestOpeningTradeFromDB.id)
+                                
+                                if (process.env.NODE_ENV === 'development') {
+                                  console.log(`[TRADE-LOGS] Fixed timestamp for ${symbol}: was ${originalTimestamp}, now ${actualFillTime}`)
+                                }
+                              }
+                            }
+                          }
+                        } catch (alpacaError) {
+                          // If we can't fetch from Alpaca, silently continue with DB timestamp
+                          if (process.env.NODE_ENV === 'development') {
+                            console.warn(`[TRADE-LOGS] Could not fetch Alpaca order for ${symbol}:`, alpacaError)
+                          }
+                        }
+                      }
+                    }
+                  } catch (orderFetchError) {
+                    // Silently fail - we'll use the database timestamp as fallback
+                    if (process.env.NODE_ENV === 'development') {
+                      console.warn(`[TRADE-LOGS] Error checking order timestamp for ${symbol}:`, orderFetchError)
+                    }
+                  }
+                }
+                
+                // Calculate holding duration from position creation time
+                // If we don't have a timestamp, we'll still show the position but use a default holding duration
+                const buyTime = positionCreationTimestamp 
+                  ? new Date(positionCreationTimestamp).getTime()
+                  : null
+                
+                let holdingDuration: string
+                if (buyTime) {
+                  const now = Date.now()
+                  const duration = now - buyTime
+                  const totalSeconds = Math.floor(duration / 1000)
+                  const days = Math.floor(totalSeconds / 86400)
+                  const hours = Math.floor((totalSeconds % 86400) / 3600)
+                  const minutes = Math.floor((totalSeconds % 3600) / 60)
+                  holdingDuration = days > 0 
+                    ? `${days}d ${hours}h`
+                    : `${hours}h ${minutes}m`
+                } else {
+                  // If we can't determine the actual position creation time, use a default
+                  // This can happen if the position was created outside the trade_logs system
+                  if (process.env.NODE_ENV === 'development') {
+                    console.warn(`[TRADE-LOGS] No position creation timestamp found for ${symbol}, using default holding duration`)
+                  }
+                  holdingDuration = 'Unknown'
+                }
+                
+                // Use the actual timestamp if found, otherwise we'll use a fallback
+                // The fallback timestamp will be shown but may not be accurate
+                const finalBuyTimestamp = positionCreationTimestamp || (earliestOpeningTrade?.created_at) || new Date().toISOString()
                 
                 // Calculate position value consistently for both long and short positions
                 // For shorts, market_value is typically negative in Alpaca, so use absolute value
                 const absQty = Math.abs(alpacaPos.qty)
                 const positionValue = Math.abs(alpacaPos.current_price * absQty)
                 
-                // Alpaca's unrealized_pl and unrealized_plpc are already correctly calculated for shorts
-                // But ensure we're using the right sign for display
-                const isShort = alpacaPos.qty < 0
-                
                 // Use Alpaca's data directly - this is the source of truth
                 currentTrades.push({
-                  id: mostRecentTrade?.id || `${symbol}-${Date.now()}`,
+                  id: mostRecentTrade?.id || earliestOpeningTrade?.id || `${symbol}-${Date.now()}`,
                   symbol: symbol,
                   qty: alpacaPos.qty,
                   buy_price: alpacaPos.avg_entry_price, // Use Alpaca's entry price
-                  buy_timestamp: mostRecentTrade?.buy_timestamp || mostRecentTrade?.timestamp || new Date().toISOString(),
+                  buy_timestamp: finalBuyTimestamp, // Use earliest opening trade timestamp when available
                   current_price: alpacaPos.current_price,
                   current_value: positionValue, // Use calculated absolute value for consistent display
                   unrealized_pl: alpacaPos.unrealized_pl, // Alpaca already calculates this correctly
                   unrealized_pl_percent: alpacaPos.unrealized_plpc, // Alpaca already calculates this correctly
                   holding_duration: holdingDuration,
-                  buy_decision_metrics: mostRecentTrade?.buy_decision_metrics || {
+                  buy_decision_metrics: mostRecentTrade?.buy_decision_metrics || earliestOpeningTrade?.buy_decision_metrics || {
                     confidence: 0,
                     reasoning: 'Position from Alpaca'
                   },
-                  strategy: mostRecentTrade?.strategy || 'cash',
+                  strategy: mostRecentTrade?.strategy || earliestOpeningTrade?.strategy || 'cash',
                   account_type: accountType,
-                  trade_pair_id: mostRecentTrade?.trade_pair_id,
+                  trade_pair_id: mostRecentTrade?.trade_pair_id || earliestOpeningTrade?.trade_pair_id,
                   transaction_ids: tradesForSymbol.map((t: any) => t.id?.toString()).filter(Boolean),
                   transaction_count: tradesForSymbol.length
                 })
@@ -878,11 +1024,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 const unrealizedPl = marketValue - totalValue
                 const unrealizedPlPercent = totalValue > 0 ? ((unrealizedPl / totalValue) * 100) : 0
                 
-                // Calculate holding duration from oldest buy
-                const oldestTrade = trades.sort((a, b) => 
-                  new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-                )[0]
-                const buyTime = new Date(oldestTrade.buy_timestamp || oldestTrade.timestamp).getTime()
+                // Calculate holding duration from oldest buy (earliest trade that opened the position)
+                const oldestTrade = trades.sort((a, b) => {
+                  const timeA = new Date(a.timestamp || a.buy_timestamp || a.created_at || 0).getTime()
+                  const timeB = new Date(b.timestamp || b.buy_timestamp || b.created_at || 0).getTime()
+                  return timeA - timeB
+                })[0]
+                const buyTime = new Date(oldestTrade.buy_timestamp || oldestTrade.timestamp || oldestTrade.created_at).getTime()
                 const now = Date.now()
                 const duration = now - buyTime
                 const totalSeconds = Math.floor(duration / 1000)
@@ -907,7 +1055,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                   symbol,
                   qty: totalQty,
                   buy_price: avgBuyPrice,
-                  buy_timestamp: mostRecentTrade.buy_timestamp || mostRecentTrade.timestamp,
+                  buy_timestamp: oldestTrade.buy_timestamp || oldestTrade.timestamp || oldestTrade.created_at, // Use earliest trade timestamp
                   current_price: currentPrice,
                   current_value: marketValue,
                   unrealized_pl: unrealizedPl,
