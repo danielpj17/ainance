@@ -210,8 +210,11 @@
     /* Ensure dropdown scrollbar is visible and not hidden */
     margin-right: 0 !important;
     padding-right: 0 !important;
-    /* Ensure Radix can position this correctly */
-    position: fixed !important;
+    /* Ensure dropdown is visible */
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 50 !important;
   }
   
   /* Ensure dropdown viewport scrollbar is properly positioned */
