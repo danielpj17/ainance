@@ -131,13 +131,6 @@
     scrollbar-gutter: stable;
   }
   
-  /* Prevent content shift - apply to all direct children of body to catch the layout wrapper */
-  body > * {
-    /* Reserve space for scrollbar: 100vw includes scrollbar, 100% excludes it */
-    padding-right: calc(100vw - 100%);
-    box-sizing: border-box;
-  }
-  
   /* Frosted glass utilities */
   .glass {
     background: rgba(15, 17, 23, 0.1) !important;
