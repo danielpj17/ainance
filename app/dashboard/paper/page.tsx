@@ -645,56 +645,9 @@ export default function PaperTradingPage() {
             }
           })
           
-          // For today's hours that only had cash values, use the last known equity value or current equity
-          const today = new Date()
-          today.setHours(0, 0, 0, 0)
-          
-          // Find the last valid equity value from historical data (before today)
-          let lastValidEquity = 0
-          if (validEquityValues.length > 0) {
-            const sortedValid = [...validEquityValues]
-              .filter(v => {
-                const dataDate = new Date(v.timestamp * 1000)
-                return dataDate < today // Only use values from before today
-              })
-              .sort((a, b) => b.timestamp - a.timestamp)
-            
-            if (sortedValid.length > 0) {
-              lastValidEquity = sortedValid[0].equity
-            } else {
-              // If no historical data, use the first valid equity value
-              const sortedAll = [...validEquityValues].sort((a, b) => a.timestamp - b.timestamp)
-              if (sortedAll.length > 0) {
-                lastValidEquity = sortedAll[0].equity
-              }
-            }
-          }
-          
-          // If we have current equity, prefer that for today's missing hours
-          const equityForToday = currentEquity > 0 ? currentEquity : lastValidEquity
-          
-          // Find all hours that had data points (including cash values)
-          const allHoursWithData = new Set<number>()
-          timestamps.forEach((ts: number) => {
-            const date = new Date(ts * 1000)
-            const hourStart = new Date(date)
-            hourStart.setMinutes(0, 0, 0)
-            allHoursWithData.add(hourStart.getTime() / 1000)
-          })
-          
-          // For hours that had only cash values (especially today's hours), add them with the last known equity
-          allHoursWithData.forEach(hourKey => {
-            if (!hourlyMap.has(hourKey)) {
-              const hourDate = new Date(hourKey * 1000)
-              const isTodayHour = hourDate.toDateString() === today.toDateString()
-              
-              // Only fill in missing hours for today, using the current equity or last known equity
-              if (isTodayHour && equityForToday > 0) {
-                console.log(`[PAPER TRADING] Filling in missing hour ${hourDate.toISOString()} with equity: ${equityForToday}`)
-                hourlyMap.set(hourKey, { timestamp: hourKey, equity: equityForToday, minutes: 0 })
-              }
-            }
-          })
+          // Only use actual historical data points - don't fill in missing hours with current equity
+          // This ensures the graph shows historical snapshots, not forward-filled current values
+          // If an hour doesn't have data, it simply won't be shown on the graph
           
           // Convert map to sorted array
           const aggregated = Array.from(hourlyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
@@ -707,7 +660,7 @@ export default function PaperTradingPage() {
           console.log('[PAPER TRADING] Week view: Aggregated 5Min equity data to hourly', {
             validEquityPoints: validEquityValues.length,
             aggregatedPoints: dataToTransform.timestamps.length,
-            lastValidEquity
+            totalHours: hourlyMap.size
           })
         }
         
