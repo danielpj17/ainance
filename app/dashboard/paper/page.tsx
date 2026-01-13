@@ -585,14 +585,50 @@ export default function PaperTradingPage() {
         // For week view, we're using 5Min data (same as today view) but need to aggregate to hourly for cleaner display
         let dataToTransform = { timestamps, equity }
         if (isWeekView && timestamps.length > 0) {
-          // Simply aggregate 5-minute equity data to hourly intervals - use the value closest to each hour mark
-          // The 5-minute data already has correct equity values (same as today view)
-          const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
+          const currentEquity = account ? parseFloat(account.equity || '0') : 0
+          const currentCash = account ? parseFloat(account.cash || '0') : 0
+          
+          // First, identify valid equity values vs cash values
+          // Cash values will be close to currentCash, equity values will be different
+          const validEquityValues: { timestamp: number, equity: number }[] = []
+          const cashValues: { timestamp: number, value: number }[] = []
           
           timestamps.forEach((ts: number, idx: number) => {
-            const equityValue = equity[idx] || 0
-            if (equityValue === 0) return // Skip zero values
+            const value = equity[idx] || 0
+            if (value === 0) return
             
+            // If we have account data, check if this looks like cash
+            if (currentCash > 0 && currentEquity > 0) {
+              const diffFromCash = Math.abs(value - currentCash)
+              const diffFromEquity = Math.abs(value - currentEquity)
+              
+              // If value is very close to cash (within 0.5%) and far from equity (>5% different), it's cash
+              const isCash = diffFromCash < currentCash * 0.005 && diffFromEquity > currentEquity * 0.05
+              
+              if (isCash) {
+                cashValues.push({ timestamp: ts, value })
+                console.log(`[PAPER TRADING] Detected cash value at ${new Date(ts * 1000).toISOString()}: ${value} (cash: ${currentCash})`)
+              } else {
+                validEquityValues.push({ timestamp: ts, equity: value })
+              }
+            } else {
+              // No account data to compare, assume it's valid equity
+              validEquityValues.push({ timestamp: ts, equity: value })
+            }
+          })
+          
+          console.log('[PAPER TRADING] Week view: Filtered data points', {
+            totalPoints: timestamps.length,
+            validEquity: validEquityValues.length,
+            cashValues: cashValues.length,
+            currentEquity,
+            currentCash
+          })
+          
+          // Now aggregate valid equity values to hourly intervals
+          const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
+          
+          validEquityValues.forEach(({ timestamp: ts, equity: equityValue }) => {
             const date = new Date(ts * 1000)
             // Round down to the hour
             const hourStart = new Date(date)
@@ -609,6 +645,30 @@ export default function PaperTradingPage() {
             }
           })
           
+          // For hours that only had cash values, try to find the nearest valid equity value
+          // or use the last known equity value
+          let lastValidEquity = 0
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          
+          // Find the last valid equity value from historical data
+          if (validEquityValues.length > 0) {
+            const sortedValid = [...validEquityValues].sort((a, b) => b.timestamp - a.timestamp)
+            lastValidEquity = sortedValid[0].equity
+          }
+          
+          // Check for hours that might be missing (especially recent ones that had only cash)
+          const allHours = new Set<number>()
+          timestamps.forEach(ts => {
+            const date = new Date(ts * 1000)
+            const hourStart = new Date(date)
+            hourStart.setMinutes(0, 0, 0)
+            allHours.add(hourStart.getTime() / 1000)
+          })
+          
+          // For missing hours (that had only cash values), we could interpolate or skip them
+          // For now, we'll just use what we have
+          
           // Convert map to sorted array
           const aggregated = Array.from(hourlyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
           
@@ -618,8 +678,9 @@ export default function PaperTradingPage() {
           }
           
           console.log('[PAPER TRADING] Week view: Aggregated 5Min equity data to hourly', {
-            originalPoints: timestamps.length,
-            aggregatedPoints: dataToTransform.timestamps.length
+            validEquityPoints: validEquityValues.length,
+            aggregatedPoints: dataToTransform.timestamps.length,
+            lastValidEquity
           })
         }
         
