@@ -164,17 +164,34 @@
   }
   
   /* Ensure layout containers maintain width, but exclude portals/modals/dropdowns */
-  body > div:not([data-radix-portal]):not([role="dialog"]):not([data-radix-popper-content-wrapper]):not([data-slot="select-content"]) {
+  /* Only target the main layout wrapper, not portal children */
+  body > div:first-child:not([data-radix-portal]):not([role="dialog"]) {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
   
-  /* Ensure Select dropdowns maintain their natural width */
-  [data-slot="select-content"],
-  [data-radix-select-content] {
+  /* Exclude all Radix Portal containers from width constraints */
+  [data-radix-portal],
+  body > div[data-radix-portal],
+  body > div > [data-radix-portal] {
     width: auto !important;
     max-width: none !important;
+  }
+  
+  /* Ensure Select dropdowns maintain their natural width - match trigger width */
+  [data-slot="select-content"],
+  [data-radix-select-content] {
+    width: var(--radix-select-trigger-width, auto) !important;
+    max-width: var(--radix-select-trigger-width, none) !important;
+    min-width: var(--radix-select-trigger-width, 8rem) !important;
+  }
+  
+  /* Ensure the viewport inside doesn't force full width */
+  [data-slot="select-content"] [data-slot="select-viewport"],
+  [data-radix-select-viewport] {
+    width: 100% !important;
+    max-width: 100% !important;
   }
   
   /* Frosted glass utilities */
