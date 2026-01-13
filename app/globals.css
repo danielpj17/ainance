@@ -128,8 +128,9 @@
     background-position: center;
     background-attachment: fixed;
     background-repeat: no-repeat;
-    /* Ensure body doesn't create its own scrollbar */
-    overflow-x: hidden;
+    /* Prevent body overflow from being changed by dropdowns/modals */
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
   }
   
   /* Frosted glass utilities */
