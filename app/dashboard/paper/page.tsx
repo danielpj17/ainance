@@ -183,10 +183,19 @@ export default function PaperTradingPage() {
         loadCompletedTrades()
       }, 30000)
 
+      // Refresh portfolio history every 2 minutes to capture new hourly data points
+      // This ensures new hours appear on the graph as they become available from Alpaca
+      const portfolioHistoryInterval = setInterval(() => {
+        if (account && selectedAccountId) {
+          loadPortfolioHistory()
+        }
+      }, 120000) // 2 minutes
+
       return () => {
         tradesChannel?.unsubscribe()
         clearInterval(accountInterval)
         clearInterval(positionsInterval)
+        clearInterval(portfolioHistoryInterval)
       }
     }
   }, [selectedAccountId])
