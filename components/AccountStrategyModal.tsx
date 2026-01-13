@@ -23,7 +23,8 @@ interface StrategySettings {
   confidence_threshold: number
   sell_confidence_threshold: number
   max_exposure: number
-  algorithm_type: 'ml_model' | 'rule_based_simple' | 'rule_based_advanced'
+  // Updated to include LLM options
+  algorithm_type: 'ml_model' | 'rule_based_simple' | 'rule_based_advanced' | 'gemini_analyst' | 'llama_technical' | 'consensus_combined'
 }
 
 export default function AccountStrategyModal({ accountId, accountName, isOpen, onClose, onSave }: AccountStrategyModalProps) {
@@ -129,6 +130,19 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
 
   if (!isOpen) return null
 
+  // Helper function to get description for selected algorithm
+  const getAlgoDescription = (type: string) => {
+    switch (type) {
+      case 'ml_model': return 'Uses trained Random Forest model for predictions';
+      case 'rule_based_simple': return 'Uses RSI, MACD, and EMA indicators with simple rules';
+      case 'rule_based_advanced': return 'Uses advanced multi-indicator scoring system';
+      case 'gemini_analyst': return 'Gemini 1.5 Flash: Reads news & technicals (Fundamental Focus)';
+      case 'llama_technical': return 'Llama 3.3: Pure math & pattern recognition (Speed Focus)';
+      case 'consensus_combined': return 'High Safety: Requires agreement from both Gemini and Llama';
+      default: return '';
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div 
@@ -207,14 +221,13 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
                     <SelectItem value="ml_model">ML Model (Random Forest)</SelectItem>
                     <SelectItem value="rule_based_simple">Rule-Based (Simple)</SelectItem>
                     <SelectItem value="rule_based_advanced">Rule-Based (Advanced)</SelectItem>
+                    <SelectItem value="gemini_analyst">Gemini 1.5 Flash (Analyst)</SelectItem>
+                    <SelectItem value="llama_technical">Llama 3.3 (Technical)</SelectItem>
+                    <SelectItem value="consensus_combined">Consensus (Gemini + Llama)</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-400 mt-1">
-                  {settings.algorithm_type === 'ml_model' 
-                    ? 'Uses trained Random Forest model for predictions' 
-                    : settings.algorithm_type === 'rule_based_simple'
-                    ? 'Uses RSI, MACD, and EMA indicators with simple rules'
-                    : 'Uses advanced multi-indicator scoring system'}
+                  {getAlgoDescription(settings.algorithm_type)}
                 </p>
               </div>
 
@@ -323,4 +336,3 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
     </div>
   )
 }
-
