@@ -54,7 +54,44 @@ export async function GET(req: NextRequest) {
       extended_hours: false
     })
     
-    return NextResponse.json({ success: true, data: history })
+    // Log the response structure to debug
+    console.log('Account History API - Portfolio history response structure:', {
+      hasEquity: Array.isArray(history?.equity),
+      equityLength: history?.equity?.length || 0,
+      hasValue: Array.isArray(history?.value),
+      valueLength: history?.value?.length || 0,
+      keys: Object.keys(history || {}),
+      firstEquityValue: history?.equity?.[0],
+      firstValueValue: history?.value?.[0],
+      sampleEquity: history?.equity?.slice(0, 3),
+      sampleValue: history?.value?.slice(0, 3)
+    })
+    
+    // The Alpaca API returns portfolio history with 'equity' field containing total portfolio value
+    // (cash + market value of positions). Ensure we're using equity, not value or cash.
+    // Handle case-insensitive field access in case SDK returns different casing
+    const equityArray = history?.equity || history?.Equity || []
+    const valueArray = history?.value || history?.Value || []
+    
+    // If equity array exists and has data, use it (this is the correct field for portfolio equity)
+    // If only value exists, it might be cash, so we should not use it
+    const finalEquity = equityArray.length > 0 ? equityArray : []
+    
+    if (equityArray.length === 0 && valueArray.length > 0) {
+      console.warn('Account History API - WARNING: No equity field found, but value field exists. This might be cash, not equity.')
+    }
+    
+    // Return the history with explicit equity field
+    const responseData = {
+      timestamp: history?.timestamp || history?.Timestamp || [],
+      equity: finalEquity,
+      profit_loss: history?.profit_loss || history?.ProfitLoss || [],
+      profit_loss_pct: history?.profit_loss_pct || history?.ProfitLossPct || [],
+      base_value: history?.base_value || history?.BaseValue || (finalEquity.length > 0 ? finalEquity[0] : 0),
+      timeframe: history?.timeframe || timeframe
+    }
+    
+    return NextResponse.json({ success: true, data: responseData })
   } catch (error: any) {
     console.error('Error fetching portfolio history:', error)
     return NextResponse.json({ 

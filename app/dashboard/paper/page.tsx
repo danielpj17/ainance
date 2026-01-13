@@ -520,7 +520,22 @@ export default function PaperTradingPage() {
         
         // Transform data for chart
         const timestamps = result.data.timestamp || []
+        // Explicitly use equity field (total portfolio value = cash + positions)
+        // Do NOT use value or cash fields - equity is the correct field for portfolio equity
         const equity = result.data.equity || []
+        
+        // Log for debugging if we detect potential issues
+        if (equity.length > 0 && result.data.value && result.data.value.length > 0) {
+          const firstEquity = equity[0]
+          const firstValue = result.data.value[0]
+          if (Math.abs(firstEquity - firstValue) > 1000) {
+            console.warn('[PAPER TRADING] Portfolio history: equity and value fields differ significantly', {
+              equity: firstEquity,
+              value: firstValue,
+              difference: firstEquity - firstValue
+            })
+          }
+        }
         
         const transformed = timestamps.map((ts: number, idx: number) => {
           const date = new Date(ts * 1000)
