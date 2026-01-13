@@ -759,6 +759,10 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
                   <span className="text-blue-400 font-medium">
                     {algorithmType === 'ml_model' ? 'ML Model' : 
                      algorithmType === 'rule_based_simple' ? 'Rule-Based (Simple)' : 
+                     algorithmType === 'rule_based_advanced' ? 'Rule-Based (Advanced)' :
+                     algorithmType === 'gemini_analyst' ? 'Gemini 1.5 Flash (Analyst)' :
+                     algorithmType === 'llama_technical' ? 'Llama 3.3 (Technical)' :
+                     algorithmType === 'consensus_combined' ? 'Consensus (Gemini + Llama)' :
                      'Rule-Based (Advanced)'}
                   </span>
                 </>
