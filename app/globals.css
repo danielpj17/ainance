@@ -163,11 +163,18 @@
     right: 0 !important;
   }
   
-  /* Ensure all direct children of body maintain width */
-  body > * {
+  /* Ensure layout containers maintain width, but exclude portals/modals/dropdowns */
+  body > div:not([data-radix-portal]):not([role="dialog"]):not([data-radix-popper-content-wrapper]):not([data-slot="select-content"]) {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+  }
+  
+  /* Ensure Select dropdowns maintain their natural width */
+  [data-slot="select-content"],
+  [data-radix-select-content] {
+    width: auto !important;
+    max-width: none !important;
   }
   
   /* Frosted glass utilities */
