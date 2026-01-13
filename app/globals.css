@@ -117,8 +117,9 @@
     @apply border-border outline-ring/50;
   }
   html {
-    /* Reserve space for scrollbar to prevent background shift */
-    scrollbar-gutter: stable;
+    /* Force scrollbar to always be visible to prevent viewport width changes */
+    /* This prevents both background and content from shifting */
+    overflow-y: scroll;
   }
   body {
     @apply bg-background text-foreground;
@@ -127,6 +128,8 @@
     background-position: center;
     background-attachment: fixed;
     background-repeat: no-repeat;
+    /* Ensure body doesn't create its own scrollbar */
+    overflow-x: hidden;
   }
   
   /* Frosted glass utilities */
