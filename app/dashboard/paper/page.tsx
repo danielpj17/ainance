@@ -200,7 +200,7 @@ export default function PaperTradingPage() {
   const loadPaperAccounts = async () => {
     try {
       setAccountsLoading(true)
-      const response = await fetch('/api/paper-accounts')
+      const response = await authFetch('/api/paper-accounts')
       const result = await response.json()
       
       if (result.success) {

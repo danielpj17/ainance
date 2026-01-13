@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,7 +41,7 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
     // Check if in demo mode
     const checkDemoMode = async () => {
       try {
-        const response = await fetch('/api/paper-accounts')
+        const response = await authFetch('/api/paper-accounts')
         const result = await response.json()
         // We're allowing demo mode now, just note it for UI purposes
         setIsDemoMode(false) // Not restricting anymore
@@ -56,7 +57,7 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
   const loadAccounts = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/paper-accounts')
+      const response = await authFetch('/api/paper-accounts')
       const result = await response.json()
       
       if (result.success) {
@@ -82,7 +83,7 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
       setSaving(true)
       setMessage(null)
       
-      const response = await fetch('/api/paper-accounts', {
+      const response = await authFetch('/api/paper-accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -125,7 +126,7 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
         updateData.alpaca_api_secret = formData.alpaca_api_secret
       }
       
-      const response = await fetch(`/api/paper-accounts?id=${accountId}`, {
+      const response = await authFetch(`/api/paper-accounts?id=${accountId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
@@ -155,7 +156,7 @@ export default function PaperAccountManager({ onAccountsChange }: PaperAccountMa
       setSaving(true)
       setMessage(null)
       
-      const response = await fetch(`/api/paper-accounts?id=${accountId}`, {
+      const response = await authFetch(`/api/paper-accounts?id=${accountId}`, {
         method: 'DELETE'
       })
       

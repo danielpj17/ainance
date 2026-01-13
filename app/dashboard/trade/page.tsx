@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useMemo, useState } from 'react'
+import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,7 +52,7 @@ export default function TradeTerminalPage() {
 
   const fetchAccount = async () => {
     try {
-      const res = await fetch('/api/account')
+      const res = await authFetch('/api/account')
       const data = await res.json()
       if (data.success) {
         setAccount(data.data)

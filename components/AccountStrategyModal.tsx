@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -84,19 +85,15 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       setSaving(true)
       setMessage(null)
 
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-
       console.log('💾 Saving strategy settings:', {
         account_id: accountId,
         settings: settings
       })
 
-      const response = await fetch('/api/account-strategy', {
+      const response = await authFetch('/api/account-strategy', {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           account_id: accountId,
