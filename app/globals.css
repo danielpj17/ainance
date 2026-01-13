@@ -120,6 +120,9 @@
     /* Force scrollbar to always be visible to prevent viewport width changes */
     /* This prevents both background and content from shifting */
     overflow-y: scroll;
+    /* Lock html width */
+    width: 100vw;
+    box-sizing: border-box;
   }
   body {
     @apply bg-background text-foreground;
@@ -131,16 +134,40 @@
     /* Prevent body overflow from being changed by dropdowns/modals */
     overflow-y: auto !important;
     overflow-x: hidden !important;
+    /* Lock body width to prevent shifting */
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
   
   /* Lock main content area width to prevent shifting */
-  /* Use 100% which excludes scrollbar, keeping content width consistent */
+  body > div {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  
   body > div > div.flex {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    /* Prevent any width changes */
-    min-width: 100%;
+  }
+  
+  main {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    /* Prevent any transforms or position changes */
+    position: relative;
+    left: 0 !important;
+    right: 0 !important;
+  }
+  
+  /* Ensure all direct children of body maintain width */
+  body > * {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
   
   /* Frosted glass utilities */
