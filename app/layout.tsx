@@ -27,6 +27,42 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                // Prevent body scroll locking by Radix UI
+                const originalSetAttribute = Element.prototype.setAttribute;
+                Element.prototype.setAttribute = function(name, value) {
+                  if (name === 'style' && this === document.body) {
+                    const style = value || '';
+                    // Prevent overflow: hidden from being set on body
+                    if (style.includes('overflow') && style.includes('hidden')) {
+                      return;
+                    }
+                  }
+                  return originalSetAttribute.call(this, name, value);
+                };
+                
+                // Also watch for style property changes
+                const body = document.body;
+                const observer = new MutationObserver(function(mutations) {
+                  mutations.forEach(function(mutation) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                      const style = body.getAttribute('style') || '';
+                      if (style.includes('overflow') && style.includes('hidden')) {
+                        body.style.overflow = '';
+                      }
+                    }
+                  });
+                });
+                observer.observe(body, { attributes: true, attributeFilter: ['style'] });
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AuthGuard>
           <DemoModeBanner />
