@@ -659,7 +659,7 @@ export default function PaperTradingPage() {
           
           // Check for hours that might be missing (especially recent ones that had only cash)
           const allHours = new Set<number>()
-          timestamps.forEach(ts => {
+          timestamps.forEach((ts: number) => {
             const date = new Date(ts * 1000)
             const hourStart = new Date(date)
             hourStart.setMinutes(0, 0, 0)
