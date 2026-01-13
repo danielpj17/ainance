@@ -116,11 +116,6 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html {
-    /* Force scrollbar to always be visible to prevent layout shift */
-    overflow-y: scroll;
-    scrollbar-gutter: stable;
-  }
   body {
     @apply bg-background text-foreground;
     background-image: url('/home.png');
@@ -128,7 +123,6 @@
     background-position: center;
     background-attachment: fixed;
     background-repeat: no-repeat;
-    scrollbar-gutter: stable;
   }
   
   /* Frosted glass utilities */
