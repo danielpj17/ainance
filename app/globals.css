@@ -196,6 +196,9 @@
   body > div > [data-radix-portal] {
     width: auto !important;
     max-width: none !important;
+    /* Ensure portals can position correctly */
+    position: fixed !important;
+    z-index: 50 !important;
   }
   
   /* Ensure Select dropdowns maintain their natural width - match trigger width */
@@ -207,6 +210,8 @@
     /* Ensure dropdown scrollbar is visible and not hidden */
     margin-right: 0 !important;
     padding-right: 0 !important;
+    /* Ensure Radix can position this correctly */
+    position: fixed !important;
   }
   
   /* Ensure dropdown viewport scrollbar is properly positioned */
