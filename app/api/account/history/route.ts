@@ -54,8 +54,12 @@ export async function GET(req: NextRequest) {
       extended_hours: false
     })
     
-    // Log the response structure to debug
+    // Log the response structure to debug (especially for week view with 1H timeframe)
+    const isWeekView = period === '1W' && timeframe === '1H'
     console.log('Account History API - Portfolio history response structure:', {
+      period,
+      timeframe,
+      isWeekView,
       hasEquity: Array.isArray(history?.equity),
       equityLength: history?.equity?.length || 0,
       hasValue: Array.isArray(history?.value),
@@ -63,8 +67,12 @@ export async function GET(req: NextRequest) {
       keys: Object.keys(history || {}),
       firstEquityValue: history?.equity?.[0],
       firstValueValue: history?.value?.[0],
-      sampleEquity: history?.equity?.slice(0, 3),
-      sampleValue: history?.value?.slice(0, 3)
+      lastEquityValue: history?.equity?.[history?.equity?.length - 1],
+      lastValueValue: history?.value?.[history?.value?.length - 1],
+      sampleEquity: history?.equity?.slice(0, 5),
+      sampleValue: history?.value?.slice(0, 5),
+      lastFewEquity: history?.equity?.slice(-5),
+      lastFewValue: history?.value?.slice(-5)
     })
     
     // The Alpaca API returns portfolio history with 'equity' field containing total portfolio value
@@ -72,6 +80,30 @@ export async function GET(req: NextRequest) {
     // Handle case-insensitive field access in case SDK returns different casing
     const equityArray = history?.equity || history?.Equity || []
     const valueArray = history?.value || history?.Value || []
+    const cashArray = history?.cash || history?.Cash || []
+    
+    // Check if equity and value arrays differ significantly (which would indicate value is cash)
+    if (equityArray.length > 0 && valueArray.length > 0 && equityArray.length === valueArray.length) {
+      const firstDiff = Math.abs(equityArray[0] - valueArray[0])
+      const lastDiff = Math.abs(equityArray[equityArray.length - 1] - valueArray[valueArray.length - 1])
+      const avgEquity = equityArray.reduce((a: number, b: number) => a + b, 0) / equityArray.length
+      const avgValue = valueArray.reduce((a: number, b: number) => a + b, 0) / valueArray.length
+      
+      console.log('Account History API - Equity vs Value comparison:', {
+        firstDiff,
+        lastDiff,
+        avgEquity,
+        avgValue,
+        avgDiff: Math.abs(avgEquity - avgValue),
+        equityIsLarger: avgEquity > avgValue
+      })
+      
+      // If value is significantly smaller than equity, it's likely cash
+      // In that case, we should definitely use equity
+      if (avgValue < avgEquity * 0.9) {
+        console.log('Account History API - Value appears to be cash (smaller than equity), using equity field')
+      }
+    }
     
     // If equity array exists and has data, use it (this is the correct field for portfolio equity)
     // If only value exists, it might be cash, so we should not use it

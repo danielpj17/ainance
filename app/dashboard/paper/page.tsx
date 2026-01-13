@@ -524,6 +524,49 @@ export default function PaperTradingPage() {
         // Do NOT use value or cash fields - equity is the correct field for portfolio equity
         const equity = result.data.equity || []
         
+        // Enhanced logging for week view debugging
+        const isWeekView = chartPeriod === '1W'
+        if (isWeekView && equity.length > 0) {
+          const firstEquity = equity[0]
+          const lastEquity = equity[equity.length - 1]
+          const today = new Date()
+          const lastTimestamp = timestamps[timestamps.length - 1]
+          const lastDate = lastTimestamp ? new Date(lastTimestamp * 1000) : null
+          const isToday = lastDate && lastDate.toDateString() === today.toDateString()
+          
+          console.log('[PAPER TRADING] Week view portfolio history:', {
+            period: chartPeriod,
+            equityLength: equity.length,
+            firstEquity,
+            lastEquity,
+            lastTimestamp,
+            lastDate: lastDate?.toISOString(),
+            isToday,
+            sampleEquity: equity.slice(0, 3),
+            lastFewEquity: equity.slice(-3),
+            hasValue: !!result.data.value,
+            valueLength: result.data.value?.length || 0
+          })
+          
+          // Check if today's data points show a sudden jump (indicating cash instead of equity)
+          if (isToday && equity.length >= 2) {
+            const secondLastEquity = equity[equity.length - 2]
+            const jump = Math.abs(lastEquity - secondLastEquity)
+            const percentJump = secondLastEquity > 0 ? (jump / secondLastEquity) * 100 : 0
+            
+            if (percentJump > 50) {
+              console.warn('[PAPER TRADING] Large jump detected in today\'s data - possible cash vs equity issue:', {
+                secondLastEquity,
+                lastEquity,
+                jump,
+                percentJump: percentJump.toFixed(2) + '%',
+                timestamp: lastTimestamp,
+                date: lastDate?.toISOString()
+              })
+            }
+          }
+        }
+        
         // Log for debugging if we detect potential issues
         if (equity.length > 0 && result.data.value && result.data.value.length > 0) {
           const firstEquity = equity[0]
@@ -534,6 +577,60 @@ export default function PaperTradingPage() {
               value: firstValue,
               difference: firstEquity - firstValue
             })
+          }
+        }
+        
+        // For week view, validate and fix today's data points that might show cash instead of equity
+        let correctedEquity = [...equity]
+        if (isWeekView && equity.length > 0 && account) {
+          const currentEquity = parseFloat(account.equity || '0')
+          const currentCash = parseFloat(account.cash || '0')
+          const lastEquityValue = equity[equity.length - 1]
+          const today = new Date()
+          
+          // Check if the last data point is closer to cash than equity (indicating it's wrong)
+          const lastDiffFromEquity = Math.abs(lastEquityValue - currentEquity)
+          const lastDiffFromCash = Math.abs(lastEquityValue - currentCash)
+          
+          // If last data point is much closer to cash than equity, and significantly different from equity,
+          // it's likely showing cash instead of equity
+          if (lastDiffFromCash < lastDiffFromEquity * 0.5 && lastDiffFromEquity > currentEquity * 0.1) {
+            console.warn('[PAPER TRADING] Last data point appears to be cash, correcting to current equity:', {
+              lastDataPoint: lastEquityValue,
+              currentEquity,
+              currentCash,
+              diffFromEquity: lastDiffFromEquity,
+              diffFromCash: lastDiffFromCash
+            })
+            
+            // Replace the last data point with current equity
+            correctedEquity[correctedEquity.length - 1] = currentEquity
+            
+            // Also check and fix any other recent data points that look like cash
+            // (within the last 24 hours)
+            for (let i = correctedEquity.length - 1; i >= 0; i--) {
+              const ts = timestamps[i]
+              if (!ts) continue
+              
+              const dataDate = new Date(ts * 1000)
+              const hoursDiff = (today.getTime() - dataDate.getTime()) / (1000 * 60 * 60)
+              
+              // Only check data from the last 24 hours
+              if (hoursDiff <= 24) {
+                const equityValue = correctedEquity[i]
+                const diffFromEquity = Math.abs(equityValue - currentEquity)
+                const diffFromCash = Math.abs(equityValue - currentCash)
+                
+                // If this data point is closer to cash than equity, replace it
+                if (diffFromCash < diffFromEquity * 0.5 && diffFromEquity > currentEquity * 0.1) {
+                  console.log(`[PAPER TRADING] Correcting data point at index ${i} (${dataDate.toISOString()}): ${equityValue} -> ${currentEquity}`)
+                  correctedEquity[i] = currentEquity
+                }
+              } else {
+                // Data points older than 24 hours should be fine, stop checking
+                break
+              }
+            }
           }
         }
         
@@ -561,7 +658,7 @@ export default function PaperTradingPage() {
           
           return {
             time: timeLabel,
-            value: equity[idx] || 0
+            value: correctedEquity[idx] || 0
           }
         })
         

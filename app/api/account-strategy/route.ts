@@ -126,7 +126,14 @@ export async function PUT(req: NextRequest) {
     }
     
     // Validate algorithm_type if provided
-    const validAlgorithmTypes: AlgorithmType[] = ['ml_model', 'rule_based_simple', 'rule_based_advanced']
+    const validAlgorithmTypes: AlgorithmType[] = [
+      'ml_model', 
+      'rule_based_simple', 
+      'rule_based_advanced',
+      'gemini_analyst',
+      'llama_technical',
+      'consensus_combined'
+    ]
     if (settings.algorithm_type && !validAlgorithmTypes.includes(settings.algorithm_type)) {
       return NextResponse.json({
         success: false,
