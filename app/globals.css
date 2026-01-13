@@ -204,6 +204,16 @@
     width: var(--radix-select-trigger-width, auto) !important;
     max-width: var(--radix-select-trigger-width, none) !important;
     min-width: var(--radix-select-trigger-width, 8rem) !important;
+    /* Ensure dropdown scrollbar is visible and not hidden */
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+  
+  /* Ensure dropdown viewport scrollbar is properly positioned */
+  [data-slot="select-content"] [data-slot="select-viewport"],
+  [data-radix-select-viewport] {
+    /* Add padding to account for scrollbar so content doesn't get cut off */
+    padding-right: 0.5rem;
   }
   
   /* Ensure the viewport inside doesn't force full width */

@@ -1024,7 +1024,7 @@ export default function PaperTradingPage() {
                 <SelectTrigger className="w-[280px] bg-black/30 border-white/20">
                   <SelectValue placeholder="Select account" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent side="bottom" align="start" sideOffset={4}>
                   {paperAccounts.map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>
                       {acc.account_name} {acc.alpaca_account_number && `(${acc.alpaca_account_number})`}
