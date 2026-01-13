@@ -585,10 +585,48 @@ export default function PaperTradingPage() {
         // For week view, we're using 5Min data (same as today view) but need to aggregate to hourly for cleaner display
         let dataToTransform = { timestamps, equity }
         if (isWeekView && timestamps.length > 0) {
-          // Aggregate 5-minute data to hourly intervals - use the value closest to each hour mark
+          // First, filter out data points that are clearly cash values instead of equity
+          const currentEquity = account ? parseFloat(account.equity || '0') : 0
+          const currentCash = account ? parseFloat(account.cash || '0') : 0
+          
+          // Filter and validate data points
+          const filteredData: { timestamp: number, equity: number }[] = []
+          timestamps.forEach((ts: number, idx: number) => {
+            const equityValue = equity[idx] || 0
+            
+            // Skip if no value
+            if (equityValue === 0) return
+            
+            // If we have account data, check if this value looks like cash
+            if (currentCash > 0 && currentEquity > 0) {
+              const diffFromCash = Math.abs(equityValue - currentCash)
+              const diffFromEquity = Math.abs(equityValue - currentEquity)
+              
+              // If value is much closer to cash than equity (within 1% of cash but >10% different from equity),
+              // it's likely a cash value - skip it
+              const isCloseToCash = diffFromCash < currentCash * 0.01
+              const isFarFromEquity = diffFromEquity > currentEquity * 0.1
+              
+              if (isCloseToCash && isFarFromEquity) {
+                console.log(`[PAPER TRADING] Filtering out cash value at ${new Date(ts * 1000).toISOString()}: ${equityValue} (cash: ${currentCash}, equity: ${currentEquity})`)
+                return // Skip this data point
+              }
+            }
+            
+            filteredData.push({ timestamp: ts, equity: equityValue })
+          })
+          
+          console.log('[PAPER TRADING] Week view: Filtered data points', {
+            originalPoints: timestamps.length,
+            filteredPoints: filteredData.length,
+            currentEquity,
+            currentCash
+          })
+          
+          // Now aggregate filtered 5-minute data to hourly intervals - use the value closest to each hour mark
           const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
           
-          timestamps.forEach((ts: number, idx: number) => {
+          filteredData.forEach(({ timestamp: ts, equity: equityValue }) => {
             const date = new Date(ts * 1000)
             // Round down to the hour
             const hourStart = new Date(date)
@@ -601,7 +639,7 @@ export default function PaperTradingPage() {
             
             // If no entry exists, or if this data point is closer to the hour mark (minutes closer to 0), use it
             if (!existing || minutes < existing.minutes) {
-              hourlyMap.set(hourKey, { timestamp: hourKey, equity: equity[idx] || 0, minutes })
+              hourlyMap.set(hourKey, { timestamp: hourKey, equity: equityValue, minutes })
             }
           })
           
@@ -614,7 +652,7 @@ export default function PaperTradingPage() {
           }
           
           console.log('[PAPER TRADING] Week view: Aggregated 5Min data to hourly', {
-            originalPoints: timestamps.length,
+            filteredPoints: filteredData.length,
             aggregatedPoints: dataToTransform.timestamps.length
           })
         }
