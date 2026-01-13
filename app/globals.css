@@ -133,6 +133,16 @@
     overflow-x: hidden !important;
   }
   
+  /* Lock main content area width to prevent shifting */
+  /* Use 100% which excludes scrollbar, keeping content width consistent */
+  body > div > div.flex {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    /* Prevent any width changes */
+    min-width: 100%;
+  }
+  
   /* Frosted glass utilities */
   .glass {
     background: rgba(15, 17, 23, 0.1) !important;

@@ -32,27 +32,52 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                // Prevent body scroll locking by Radix UI
+                // Prevent body scroll locking and padding changes by Radix UI
+                const body = document.body;
                 const originalSetAttribute = Element.prototype.setAttribute;
+                
                 Element.prototype.setAttribute = function(name, value) {
-                  if (name === 'style' && this === document.body) {
+                  if (name === 'style' && this === body) {
                     const style = value || '';
-                    // Prevent overflow: hidden from being set on body
+                    // Prevent overflow: hidden and padding-right from being set on body
                     if (style.includes('overflow') && style.includes('hidden')) {
                       return;
+                    }
+                    if (style.includes('padding-right')) {
+                      // Allow padding-right only if it's removing it (empty value)
+                      if (!value || !value.includes('padding-right')) {
+                        return originalSetAttribute.call(this, name, value);
+                      }
+                      // Block padding-right additions
+                      const newStyle = style.replace(/padding-right[^;]*;?/gi, '');
+                      return originalSetAttribute.call(this, name, newStyle || '');
                     }
                   }
                   return originalSetAttribute.call(this, name, value);
                 };
                 
-                // Also watch for style property changes
-                const body = document.body;
+                // Watch for style property changes and revert unwanted ones
                 const observer = new MutationObserver(function(mutations) {
                   mutations.forEach(function(mutation) {
                     if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
                       const style = body.getAttribute('style') || '';
+                      let changed = false;
+                      let newStyle = style;
+                      
+                      // Remove overflow: hidden
                       if (style.includes('overflow') && style.includes('hidden')) {
-                        body.style.overflow = '';
+                        newStyle = newStyle.replace(/overflow[^;]*hidden[^;]*;?/gi, '');
+                        changed = true;
+                      }
+                      
+                      // Remove padding-right (Radix adds this to compensate for scrollbar)
+                      if (style.includes('padding-right') && !style.includes('padding-right: 0')) {
+                        newStyle = newStyle.replace(/padding-right[^;]*;?/gi, '');
+                        changed = true;
+                      }
+                      
+                      if (changed) {
+                        body.setAttribute('style', newStyle.trim() || '');
                       }
                     }
                   });
