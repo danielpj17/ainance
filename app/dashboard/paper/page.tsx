@@ -505,9 +505,11 @@ export default function PaperTradingPage() {
     if (!selectedAccountId) return
     
     try {
+      // For week view, use 5Min data (same as today view) and aggregate to hourly for display
+      // This ensures we get accurate data since 5Min data works correctly
       const timeframeMap = {
         '1D': '5Min',
-        '1W': '1H',
+        '1W': '5Min', // Use 5Min instead of 1H for accurate data
         '1M': '1D',
         '1A': '1W'
       }
@@ -580,61 +582,44 @@ export default function PaperTradingPage() {
           }
         }
         
-        // For week view, validate and fix today's data points that might show cash instead of equity
-        let correctedEquity = [...equity]
-        if (isWeekView && equity.length > 0 && account) {
-          const currentEquity = parseFloat(account.equity || '0')
-          const currentCash = parseFloat(account.cash || '0')
-          const lastEquityValue = equity[equity.length - 1]
-          const today = new Date()
+        // For week view, we're using 5Min data (same as today view) but need to aggregate to hourly for cleaner display
+        let dataToTransform = { timestamps, equity }
+        if (isWeekView && timestamps.length > 0) {
+          // Aggregate 5-minute data to hourly intervals - use the value closest to each hour mark
+          const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
           
-          // Check if the last data point is closer to cash than equity (indicating it's wrong)
-          const lastDiffFromEquity = Math.abs(lastEquityValue - currentEquity)
-          const lastDiffFromCash = Math.abs(lastEquityValue - currentCash)
-          
-          // If last data point is much closer to cash than equity, and significantly different from equity,
-          // it's likely showing cash instead of equity
-          if (lastDiffFromCash < lastDiffFromEquity * 0.5 && lastDiffFromEquity > currentEquity * 0.1) {
-            console.warn('[PAPER TRADING] Last data point appears to be cash, correcting to current equity:', {
-              lastDataPoint: lastEquityValue,
-              currentEquity,
-              currentCash,
-              diffFromEquity: lastDiffFromEquity,
-              diffFromCash: lastDiffFromCash
-            })
+          timestamps.forEach((ts: number, idx: number) => {
+            const date = new Date(ts * 1000)
+            // Round down to the hour
+            const hourStart = new Date(date)
+            hourStart.setMinutes(0, 0, 0)
+            const hourKey = hourStart.getTime() / 1000
+            const minutes = date.getMinutes()
             
-            // Replace the last data point with current equity
-            correctedEquity[correctedEquity.length - 1] = currentEquity
+            // Check if we already have an entry for this hour
+            const existing = hourlyMap.get(hourKey)
             
-            // Also check and fix any other recent data points that look like cash
-            // (within the last 24 hours)
-            for (let i = correctedEquity.length - 1; i >= 0; i--) {
-              const ts = timestamps[i]
-              if (!ts) continue
-              
-              const dataDate = new Date(ts * 1000)
-              const hoursDiff = (today.getTime() - dataDate.getTime()) / (1000 * 60 * 60)
-              
-              // Only check data from the last 24 hours
-              if (hoursDiff <= 24) {
-                const equityValue = correctedEquity[i]
-                const diffFromEquity = Math.abs(equityValue - currentEquity)
-                const diffFromCash = Math.abs(equityValue - currentCash)
-                
-                // If this data point is closer to cash than equity, replace it
-                if (diffFromCash < diffFromEquity * 0.5 && diffFromEquity > currentEquity * 0.1) {
-                  console.log(`[PAPER TRADING] Correcting data point at index ${i} (${dataDate.toISOString()}): ${equityValue} -> ${currentEquity}`)
-                  correctedEquity[i] = currentEquity
-                }
-              } else {
-                // Data points older than 24 hours should be fine, stop checking
-                break
-              }
+            // If no entry exists, or if this data point is closer to the hour mark (minutes closer to 0), use it
+            if (!existing || minutes < existing.minutes) {
+              hourlyMap.set(hourKey, { timestamp: hourKey, equity: equity[idx] || 0, minutes })
             }
+          })
+          
+          // Convert map to sorted array
+          const aggregated = Array.from(hourlyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
+          
+          dataToTransform = {
+            timestamps: aggregated.map(e => e.timestamp),
+            equity: aggregated.map(e => e.equity)
           }
+          
+          console.log('[PAPER TRADING] Week view: Aggregated 5Min data to hourly', {
+            originalPoints: timestamps.length,
+            aggregatedPoints: dataToTransform.timestamps.length
+          })
         }
         
-        const transformed = timestamps.map((ts: number, idx: number) => {
+        const transformed = dataToTransform.timestamps.map((ts: number, idx: number) => {
           const date = new Date(ts * 1000)
           let timeLabel: string
           
@@ -658,7 +643,7 @@ export default function PaperTradingPage() {
           
           return {
             time: timeLabel,
-            value: correctedEquity[idx] || 0
+            value: dataToTransform.equity[idx] || 0
           }
         })
         
