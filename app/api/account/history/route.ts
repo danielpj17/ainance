@@ -113,10 +113,12 @@ export async function GET(req: NextRequest) {
       console.warn('Account History API - WARNING: No equity field found, but value field exists. This might be cash, not equity.')
     }
     
-    // Return the history with explicit equity field
+    // Return the history with explicit equity field (plus optional series for client comparison)
     const responseData = {
       timestamp: history?.timestamp || history?.Timestamp || [],
       equity: finalEquity,
+      value: valueArray,
+      cash: cashArray,
       profit_loss: history?.profit_loss || history?.ProfitLoss || [],
       profit_loss_pct: history?.profit_loss_pct || history?.ProfitLossPct || [],
       base_value: history?.base_value || history?.BaseValue || (finalEquity.length > 0 ? finalEquity[0] : 0),

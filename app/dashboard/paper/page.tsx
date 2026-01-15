@@ -10,11 +10,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown, Settings } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown, Settings, Check } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import AccountStrategyModal from '@/components/AccountStrategyModal'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getCompanyName } from '@/lib/stock-names'
 
@@ -131,6 +130,8 @@ export default function PaperTradingPage() {
   const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false)
+  const accountDropdownRef = useRef<HTMLDivElement | null>(null)
   
   // Strategy modal state
   const [showStrategyModal, setShowStrategyModal] = useState(false)
@@ -205,6 +206,30 @@ export default function PaperTradingPage() {
       loadPortfolioHistory()
     }
   }, [chartPeriod, account, selectedAccountId])
+
+  useEffect(() => {
+    if (!accountDropdownOpen) return
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(event.target as Node)) {
+        setAccountDropdownOpen(false)
+      }
+    }
+    
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setAccountDropdownOpen(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [accountDropdownOpen])
 
   const loadPaperAccounts = async () => {
     try {
@@ -531,9 +556,62 @@ export default function PaperTradingPage() {
         
         // Transform data for chart
         const timestamps = result.data.timestamp || []
+        const rawEquity = result.data.equity || []
+        const valueSeries = result.data.value || []
+        const cashSeries = result.data.cash || []
+        
+        const getLastNonZero = (series: number[]) => {
+          for (let i = series.length - 1; i >= 0; i -= 1) {
+            const value = series[i]
+            if (value) return value
+          }
+          return 0
+        }
+        
+        const chooseEquitySeries = () => {
+          if (rawEquity.length === 0 && valueSeries.length > 0) {
+            return valueSeries
+          }
+          
+          if (!account || valueSeries.length === 0) {
+            return rawEquity
+          }
+          
+          const currentEquity = parseFloat(account.equity || '0')
+          const currentCash = parseFloat(account.cash || '0')
+          
+          if (currentEquity <= 0 || currentCash <= 0) {
+            return rawEquity
+          }
+          
+          const lastEquity = getLastNonZero(rawEquity)
+          const lastValue = getLastNonZero(valueSeries)
+          const lastCash = getLastNonZero(cashSeries)
+          
+          const equityLooksLikeCash =
+            lastEquity > 0 &&
+            Math.abs(lastEquity - currentCash) < currentCash * 0.01 &&
+            Math.abs(lastEquity - currentEquity) > currentEquity * 0.02
+          const valueLooksLikeEquity =
+            lastValue > 0 && Math.abs(lastValue - currentEquity) < currentEquity * 0.01
+          
+          if (equityLooksLikeCash && valueLooksLikeEquity) {
+            console.warn('[PAPER TRADING] Week view: equity series looks like cash, using value series instead', {
+              lastEquity,
+              lastValue,
+              lastCash,
+              currentEquity,
+              currentCash
+            })
+            return valueSeries
+          }
+          
+          return rawEquity
+        }
+        
         // Explicitly use equity field (total portfolio value = cash + positions)
-        // Do NOT use value or cash fields - equity is the correct field for portfolio equity
-        const equity = result.data.equity || []
+        // Only switch if equity series appears to mirror cash and value matches equity
+        const equity = chooseEquitySeries()
         
         // Enhanced logging for week view debugging
         const isWeekView = chartPeriod === '1W'
@@ -555,8 +633,9 @@ export default function PaperTradingPage() {
             isToday,
             sampleEquity: equity.slice(0, 3),
             lastFewEquity: equity.slice(-3),
-            hasValue: !!result.data.value,
-            valueLength: result.data.value?.length || 0
+            hasValue: valueSeries.length > 0,
+            valueLength: valueSeries.length,
+            rawEquityLength: rawEquity.length
           })
           
           // Check if today's data points show a sudden jump (indicating cash instead of equity)
@@ -579,9 +658,9 @@ export default function PaperTradingPage() {
         }
         
         // Log for debugging if we detect potential issues
-        if (equity.length > 0 && result.data.value && result.data.value.length > 0) {
+        if (equity.length > 0 && valueSeries.length > 0) {
           const firstEquity = equity[0]
-          const firstValue = result.data.value[0]
+          const firstValue = valueSeries[0]
           if (Math.abs(firstEquity - firstValue) > 1000) {
             console.warn('[PAPER TRADING] Portfolio history: equity and value fields differ significantly', {
               equity: firstEquity,
@@ -990,6 +1069,11 @@ export default function PaperTradingPage() {
     })
   }, [completedTrades])
 
+  const selectedAccount = useMemo(() => {
+    if (!selectedAccountId) return null
+    return paperAccounts.find((acc) => acc.id === selectedAccountId) || null
+  }, [paperAccounts, selectedAccountId])
+
   if (loading) {
     return (
       <div className="min-h-screen text-white p-8">
@@ -1013,25 +1097,52 @@ export default function PaperTradingPage() {
           
           {/* Account Selector */}
           {paperAccounts.length > 0 && (
-            <div className="ml-4">
-              <Select 
-                value={selectedAccountId || ''} 
-                onValueChange={(value) => {
-                  console.log('[PAPER TRADING] Switching account to:', value)
-                  setSelectedAccountId(value)
-                }}
-              >
-                <SelectTrigger className="w-[280px] bg-black/30 border-white/20">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent side="bottom" align="start" sideOffset={4}>
-                  {paperAccounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.account_name} {acc.alpaca_account_number && `(${acc.alpaca_account_number})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="ml-4" ref={accountDropdownRef}>
+              <div className="relative w-[280px]">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 rounded-md border border-white/20 bg-black/30 px-3 py-2 text-sm text-white/90 shadow-sm transition hover:bg-black/40"
+                  onClick={() => setAccountDropdownOpen((prev) => !prev)}
+                  aria-haspopup="listbox"
+                  aria-expanded={accountDropdownOpen}
+                >
+                  <span className="truncate">
+                    {selectedAccount
+                      ? `${selectedAccount.account_name}${selectedAccount.alpaca_account_number ? ` (${selectedAccount.alpaca_account_number})` : ''}`
+                      : 'Select account'}
+                  </span>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${accountDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {accountDropdownOpen && (
+                  <div className="absolute left-0 right-0 z-50 mt-2 max-h-64 overflow-y-auto rounded-md border border-white/20 bg-black/80 text-white shadow-lg backdrop-blur-sm">
+                    {paperAccounts.map((acc) => {
+                      const isSelected = acc.id === selectedAccountId
+                      return (
+                        <button
+                          type="button"
+                          key={acc.id}
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
+                            isSelected ? 'bg-blue-500/20 text-white' : 'text-white/80 hover:bg-white/10'
+                          }`}
+                          onClick={() => {
+                            console.log('[PAPER TRADING] Switching account to:', acc.id)
+                            setSelectedAccountId(acc.id)
+                            setAccountDropdownOpen(false)
+                          }}
+                          role="option"
+                          aria-selected={isSelected}
+                        >
+                          <span className="truncate">
+                            {acc.account_name} {acc.alpaca_account_number && `(${acc.alpaca_account_number})`}
+                          </span>
+                          {isSelected && <Check className="h-4 w-4 text-blue-300" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
               {loading && (
                 <div className="text-xs text-blue-400 mt-1 flex items-center gap-1">
                   <Loader2 className="h-3 w-3 animate-spin" />
