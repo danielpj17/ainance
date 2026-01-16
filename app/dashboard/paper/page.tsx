@@ -624,16 +624,22 @@ export default function PaperTradingPage() {
         const isTodayView = chartPeriod === '1D'
 
         if (isTodayView && timestamps.length > 0) {
-          const normalized = timestamps
+          const normalizedRaw = timestamps
             .map((ts: number, idx: number) => ({
               timestamp: ts,
               equity: equity[idx] || 0
             }))
-            .filter((point: { timestamp: number; equity: number }) => point.equity > 0)
+            .filter((point: { timestamp: number; equity: number }) => Number.isFinite(point.equity))
+
+          const normalized = normalizedRaw.filter(
+            (point: { timestamp: number; equity: number }) => point.equity > 0
+          )
+
+          const normalizedToUse = normalized.length > 0 ? normalized : normalizedRaw
 
           dataToTransform = {
-            timestamps: normalized.map((point: { timestamp: number; equity: number }) => point.timestamp),
-            equity: normalized.map((point: { timestamp: number; equity: number }) => point.equity)
+            timestamps: normalizedToUse.map((point: { timestamp: number; equity: number }) => point.timestamp),
+            equity: normalizedToUse.map((point: { timestamp: number; equity: number }) => point.equity)
           }
         }
 
