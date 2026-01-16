@@ -689,8 +689,9 @@ export default function PaperTradingPage() {
           // If filtering removed everything, fall back to raw equity series (never cash)
           const equityValuesToAggregate = validEquityValues.length > 0
             ? validEquityValues
-            : timestamps.map((ts: number, idx: number) => ({ timestamp: ts, equity: equity[idx] || 0 }))
-              .filter(({ equity }) => equity > 0)
+            : timestamps
+              .map((ts: number, idx: number) => ({ timestamp: ts, equity: equity[idx] || 0 }))
+              .filter((point: { timestamp: number; equity: number }) => point.equity > 0)
           
           // Now aggregate valid equity values to hourly intervals
           const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
