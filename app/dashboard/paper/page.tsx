@@ -621,6 +621,20 @@ export default function PaperTradingPage() {
         
         // For week view, we're using 5Min data (same as today view) but need to aggregate to hourly for cleaner display
         let dataToTransform = { timestamps, equity }
+        const isTodayView = chartPeriod === '1D'
+
+        if (isTodayView && timestamps.length > 0) {
+          const normalized = timestamps.map((ts: number, idx: number) => ({
+            timestamp: ts,
+            equity: equity[idx] || 0
+          })).filter(({ equity }) => equity > 0)
+
+          dataToTransform = {
+            timestamps: normalized.map(e => e.timestamp),
+            equity: normalized.map(e => e.equity)
+          }
+        }
+
         if (isWeekView && timestamps.length > 0) {
           const currentEquity = account ? parseFloat(account.equity || '0') : 0
           const currentCash = account ? parseFloat(account.cash || '0') : 0
