@@ -1370,10 +1370,10 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.log(`📉 SELL ${sellSignal.symbol} @ $${sellSignal.price.toFixed(2)}`)
       console.log(`   Confidence: ${(sellSignal.adjusted_confidence * 100).toFixed(1)}%`)
       console.log(`   Reasoning: ${sellSignal.reasoning}`)
-      
+
       if (sellSignal.is_held === false) {
         (sellSignal as any).shares = (sellSignal as any).shares || 1
-        (sellSignal as any).allocated_capital = (sellSignal as any).allocated_capital || ((sellSignal as any).shares * sellSignal.price)
+        ;(sellSignal as any).allocated_capital = (sellSignal as any).allocated_capital || ((sellSignal as any).shares * sellSignal.price)
         console.log(`   Short entry: ${(sellSignal as any).shares} shares = $${(sellSignal as any).allocated_capital.toFixed(2)}`)
         validSellSignals.push(sellSignal)
         continue
