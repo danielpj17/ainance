@@ -624,10 +624,30 @@ export default function PaperTradingPage() {
         const isTodayView = chartPeriod === '1D'
 
         if (isTodayView && timestamps.length > 0) {
+          const currentEquity = account ? parseFloat(account.equity || '0') : 0
+          const profitLossSeries = Array.isArray(result.data.profit_loss) ? result.data.profit_loss : []
+          const baseValue = typeof result.data.base_value === 'number' ? result.data.base_value : 0
+          const equityFromProfitLoss = profitLossSeries.length > 0
+            ? profitLossSeries.map((pl: number) => baseValue + pl)
+            : []
+
+          const equityLooksNegative = equity.length > 0 && equity.every((value: number) => value <= 0)
+          let todayEquitySeries = equity
+
+          if (equityLooksNegative || equity.length === 0) {
+            if (equityFromProfitLoss.length > 0) {
+              todayEquitySeries = equityFromProfitLoss
+            } else if (currentEquity > 0) {
+              todayEquitySeries = timestamps.map(() => currentEquity)
+            }
+          }
+
+          const seriesLength = Math.min(timestamps.length, todayEquitySeries.length)
           const normalizedRaw = timestamps
+            .slice(0, seriesLength)
             .map((ts: number, idx: number) => ({
               timestamp: ts,
-              equity: equity[idx] || 0
+              equity: todayEquitySeries[idx] || 0
             }))
             .filter((point: { timestamp: number; equity: number }) => Number.isFinite(point.equity))
 
