@@ -696,7 +696,8 @@ export default function PaperTradingPage() {
           // Now aggregate valid equity values to hourly intervals
           const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
           
-          equityValuesToAggregate.forEach(({ timestamp: ts, equity: equityValue }) => {
+          equityValuesToAggregate.forEach((point: { timestamp: number; equity: number }) => {
+            const { timestamp: ts, equity: equityValue } = point
             const date = new Date(ts * 1000)
             // Round down to the hour
             const hourStart = new Date(date)
