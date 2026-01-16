@@ -624,33 +624,41 @@ export default function PaperTradingPage() {
         if (isWeekView && timestamps.length > 0) {
           const currentEquity = account ? parseFloat(account.equity || '0') : 0
           const currentCash = account ? parseFloat(account.cash || '0') : 0
+          const cashSeries = Array.isArray(result.data.cash) ? result.data.cash : []
           
-          // First, identify valid equity values vs cash values
-          // Cash values will be close to currentCash, equity values will be different
+          // Identify equity values while filtering out cash-like spikes
           const validEquityValues: { timestamp: number, equity: number }[] = []
           const cashValues: { timestamp: number, value: number }[] = []
+          const equityWindow: number[] = []
+          
+          const isCashLike = (value: number, cashValue: number, equityBaseline: number) => {
+            if (cashValue <= 0 || equityBaseline <= 0) return false
+            const diffFromCash = Math.abs(value - cashValue)
+            const diffFromEquity = Math.abs(value - equityBaseline)
+            const closeToCash = diffFromCash < cashValue * 0.005
+            const farFromEquity = diffFromEquity > equityBaseline * 0.02
+            return closeToCash && farFromEquity
+          }
           
           timestamps.forEach((ts: number, idx: number) => {
             const value = equity[idx] || 0
             if (value === 0) return
             
-            // If we have account data, check if this looks like cash
-            if (currentCash > 0 && currentEquity > 0) {
-              const diffFromCash = Math.abs(value - currentCash)
-              const diffFromEquity = Math.abs(value - currentEquity)
-              
-              // If value is very close to cash (within 0.5%) and far from equity (>5% different), it's cash
-              const isCash = diffFromCash < currentCash * 0.005 && diffFromEquity > currentEquity * 0.05
-              
-              if (isCash) {
-                cashValues.push({ timestamp: ts, value })
-                console.log(`[PAPER TRADING] Detected cash value at ${new Date(ts * 1000).toISOString()}: ${value} (cash: ${currentCash})`)
-              } else {
-                validEquityValues.push({ timestamp: ts, equity: value })
-              }
-            } else {
-              // No account data to compare, assume it's valid equity
-              validEquityValues.push({ timestamp: ts, equity: value })
+            const cashAtPoint = cashSeries[idx] || currentCash
+            const rollingBaseline = equityWindow.length > 0
+              ? equityWindow.reduce((sum, v) => sum + v, 0) / equityWindow.length
+              : currentEquity
+            
+            if (isCashLike(value, cashAtPoint, rollingBaseline)) {
+              cashValues.push({ timestamp: ts, value })
+              console.log(`[PAPER TRADING] Detected cash value at ${new Date(ts * 1000).toISOString()}: ${value} (cash: ${cashAtPoint}, baseline: ${rollingBaseline})`)
+              return
+            }
+            
+            validEquityValues.push({ timestamp: ts, equity: value })
+            equityWindow.push(value)
+            if (equityWindow.length > 6) {
+              equityWindow.shift()
             }
           })
           
@@ -662,10 +670,16 @@ export default function PaperTradingPage() {
             currentCash
           })
           
+          // If filtering removed everything, fall back to raw equity series (never cash)
+          const equityValuesToAggregate = validEquityValues.length > 0
+            ? validEquityValues
+            : timestamps.map((ts: number, idx: number) => ({ timestamp: ts, equity: equity[idx] || 0 }))
+              .filter(({ equity }) => equity > 0)
+          
           // Now aggregate valid equity values to hourly intervals
           const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
           
-          validEquityValues.forEach(({ timestamp: ts, equity: equityValue }) => {
+          equityValuesToAggregate.forEach(({ timestamp: ts, equity: equityValue }) => {
             const date = new Date(ts * 1000)
             // Round down to the hour
             const hourStart = new Date(date)
@@ -681,10 +695,6 @@ export default function PaperTradingPage() {
               hourlyMap.set(hourKey, { timestamp: hourKey, equity: equityValue, minutes })
             }
           })
-          
-          // Only use actual historical data points - don't fill in missing hours with current equity
-          // This ensures the graph shows historical snapshots, not forward-filled current values
-          // If an hour doesn't have data, it simply won't be shown on the graph
           
           // Convert map to sorted array
           const aggregated = Array.from(hourlyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
