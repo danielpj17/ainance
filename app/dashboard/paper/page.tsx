@@ -632,8 +632,8 @@ export default function PaperTradingPage() {
             .filter((point: { timestamp: number; equity: number }) => point.equity > 0)
 
           dataToTransform = {
-            timestamps: normalized.map(e => e.timestamp),
-            equity: normalized.map(e => e.equity)
+            timestamps: normalized.map((point: { timestamp: number; equity: number }) => point.timestamp),
+            equity: normalized.map((point: { timestamp: number; equity: number }) => point.equity)
           }
         }
 
