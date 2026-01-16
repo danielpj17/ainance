@@ -558,60 +558,9 @@ export default function PaperTradingPage() {
         const timestamps = result.data.timestamp || []
         const rawEquity = result.data.equity || []
         const valueSeries = result.data.value || []
-        const cashSeries = result.data.cash || []
         
-        const getLastNonZero = (series: number[]) => {
-          for (let i = series.length - 1; i >= 0; i -= 1) {
-            const value = series[i]
-            if (value) return value
-          }
-          return 0
-        }
-        
-        const chooseEquitySeries = () => {
-          if (rawEquity.length === 0 && valueSeries.length > 0) {
-            return valueSeries
-          }
-          
-          if (!account || valueSeries.length === 0) {
-            return rawEquity
-          }
-          
-          const currentEquity = parseFloat(account.equity || '0')
-          const currentCash = parseFloat(account.cash || '0')
-          
-          if (currentEquity <= 0 || currentCash <= 0) {
-            return rawEquity
-          }
-          
-          const lastEquity = getLastNonZero(rawEquity)
-          const lastValue = getLastNonZero(valueSeries)
-          const lastCash = getLastNonZero(cashSeries)
-          
-          const equityLooksLikeCash =
-            lastEquity > 0 &&
-            Math.abs(lastEquity - currentCash) < currentCash * 0.01 &&
-            Math.abs(lastEquity - currentEquity) > currentEquity * 0.02
-          const valueLooksLikeEquity =
-            lastValue > 0 && Math.abs(lastValue - currentEquity) < currentEquity * 0.01
-          
-          if (equityLooksLikeCash && valueLooksLikeEquity) {
-            console.warn('[PAPER TRADING] Week view: equity series looks like cash, using value series instead', {
-              lastEquity,
-              lastValue,
-              lastCash,
-              currentEquity,
-              currentCash
-            })
-            return valueSeries
-          }
-          
-          return rawEquity
-        }
-        
-        // Explicitly use equity field (total portfolio value = cash + positions)
-        // Only switch if equity series appears to mirror cash and value matches equity
-        const equity = chooseEquitySeries()
+        // Always use the equity series for portfolio value
+        const equity = rawEquity
         
         // Enhanced logging for week view debugging
         const isWeekView = chartPeriod === '1W'
