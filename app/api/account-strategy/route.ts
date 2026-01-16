@@ -11,6 +11,7 @@ interface StrategySettings {
   sell_confidence_threshold: number
   max_exposure: number
   algorithm_type: AlgorithmType
+  is_short_selling_enabled: boolean
 }
 
 /**
@@ -65,7 +66,8 @@ export async function GET(req: NextRequest) {
           confidence_threshold: 0.65,
           sell_confidence_threshold: 0.50,
           max_exposure: 90,
-          algorithm_type: 'ml_model'
+          algorithm_type: 'ml_model',
+          is_short_selling_enabled: false
         },
         exists: false
       })
@@ -82,7 +84,8 @@ export async function GET(req: NextRequest) {
         confidence_threshold: settings.confidence_threshold,
         sell_confidence_threshold: settings.sell_confidence_threshold,
         max_exposure: settings.max_exposure,
-        algorithm_type: settings.algorithm_type || 'ml_model'
+        algorithm_type: settings.algorithm_type || 'ml_model',
+        is_short_selling_enabled: settings.is_short_selling_enabled ?? false
       },
       exists: true
     })
@@ -182,7 +185,10 @@ export async function PUT(req: NextRequest) {
       p_confidence_threshold: settings.confidence_threshold !== undefined ? parseFloat(settings.confidence_threshold) : null,
       p_sell_confidence_threshold: settings.sell_confidence_threshold !== undefined ? parseFloat(settings.sell_confidence_threshold) : null,
       p_max_exposure: settings.max_exposure !== undefined ? parseFloat(settings.max_exposure) : null,
-      p_algorithm_type: settings.algorithm_type || null
+      p_algorithm_type: settings.algorithm_type || null,
+      p_is_short_selling_enabled: settings.account_type === 'cash'
+        ? false
+        : settings.is_short_selling_enabled ?? null
     }
     
     console.log('RPC parameters:', rpcParams)
@@ -228,7 +234,8 @@ export async function PUT(req: NextRequest) {
         confidence_threshold: updated.confidence_threshold,
         sell_confidence_threshold: updated.sell_confidence_threshold,
         max_exposure: updated.max_exposure,
-        algorithm_type: updated.algorithm_type || 'ml_model'
+        algorithm_type: updated.algorithm_type || 'ml_model',
+        is_short_selling_enabled: updated.is_short_selling_enabled ?? false
       }
     })
     

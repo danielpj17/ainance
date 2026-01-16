@@ -809,6 +809,7 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     // Get confidence thresholds - prioritize per-account settings over global settings
     let baseConfidenceThreshold = 0.65 // Default for BUY
     let baseSellConfidenceThreshold = 0.50 // Default for SELL (lower for easier exits)
+    let isShortSellingEnabled = false
     
     try {
       // If accountId is provided, try to get account-specific settings first
@@ -828,6 +829,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
           if (settings.sell_confidence_threshold !== null && settings.sell_confidence_threshold !== undefined) {
             baseSellConfidenceThreshold = Number(settings.sell_confidence_threshold)
             console.log(`✅ Using SELL confidence from account settings: ${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
+          }
+          if (settings.is_short_selling_enabled !== null && settings.is_short_selling_enabled !== undefined) {
+            isShortSellingEnabled = Boolean(settings.is_short_selling_enabled)
           }
         } else {
           console.log(`⚠️  No account-specific settings found, falling back to user settings`)
@@ -861,9 +865,14 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.warn('⚠️  Could not fetch confidence thresholds, using defaults:', error)
     }
     
+    if (config.accountType === 'cash') {
+      isShortSellingEnabled = false
+    }
+
     // Log the final values being used
     console.log(`📊 FINAL THRESHOLDS: BUY=${(baseConfidenceThreshold * 100).toFixed(1)}%, SELL=${(baseSellConfidenceThreshold * 100).toFixed(1)}%`)
     console.log(`   These thresholds apply to ALL algorithms (ML Model, Simple, Advanced)`)
+    console.log(`📉 Short Selling: ${isShortSellingEnabled ? 'ENABLED' : 'DISABLED'} (${config.accountType.toUpperCase()} account)`)
 
     // STEP 2: Get FRED Economic Indicators (fetch even when market is closed for accurate diagnostics)
     let fredIndicators: any = null
@@ -1303,8 +1312,13 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     const notHeldSignals = allSignals.filter((s: any) => !s.is_held).length
     console.log(`   - For Held Positions: ${heldSignals} | For New Positions: ${notHeldSignals}`)
 
-    // SELL signals: Only for positions we currently hold
-    const sellSignalsBeforeFilter = allSignals.filter((s: any) => s.action === 'sell' && s.is_held)
+    const allowShortEntries = config.accountType === 'margin' && isShortSellingEnabled
+    // SELL signals: positions we hold, plus optional short entries
+    const sellSignalsBeforeFilter = allSignals.filter((s: any) => {
+      if (s.action !== 'sell') return false
+      if (s.is_held) return true
+      return allowShortEntries
+    })
     const sellSignals = sellSignalsBeforeFilter
       .filter((s: any) => s.adjusted_confidence >= minConfidenceForSell)
       .sort((a: any, b: any) => b.adjusted_confidence - a.adjusted_confidence)
@@ -1357,6 +1371,14 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.log(`   Confidence: ${(sellSignal.adjusted_confidence * 100).toFixed(1)}%`)
       console.log(`   Reasoning: ${sellSignal.reasoning}`)
       
+      if (sellSignal.is_held === false) {
+        (sellSignal as any).shares = (sellSignal as any).shares || 1
+        (sellSignal as any).allocated_capital = (sellSignal as any).allocated_capital || ((sellSignal as any).shares * sellSignal.price)
+        console.log(`   Short entry: ${(sellSignal as any).shares} shares = $${(sellSignal as any).allocated_capital.toFixed(2)}`)
+        validSellSignals.push(sellSignal)
+        continue
+      }
+
       // Get current position details
       const position = positions.find((p: any) => p.symbol === sellSignal.symbol)
       if (position) {
@@ -1897,6 +1919,11 @@ async function executeTradeSignal(
     // For margin accounts, use buying power which includes margin
     const isCashAccount = config.accountType === 'cash'
     const availableFunds = isCashAccount ? cash : buyingPower
+
+    if (isCashAccount && signal.action === 'sell' && signal.is_held === false) {
+      console.log(`❌ Cash account short attempt blocked for ${signal.symbol}`)
+      return
+    }
 
     // For BUY orders, check available funds based on account type
     if (signal.action === 'buy') {

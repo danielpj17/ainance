@@ -368,6 +368,11 @@ export default function LiveTradingPage() {
     }).format(value)
   }
 
+  const parseAmount = (value: number | string | null | undefined) => {
+    const parsed = typeof value === 'number' ? value : parseFloat(value || '0')
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
   const fetchCurrentSellMetrics = async (symbol: string, currentPrice: number) => {
     setLoadingCurrentMetrics(true)
     setCurrentSellMetrics(null)
@@ -585,6 +590,16 @@ export default function LiveTradingPage() {
     return account[field] || defaultValue
   }
 
+  const positionsMarketValue = currentPositions.reduce((sum, position) => {
+    return sum + Math.abs(parseAmount(position.current_value))
+  }, 0)
+
+  const accountGrossMarketValue = account
+    ? Math.abs(parseAmount(account.long_market_value)) + Math.abs(parseAmount(account.short_market_value))
+    : 0
+
+  const totalPositionValue = positionsMarketValue > 0 ? positionsMarketValue : accountGrossMarketValue
+
   if (loading) {
     return (
       <div className="min-h-screen text-white p-8">
@@ -743,9 +758,9 @@ export default function LiveTradingPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
-              {account ? formatCurrency(account.long_market_value) : '$0.00'}
+              {formatCurrency(totalPositionValue)}
             </div>
-            <p className="text-xs text-gray-400 mt-1">Long positions</p>
+            <p className="text-xs text-gray-400 mt-1">Long + short positions</p>
           </CardContent>
         </Card>
       </div>

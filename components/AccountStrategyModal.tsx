@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { X, Loader2, Save, Settings } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
@@ -26,6 +27,7 @@ interface StrategySettings {
   max_exposure: number
   // Updated to include LLM options
   algorithm_type: 'ml_model' | 'rule_based_simple' | 'rule_based_advanced' | 'gemini_analyst' | 'llama_technical' | 'consensus_combined'
+  is_short_selling_enabled: boolean
 }
 
 export default function AccountStrategyModal({ accountId, accountName, isOpen, onClose, onSave }: AccountStrategyModalProps) {
@@ -35,7 +37,8 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
     confidence_threshold: 0.65,
     sell_confidence_threshold: 0.50,
     max_exposure: 90,
-    algorithm_type: 'ml_model'
+    algorithm_type: 'ml_model',
+    is_short_selling_enabled: false
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -63,9 +66,13 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       console.log('📂 Loaded strategy settings:', result)
 
       if (result.success && result.settings) {
-        const loadedSettings = {
+        const loadedSettings: StrategySettings = {
           ...result.settings,
-          algorithm_type: result.settings.algorithm_type || 'ml_model'
+          algorithm_type: result.settings.algorithm_type || 'ml_model',
+          is_short_selling_enabled: result.settings.is_short_selling_enabled ?? false
+        }
+        if (loadedSettings.account_type === 'cash') {
+          loadedSettings.is_short_selling_enabled = false
         }
         setSettings(loadedSettings)
         console.log('✅ Settings applied to modal:', loadedSettings)
@@ -85,9 +92,13 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
       setSaving(true)
       setMessage(null)
 
+      const settingsToSave: StrategySettings = settings.account_type === 'cash'
+        ? { ...settings, is_short_selling_enabled: false }
+        : settings
+
       console.log('💾 Saving strategy settings:', {
         account_id: accountId,
-        settings: settings
+        settings: settingsToSave
       })
 
       const response = await authFetch('/api/account-strategy', {
@@ -97,7 +108,7 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
         },
         body: JSON.stringify({
           account_id: accountId,
-          settings: settings
+          settings: settingsToSave
         })
       })
 
@@ -191,7 +202,14 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
               {/* Account Type */}
               <div>
                 <Label htmlFor="account_type" className="text-white">Account Type</Label>
-                <Select value={settings.account_type} onValueChange={(value: any) => setSettings({ ...settings, account_type: value })}>
+                <Select
+                  value={settings.account_type}
+                  onValueChange={(value: any) => setSettings({
+                    ...settings,
+                    account_type: value,
+                    is_short_selling_enabled: value === 'cash' ? false : settings.is_short_selling_enabled
+                  })}
+                >
                   <SelectTrigger id="account_type" className="bg-[#252838] border-gray-700 text-white mt-2">
                     <SelectValue />
                   </SelectTrigger>
@@ -205,6 +223,24 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
                     ? 'Trade with settled funds only' 
                     : 'Trade with borrowed funds (2x-4x leverage)'}
                 </p>
+              </div>
+
+              {/* Short Selling */}
+              <div className="flex items-center justify-between rounded-lg border border-gray-700 bg-[#252838] p-4">
+                <div>
+                  <Label htmlFor="short_selling" className="text-white">Enable Short Selling</Label>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {settings.account_type === 'cash'
+                      ? 'Short selling is disabled for cash accounts'
+                      : 'Allow opening short positions on margin accounts'}
+                  </p>
+                </div>
+                <Switch
+                  id="short_selling"
+                  checked={settings.is_short_selling_enabled}
+                  onCheckedChange={(checked) => setSettings({ ...settings, is_short_selling_enabled: checked })}
+                  disabled={settings.account_type === 'cash'}
+                />
               </div>
 
               {/* Algorithm Type */}
