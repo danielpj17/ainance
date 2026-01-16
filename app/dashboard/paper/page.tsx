@@ -810,7 +810,8 @@ export default function PaperTradingPage() {
     if (min === Infinity || max === -Infinity) return [0, 100]
     
     const range = max - min
-    const padding = range * 0.05 // 5% padding
+    // If min === max (all values identical), add minimum 1% padding to prevent collapse
+    const padding = range > 0 ? range * 0.05 : Math.max(min * 0.01, 10)
     
     return [min - padding, max + padding]
   }
@@ -1425,7 +1426,14 @@ export default function PaperTradingPage() {
                     <YAxis 
                       stroke="#9ca3af" 
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                      tickFormatter={(value) => {
+                        // Dynamic formatter: Use 'k' format for values > 1000, otherwise standard currency
+                        if (value > 1000) {
+                          return `$${(value / 1000).toFixed(1)}k`
+                        } else {
+                          return `$${Math.round(value)}`
+                        }
+                      }}
                       domain={calculateYAxisDomain(chartData, ['value'])}
                     />
                     <Tooltip 

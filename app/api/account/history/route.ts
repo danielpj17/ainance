@@ -75,18 +75,53 @@ export async function GET(req: NextRequest) {
       lastFewValue: history?.value?.slice(-5)
     })
     
+    // 🔧 FIX: Sanitize equity data - sometimes Alpaca returns P/L in the equity field
+    const baseValue = history?.base_value || history?.BaseValue || 0
+    const profitLossArray = history?.profit_loss || history?.ProfitLoss || []
+    let equityArray = history?.equity || history?.Equity || []
+    
+    // If we have equity data and base_value, check if equity looks like P/L instead of absolute equity
+    if (equityArray.length > 0 && baseValue > 0 && profitLossArray.length === equityArray.length) {
+      // Calculate average equity and compare to base_value
+      const avgEquity = equityArray.reduce((sum: number, val: number) => sum + val, 0) / equityArray.length
+      const avgPL = profitLossArray.reduce((sum: number, val: number) => sum + val, 0) / profitLossArray.length
+      
+      // If equity values are vastly different from base_value (e.g., equity ~100 but base_value ~100,000),
+      // assume equity is incorrectly holding P/L data
+      const equityToBaseRatio = Math.abs(avgEquity / baseValue)
+      const plToEquityMatch = Math.abs(avgEquity - avgPL) / Math.max(Math.abs(avgEquity), 1)
+      
+      console.log('Account History API - Equity validation:', {
+        baseValue,
+        avgEquity,
+        avgPL,
+        equityToBaseRatio,
+        plToEquityMatch,
+        needsCorrection: equityToBaseRatio < 0.1 || plToEquityMatch < 0.1
+      })
+      
+      // If equity is less than 10% of base_value OR equity closely matches profit_loss, it's likely P/L data
+      if (equityToBaseRatio < 0.1 || plToEquityMatch < 0.1) {
+        console.log('Account History API - CORRECTING: Equity appears to be P/L data, recalculating as base_value + profit_loss')
+        equityArray = profitLossArray.map((pl: number) => baseValue + pl)
+      }
+    }
+    
+    // Store corrected equity back in history object
+    history.equity = equityArray
+    
     // The Alpaca API returns portfolio history with 'equity' field containing total portfolio value
-    // (cash + market value of positions). Ensure we're using equity, not value or cash.
+    // (cash + market value of positions). After sanitization above, we now use the corrected equity.
     // Handle case-insensitive field access in case SDK returns different casing
-    const equityArray = history?.equity || history?.Equity || []
+    const finalEquityArray = history?.equity || history?.Equity || []
     const valueArray = history?.value || history?.Value || []
     const cashArray = history?.cash || history?.Cash || []
     
     // Check if equity and value arrays differ significantly (which would indicate value is cash)
-    if (equityArray.length > 0 && valueArray.length > 0 && equityArray.length === valueArray.length) {
-      const firstDiff = Math.abs(equityArray[0] - valueArray[0])
-      const lastDiff = Math.abs(equityArray[equityArray.length - 1] - valueArray[valueArray.length - 1])
-      const avgEquity = equityArray.reduce((a: number, b: number) => a + b, 0) / equityArray.length
+    if (finalEquityArray.length > 0 && valueArray.length > 0 && finalEquityArray.length === valueArray.length) {
+      const firstDiff = Math.abs(finalEquityArray[0] - valueArray[0])
+      const lastDiff = Math.abs(finalEquityArray[finalEquityArray.length - 1] - valueArray[valueArray.length - 1])
+      const avgEquity = finalEquityArray.reduce((a: number, b: number) => a + b, 0) / finalEquityArray.length
       const avgValue = valueArray.reduce((a: number, b: number) => a + b, 0) / valueArray.length
       
       console.log('Account History API - Equity vs Value comparison:', {
@@ -105,23 +140,19 @@ export async function GET(req: NextRequest) {
       }
     }
     
-    // If equity array exists and has data, use it (this is the correct field for portfolio equity)
-    // If only value exists, it might be cash, so we should not use it
-    const finalEquity = equityArray.length > 0 ? equityArray : []
-    
-    if (equityArray.length === 0 && valueArray.length > 0) {
+    if (finalEquityArray.length === 0 && valueArray.length > 0) {
       console.warn('Account History API - WARNING: No equity field found, but value field exists. This might be cash, not equity.')
     }
     
     // Return the history with explicit equity field (plus optional series for client comparison)
     const responseData = {
       timestamp: history?.timestamp || history?.Timestamp || [],
-      equity: finalEquity,
+      equity: finalEquityArray,
       value: valueArray,
       cash: cashArray,
       profit_loss: history?.profit_loss || history?.ProfitLoss || [],
       profit_loss_pct: history?.profit_loss_pct || history?.ProfitLossPct || [],
-      base_value: history?.base_value || history?.BaseValue || (finalEquity.length > 0 ? finalEquity[0] : 0),
+      base_value: baseValue || (finalEquityArray.length > 0 ? finalEquityArray[0] : 0),
       timeframe: history?.timeframe || timeframe
     }
     
