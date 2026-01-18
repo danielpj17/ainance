@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { authFetch } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,7 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (isOpen && accountId) {
@@ -154,6 +155,7 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div 
+        ref={modalRef}
         className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto" 
         onClick={(e) => e.stopPropagation()}
       >
@@ -187,7 +189,7 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
                   <SelectTrigger id="strategy" className="bg-[#252838] border-gray-700 text-white mt-2">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent container={modalRef.current}>
                     <SelectItem value="cash">Cash Account</SelectItem>
                     <SelectItem value="25k_plus">$25k+ Account (Pattern Day Trader)</SelectItem>
                   </SelectContent>
@@ -213,7 +215,7 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
                   <SelectTrigger id="account_type" className="bg-[#252838] border-gray-700 text-white mt-2">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent container={modalRef.current}>
                     <SelectItem value="cash">Cash</SelectItem>
                     <SelectItem value="margin">Margin</SelectItem>
                   </SelectContent>
@@ -250,7 +252,7 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
                   <SelectTrigger id="algorithm_type" className="bg-[#252838] border-gray-700 text-white mt-2">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent container={modalRef.current}>
                     <SelectItem value="ml_model">ML Model (Random Forest)</SelectItem>
                     <SelectItem value="rule_based_simple">Rule-Based (Simple)</SelectItem>
                     <SelectItem value="rule_based_advanced">Rule-Based (Advanced)</SelectItem>

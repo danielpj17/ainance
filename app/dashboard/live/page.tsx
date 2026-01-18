@@ -14,63 +14,7 @@ import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowU
 import TradingBot from '@/components/TradingBot'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { getCompanyName } from '@/lib/stock-names'
-
-interface Trade {
-  id: number
-  symbol: string
-  action: string
-  qty: number
-  price: number
-  trade_timestamp: string
-  strategy: string
-  account_type: string
-  created_at: string
-}
-
-interface AlpacaAccount {
-  id: string
-  account_number: string
-  status: string
-  currency: string
-  buying_power: string
-  cash: string
-  portfolio_value: string
-  equity: string
-  last_equity: string
-  long_market_value: string
-  short_market_value: string
-  initial_margin: string
-  maintenance_margin: string
-  daytrade_count: number
-  daytrading_buying_power: string
-  pattern_day_trader: boolean
-}
-
-interface PortfolioHistory {
-  timestamp: number[]
-  equity: number[]
-  profit_loss: number[]
-  profit_loss_pct: number[]
-  base_value: number
-  timeframe: string
-}
-
-interface CurrentPosition {
-  id: bigint
-  symbol: string
-  qty: number
-  buy_price: number
-  buy_timestamp: string
-  current_price: number
-  current_value: number
-  unrealized_pl: number
-  unrealized_pl_percent: number
-  holding_duration: string
-  buy_decision_metrics: any
-  strategy: string
-  account_type: string
-  trade_pair_id: string
-}
+import type { Trade, AlpacaAccount, CurrentPosition, PortfolioHistory } from '@/types/trading'
 
 export default function LiveTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])

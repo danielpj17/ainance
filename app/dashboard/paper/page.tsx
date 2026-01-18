@@ -16,79 +16,14 @@ import AccountStrategyModal from '@/components/AccountStrategyModal'
 import PortfolioChart from '@/components/PortfolioChart'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getCompanyName } from '@/lib/stock-names'
-
-interface Trade {
-  id: number
-  symbol: string
-  action: string
-  qty: number
-  price: number
-  trade_timestamp: string
-  strategy: string
-  account_type: string
-  created_at: string
-}
-
-interface AlpacaAccount {
-  id: string
-  account_number: string
-  status: string
-  currency: string
-  buying_power: string
-  cash: string
-  portfolio_value: string
-  equity: string
-  last_equity: string
-  long_market_value: string
-  short_market_value: string
-  initial_margin: string
-  maintenance_margin: string
-  daytrade_count: number
-  daytrading_buying_power: string
-  pattern_day_trader: boolean
-}
-
-interface CurrentPosition {
-  id: bigint
-  symbol: string
-  qty: number
-  buy_price: number
-  buy_timestamp: string
-  current_price: number
-  current_value: number
-  unrealized_pl: number
-  unrealized_pl_percent: number
-  holding_duration: string
-  buy_decision_metrics: any
-  strategy: string
-  account_type: string
-  trade_pair_id: string
-}
-
-interface CompletedTrade {
-  id: bigint
-  symbol: string
-  qty: number
-  buy_price: number
-  buy_timestamp: string
-  sell_price: number
-  sell_timestamp: string
-  profit_loss: number
-  profit_loss_percent: number
-  holding_duration: string
-  buy_decision_metrics: any
-  sell_decision_metrics: any
-  strategy: string
-  account_type: string
-  trade_pair_id: string
-}
-
-interface PaperAccount {
-  id: string
-  account_name: string
-  alpaca_account_number: string | null
-  created_at: string
-}
+import type { 
+  Trade, 
+  AlpacaAccount, 
+  CurrentPosition, 
+  CompletedTrade, 
+  PaperAccount,
+  DecisionMetrics 
+} from '@/types/trading'
 
 export default function PaperTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])
@@ -100,8 +35,6 @@ export default function PaperTradingPage() {
   const [showAllCompleted, setShowAllCompleted] = useState(false)
   const [positionsLoading, setPositionsLoading] = useState(false)
   const [completedTradesLoading, setCompletedTradesLoading] = useState(false)
-  // Store original timestamps to prevent them from ever changing
-  const originalTimestampsRef = useRef<Map<string, { buy_timestamp: string, symbol: string, qty: number, buy_price: number }>>(new Map())
   // Track last refresh time
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null)
   const [selectedPosition, setSelectedPosition] = useState<CurrentPosition | null>(null)
@@ -141,8 +74,6 @@ export default function PaperTradingPage() {
       setAccount(null)
       setCurrentPositions([])
       setCompletedTrades([])
-      // Clear stored timestamps when switching accounts
-      originalTimestampsRef.current.clear()
       
       // Load new data
       loadData()
@@ -260,7 +191,7 @@ export default function PaperTradingPage() {
       
       console.log('[PAPER TRADING] Loading positions for account_id:', selectedAccountId)
       const { data: { session } } = await sb.auth.getSession()
-      const response = await fetch(`/api/trade-logs?view=current&account_id=${selectedAccountId}`, {
+      const response = await fetch(`/api/trade-logs?view=current&account_id=${selectedAccountId}&account_type=paper`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
       
@@ -269,79 +200,13 @@ export default function PaperTradingPage() {
       console.log('[PAPER TRADING] Positions API response:', {
         success: data.success,
         count: data.data?.currentTrades?.length || 0,
-        accountId: selectedAccountId,
-        positions: data.data?.currentTrades
+        accountId: selectedAccountId
       })
       
       if (data.success) {
-        const newPositions = data.data.currentTrades || []
-        // Create a stable key for each position (symbol + qty + buy_price)
-        const getPositionKey = (pos: CurrentPosition) => `${pos.symbol}-${pos.qty}-${pos.buy_price.toFixed(2)}`
-        
-        // Preserve existing buy_timestamp values to prevent them from updating on refresh
-        // Match by symbol + qty + buy_price as stable identifier (IDs may change from API)
-        const mergedPositions = newPositions.map((newPos: CurrentPosition) => {
-          const positionKey = getPositionKey(newPos)
-          
-          // First, check if we have an original timestamp stored for this position
-          const originalTimestamp = originalTimestampsRef.current.get(positionKey)
-          if (originalTimestamp) {
-            // Always use the original timestamp we stored for this position
-            return {
-              ...newPos,
-              buy_timestamp: originalTimestamp.buy_timestamp
-            }
-          }
-          
-          // If not in ref, check existing positions
-          const existingPos = currentPositions.find(p => {
-            const existingKey = getPositionKey(p)
-            return existingKey === positionKey
-          })
-          
-          // If position exists in current state, use its timestamp and store it
-          if (existingPos && existingPos.buy_timestamp) {
-            // Store this timestamp so it never changes
-            originalTimestampsRef.current.set(positionKey, {
-              buy_timestamp: existingPos.buy_timestamp,
-              symbol: existingPos.symbol,
-              qty: existingPos.qty,
-              buy_price: existingPos.buy_price
-            })
-            return {
-              ...newPos,
-              buy_timestamp: existingPos.buy_timestamp
-            }
-          }
-          
-          // For new positions, use the timestamp from API but store it immediately
-          // This ensures it won't change on subsequent refreshes
-          const timestampToUse = newPos.buy_timestamp || new Date().toISOString()
-          originalTimestampsRef.current.set(positionKey, {
-            buy_timestamp: timestampToUse,
-            symbol: newPos.symbol,
-            qty: newPos.qty,
-            buy_price: newPos.buy_price
-          })
-          
-          return {
-            ...newPos,
-            buy_timestamp: timestampToUse
-          }
-        })
-        
-        // Clean up timestamps for positions that no longer exist
-        const currentKeys = new Set(mergedPositions.map((p: CurrentPosition) => getPositionKey(p)))
-        for (const [key] of originalTimestampsRef.current.entries()) {
-          if (!currentKeys.has(key)) {
-            originalTimestampsRef.current.delete(key)
-          }
-        }
-        
-        // Update positions atomically without clearing first
-        // Sorting is handled by useMemo for stable rendering
-        setCurrentPositions(mergedPositions)
-        // Update last refresh time
+        // Server now handles all timestamp management correctly
+        // No need for client-side workarounds
+        setCurrentPositions(data.data.currentTrades || [])
         setLastRefreshTime(new Date())
       }
     } catch (error) {
@@ -366,7 +231,7 @@ export default function PaperTradingPage() {
       
       console.log('[PAPER TRADING] Loading completed trades for account_id:', selectedAccountId)
       const { data: { session } } = await sb.auth.getSession()
-      const response = await fetch(`/api/trade-logs?view=completed&account_id=${selectedAccountId}`, {
+      const response = await fetch(`/api/trade-logs?view=completed&account_id=${selectedAccountId}&account_type=paper`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       })
       
@@ -379,38 +244,10 @@ export default function PaperTradingPage() {
       })
       
       if (data.success) {
-        const newTrades = data.data.completedTrades || []
-        // Create a stable key for each trade (symbol + qty + buy_price + sell_price)
-        const getTradeKey = (trade: CompletedTrade) => 
-          `${trade.symbol}-${trade.qty}-${trade.buy_price.toFixed(2)}-${trade.sell_price.toFixed(2)}`
-        
-        // Preserve existing timestamps - use a separate ref or same pattern
-        const mergedTrades = newTrades.map((newTrade: CompletedTrade) => {
-          const tradeKey = getTradeKey(newTrade)
-          
-          // Check existing trades first
-          const existingTrade = completedTrades.find(t => {
-            const existingKey = getTradeKey(t)
-            return existingKey === tradeKey
-          })
-          
-          // If trade exists, preserve its timestamps
-          if (existingTrade) {
-            return {
-              ...newTrade,
-              buy_timestamp: existingTrade.buy_timestamp,
-              sell_timestamp: existingTrade.sell_timestamp
-            }
-          }
-          
-          // For new trades, use timestamps from API
-          return newTrade
-        })
-        // Update completed trades atomically without clearing first
-        // Sorting is handled by useMemo
-        setCompletedTrades(mergedTrades)
-        // Update last refresh time if this is the initial load
-        if (completedTrades.length === 0) {
+        // Server now handles all timestamp management correctly
+        // No need for client-side workarounds
+        setCompletedTrades(data.data.completedTrades || [])
+        if (isInitialLoad) {
           setLastRefreshTime(new Date())
         }
       }
@@ -624,52 +461,34 @@ export default function PaperTradingPage() {
       const isShort = position.qty < 0
       const absQty = Math.abs(position.qty)
       
-      // For short positions, we need to buy back to close (side: 'buy')
-      // For long positions, we sell to close (side: 'sell')
-      const side = isShort ? 'buy' : 'sell'
+      const sb = supabaseRef.current
+      const session = sb ? (await sb.auth.getSession()).data.session : null
       
-      // Execute order to close position
-      const response = await fetch('/api/trade', {
+      // Use unified trade execution endpoint - handles both Alpaca order and trade log atomically
+      const response = await fetch('/api/trade/execute', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        },
         body: JSON.stringify({
+          action: 'close',
           symbol: position.symbol,
-          side: side,
-          qty: absQty, // Use absolute value for order quantity
+          qty: absQty,
           type: 'market',
           time_in_force: 'day',
           strategy: position.strategy,
-          account_type: position.account_type
+          account_type: position.account_type,
+          account_id: selectedAccountId,
+          trade_pair_id: position.trade_pair_id,
+          decision_metrics: currentSellMetrics || {}
         })
       })
       
       const data = await response.json()
       
       if (!data.success) {
-        throw new Error(data.error || 'Failed to execute order')
-      }
-      
-      // Close position in trade logs
-      const sb = supabaseRef.current
-      if (sb) {
-        const { data: { session } } = await sb.auth.getSession()
-        await fetch('/api/trade-logs', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
-          },
-          body: JSON.stringify({
-            action: 'sell', // Always 'sell' for closing in trade logs
-            symbol: position.symbol,
-            qty: absQty, // Use absolute value
-            price: data.trade.price,
-            decision_metrics: currentSellMetrics || {},
-            strategy: position.strategy,
-            account_type: position.account_type,
-            trade_pair_id: position.trade_pair_id
-          })
-        })
+        throw new Error(data.error || 'Failed to close position')
       }
       
       const actionText = isShort ? 'bought back' : 'sold'
