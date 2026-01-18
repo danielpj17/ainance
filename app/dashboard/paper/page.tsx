@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown, Settings, Check } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import AccountStrategyModal from '@/components/AccountStrategyModal'
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import PortfolioChart from '@/components/PortfolioChart'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getCompanyName } from '@/lib/stock-names'
 
@@ -46,15 +46,6 @@ interface AlpacaAccount {
   daytrade_count: number
   daytrading_buying_power: string
   pattern_day_trader: boolean
-}
-
-interface PortfolioHistory {
-  timestamp: number[]
-  equity: number[]
-  profit_loss: number[]
-  profit_loss_pct: number[]
-  base_value: number
-  timeframe: string
 }
 
 interface CurrentPosition {
@@ -102,11 +93,8 @@ interface PaperAccount {
 export default function PaperTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([])
   const [account, setAccount] = useState<AlpacaAccount | null>(null)
-  const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
-  const [chartData, setChartData] = useState<any[]>([])
   const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
   const [completedTrades, setCompletedTrades] = useState<CompletedTrade[]>([])
   const [showAllCompleted, setShowAllCompleted] = useState(false)
@@ -153,8 +141,6 @@ export default function PaperTradingPage() {
       setAccount(null)
       setCurrentPositions([])
       setCompletedTrades([])
-      setPortfolioHistory(null)
-      setChartData([])
       // Clear stored timestamps when switching accounts
       originalTimestampsRef.current.clear()
       
@@ -184,28 +170,13 @@ export default function PaperTradingPage() {
         loadCompletedTrades()
       }, 30000)
 
-      // Refresh portfolio history every 2 minutes to capture new hourly data points
-      // This ensures new hours appear on the graph as they become available from Alpaca
-      const portfolioHistoryInterval = setInterval(() => {
-        if (account && selectedAccountId) {
-          loadPortfolioHistory()
-        }
-      }, 120000) // 2 minutes
-
       return () => {
         tradesChannel?.unsubscribe()
         clearInterval(accountInterval)
         clearInterval(positionsInterval)
-        clearInterval(portfolioHistoryInterval)
       }
     }
   }, [selectedAccountId])
-
-  useEffect(() => {
-    if (account && selectedAccountId) {
-      loadPortfolioHistory()
-    }
-  }, [chartPeriod, account, selectedAccountId])
 
   useEffect(() => {
     if (!accountDropdownOpen) return
@@ -535,287 +506,6 @@ export default function PaperTradingPage() {
     }
   }
 
-  const loadPortfolioHistory = async () => {
-    if (!selectedAccountId) return
-    
-    try {
-      // For week view, use 5Min data (same as today view) and aggregate to hourly for display
-      // This ensures we get accurate data since 5Min data works correctly
-      const timeframeMap = {
-        '1D': '5Min',
-        '1W': '5Min', // Use 5Min instead of 1H for accurate data
-        '1M': '1D',
-        '1A': '1W'
-      }
-      
-      const response = await authFetch(`/api/account/history?period=${chartPeriod}&timeframe=${timeframeMap[chartPeriod]}&account_id=${selectedAccountId}`)
-      const result = await response.json()
-      
-      if (result.success && result.data) {
-        setPortfolioHistory(result.data)
-        
-        // Transform data for chart
-        const timestamps = result.data.timestamp || []
-        const rawEquity = result.data.equity || []
-        const valueSeries = result.data.value || []
-        
-        // Always use the equity series for portfolio value
-        const equity = rawEquity
-        
-        // Enhanced logging for week view debugging
-        const isWeekView = chartPeriod === '1W'
-        if (isWeekView && equity.length > 0) {
-          const firstEquity = equity[0]
-          const lastEquity = equity[equity.length - 1]
-          const today = new Date()
-          const lastTimestamp = timestamps[timestamps.length - 1]
-          const lastDate = lastTimestamp ? new Date(lastTimestamp * 1000) : null
-          const isToday = lastDate && lastDate.toDateString() === today.toDateString()
-          
-          console.log('[PAPER TRADING] Week view portfolio history:', {
-            period: chartPeriod,
-            equityLength: equity.length,
-            firstEquity,
-            lastEquity,
-            lastTimestamp,
-            lastDate: lastDate?.toISOString(),
-            isToday,
-            sampleEquity: equity.slice(0, 3),
-            lastFewEquity: equity.slice(-3),
-            hasValue: valueSeries.length > 0,
-            valueLength: valueSeries.length,
-            rawEquityLength: rawEquity.length
-          })
-          
-          // Check if today's data points show a sudden jump (indicating cash instead of equity)
-          if (isToday && equity.length >= 2) {
-            const secondLastEquity = equity[equity.length - 2]
-            const jump = Math.abs(lastEquity - secondLastEquity)
-            const percentJump = secondLastEquity > 0 ? (jump / secondLastEquity) * 100 : 0
-            
-            if (percentJump > 50) {
-              console.warn('[PAPER TRADING] Large jump detected in today\'s data - possible cash vs equity issue:', {
-                secondLastEquity,
-                lastEquity,
-                jump,
-                percentJump: percentJump.toFixed(2) + '%',
-                timestamp: lastTimestamp,
-                date: lastDate?.toISOString()
-              })
-            }
-          }
-        }
-        
-        // Log for debugging if we detect potential issues
-        if (equity.length > 0 && valueSeries.length > 0) {
-          const firstEquity = equity[0]
-          const firstValue = valueSeries[0]
-          if (Math.abs(firstEquity - firstValue) > 1000) {
-            console.warn('[PAPER TRADING] Portfolio history: equity and value fields differ significantly', {
-              equity: firstEquity,
-              value: firstValue,
-              difference: firstEquity - firstValue
-            })
-          }
-        }
-        
-        // For week view, we're using 5Min data (same as today view) but need to aggregate to hourly for cleaner display
-        let dataToTransform = { timestamps, equity }
-        const isTodayView = chartPeriod === '1D'
-
-        if (isTodayView && timestamps.length > 0) {
-          const currentEquity = account ? parseFloat(account.equity || '0') : 0
-          const profitLossSeries = Array.isArray(result.data.profit_loss) ? result.data.profit_loss : []
-          const baseValue = typeof result.data.base_value === 'number' ? result.data.base_value : 0
-          const equityFromProfitLoss = profitLossSeries.length > 0
-            ? profitLossSeries.map((pl: number) => baseValue + pl)
-            : []
-
-          const equityLooksNegative = equity.length > 0 && equity.every((value: number) => value <= 0)
-          let todayEquitySeries = equity
-
-          if (equityLooksNegative || equity.length === 0) {
-            if (equityFromProfitLoss.length > 0) {
-              todayEquitySeries = equityFromProfitLoss
-            } else if (currentEquity > 0) {
-              todayEquitySeries = timestamps.map(() => currentEquity)
-            }
-          }
-
-          const seriesLength = Math.min(timestamps.length, todayEquitySeries.length)
-          const normalizedRaw = timestamps
-            .slice(0, seriesLength)
-            .map((ts: number, idx: number) => ({
-              timestamp: ts,
-              equity: todayEquitySeries[idx] || 0
-            }))
-            .filter((point: { timestamp: number; equity: number }) => Number.isFinite(point.equity))
-
-          const normalized = normalizedRaw.filter(
-            (point: { timestamp: number; equity: number }) => point.equity > 0
-          )
-
-          const normalizedToUse = normalized.length > 0 ? normalized : normalizedRaw
-
-          dataToTransform = {
-            timestamps: normalizedToUse.map((point: { timestamp: number; equity: number }) => point.timestamp),
-            equity: normalizedToUse.map((point: { timestamp: number; equity: number }) => point.equity)
-          }
-        }
-
-        if (isWeekView && timestamps.length > 0) {
-          const currentEquity = account ? parseFloat(account.equity || '0') : 0
-          const currentCash = account ? parseFloat(account.cash || '0') : 0
-          const cashSeries = Array.isArray(result.data.cash) ? result.data.cash : []
-          
-          // Identify equity values while filtering out cash-like spikes
-          const validEquityValues: { timestamp: number, equity: number }[] = []
-          const cashValues: { timestamp: number, value: number }[] = []
-          const equityWindow: number[] = []
-          
-          const isCashLike = (value: number, cashValue: number, equityBaseline: number) => {
-            if (cashValue <= 0 || equityBaseline <= 0) return false
-            const diffFromCash = Math.abs(value - cashValue)
-            const diffFromEquity = Math.abs(value - equityBaseline)
-            const closeToCash = diffFromCash < cashValue * 0.005
-            const farFromEquity = diffFromEquity > equityBaseline * 0.02
-            return closeToCash && farFromEquity
-          }
-          
-          timestamps.forEach((ts: number, idx: number) => {
-            const value = equity[idx] || 0
-            if (value === 0) return
-            
-            const cashAtPoint = cashSeries[idx] || currentCash
-            const rollingBaseline = equityWindow.length > 0
-              ? equityWindow.reduce((sum, v) => sum + v, 0) / equityWindow.length
-              : currentEquity
-            
-            if (isCashLike(value, cashAtPoint, rollingBaseline)) {
-              cashValues.push({ timestamp: ts, value })
-              console.log(`[PAPER TRADING] Detected cash value at ${new Date(ts * 1000).toISOString()}: ${value} (cash: ${cashAtPoint}, baseline: ${rollingBaseline})`)
-              return
-            }
-            
-            validEquityValues.push({ timestamp: ts, equity: value })
-            equityWindow.push(value)
-            if (equityWindow.length > 6) {
-              equityWindow.shift()
-            }
-          })
-          
-          console.log('[PAPER TRADING] Week view: Filtered data points', {
-            totalPoints: timestamps.length,
-            validEquity: validEquityValues.length,
-            cashValues: cashValues.length,
-            currentEquity,
-            currentCash
-          })
-          
-          // If filtering removed everything, fall back to raw equity series (never cash)
-          const equityValuesToAggregate = validEquityValues.length > 0
-            ? validEquityValues
-            : timestamps
-              .map((ts: number, idx: number) => ({ timestamp: ts, equity: equity[idx] || 0 }))
-              .filter((point: { timestamp: number; equity: number }) => point.equity > 0)
-          
-          // Now aggregate valid equity values to hourly intervals
-          const hourlyMap = new Map<number, { timestamp: number, equity: number, minutes: number }>()
-          
-          equityValuesToAggregate.forEach((point: { timestamp: number; equity: number }) => {
-            const { timestamp: ts, equity: equityValue } = point
-            const date = new Date(ts * 1000)
-            // Round down to the hour
-            const hourStart = new Date(date)
-            hourStart.setMinutes(0, 0, 0)
-            const hourKey = hourStart.getTime() / 1000
-            const minutes = date.getMinutes()
-            
-            // Check if we already have an entry for this hour
-            const existing = hourlyMap.get(hourKey)
-            
-            // If no entry exists, or if this data point is closer to the hour mark (minutes closer to 0), use it
-            if (!existing || minutes < existing.minutes) {
-              hourlyMap.set(hourKey, { timestamp: hourKey, equity: equityValue, minutes })
-            }
-          })
-          
-          // Convert map to sorted array
-          const aggregated = Array.from(hourlyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
-          
-          dataToTransform = {
-            timestamps: aggregated.map(e => e.timestamp),
-            equity: aggregated.map(e => e.equity)
-          }
-          
-          console.log('[PAPER TRADING] Week view: Aggregated 5Min equity data to hourly', {
-            validEquityPoints: validEquityValues.length,
-            aggregatedPoints: dataToTransform.timestamps.length,
-            totalHours: hourlyMap.size
-          })
-        }
-        
-        const transformed = dataToTransform.timestamps.map((ts: number, idx: number) => {
-          const date = new Date(ts * 1000)
-          let timeLabel: string
-          
-          if (chartPeriod === '1D') {
-            // For day view, only show time (use toLocaleTimeString to ensure no date)
-            timeLabel = date.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          } else {
-            // For other views, show date and time
-            timeLabel = date.toLocaleString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          }
-          
-          return {
-            time: timeLabel,
-            value: dataToTransform.equity[idx] || 0
-          }
-        })
-        
-        setChartData(transformed)
-      }
-    } catch (error) {
-      console.error('Error loading portfolio history:', error)
-    }
-  }
-
-  // Helper function to calculate dynamic Y-axis domain with 5% padding
-  const calculateYAxisDomain = (data: any[], dataKeys: string[]): [number, number] => {
-    if (!data || data.length === 0) return [0, 100]
-    
-    let min = Infinity
-    let max = -Infinity
-    
-    data.forEach((item) => {
-      dataKeys.forEach((key) => {
-        const value = item[key]
-        if (typeof value === 'number' && !isNaN(value)) {
-          min = Math.min(min, value)
-          max = Math.max(max, value)
-        }
-      })
-    })
-    
-    if (min === Infinity || max === -Infinity) return [0, 100]
-    
-    const range = max - min
-    // If min === max (all values identical), add minimum 1% padding to prevent collapse
-    const padding = range > 0 ? range * 0.05 : Math.max(min * 0.01, 10)
-    
-    return [min - padding, max + padding]
-  }
-
   const formatCurrency = (amount: number | string) => {
     const value = typeof amount === 'string' ? parseFloat(amount) : amount
     return new Intl.NumberFormat('en-US', {
@@ -1037,16 +727,8 @@ export default function PaperTradingPage() {
     if (!account) return { amount: 0, percentage: 0 }
     
     const currentValue = parseFloat(account.equity || '0')
-    
-    // If we have portfolio history with data points, use the first equity value as the base
-    if (portfolioHistory && portfolioHistory.equity && portfolioHistory.equity.length > 0) {
-      const baseValue = portfolioHistory.equity[0]
-      const amount = currentValue - baseValue
-      const percentage = baseValue > 0 ? (amount / baseValue) * 100 : 0
-      return { amount, percentage }
-    }
-    
-    // Fallback to last_equity (previous day's close)
+
+    // Use last_equity (previous day's close) as the baseline
     const lastEquity = parseFloat(account.last_equity || account.equity || '0')
     const amount = currentValue - lastEquity
     const percentage = lastEquity > 0 ? (amount / lastEquity) * 100 : 0
@@ -1070,6 +752,14 @@ export default function PaperTradingPage() {
     : 0
 
   const totalPositionValue = positionsMarketValue > 0 ? positionsMarketValue : accountGrossMarketValue
+
+  const { winRate, closedTradesCount } = useMemo(() => {
+    const closedTradesCount = completedTrades.length
+    const winningTrades = completedTrades.filter((trade) => trade.profit_loss > 0).length
+    const winRate = closedTradesCount > 0 ? (winningTrades / closedTradesCount) * 100 : 0
+
+    return { winRate, closedTradesCount }
+  }, [completedTrades])
 
   // Memoize sorted positions and completed trades to prevent unnecessary re-renders
   const sortedCurrentPositions = useMemo(() => {
@@ -1179,48 +869,6 @@ export default function PaperTradingPage() {
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setChartPeriod('1D')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1D'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Today
-              </button>
-              <button
-                onClick={() => setChartPeriod('1W')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1W'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Week
-              </button>
-              <button
-                onClick={() => setChartPeriod('1M')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1M'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Month
-              </button>
-              <button
-                onClick={() => setChartPeriod('1A')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1A'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Year
-              </button>
-            </div>
             <Badge className={profitLoss.amount >= 0 ? "bg-green-600 hover:bg-green-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}>
               {profitLoss.amount >= 0 ? <ArrowUpRight className="h-3 w-3 mr-1 text-white" /> : <ArrowDownRight className="h-3 w-3 mr-1 text-white" />}
               <span className="mr-1 text-white font-semibold">{formatCurrency(profitLoss.amount)}</span>
@@ -1269,7 +917,7 @@ export default function PaperTradingPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
@@ -1324,6 +972,21 @@ export default function PaperTradingPage() {
             <p className="text-xs text-gray-400 mt-1">Long + short positions</p>
           </CardContent>
         </Card>
+
+        <Card className="glass-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-400">Win Rate</CardTitle>
+            <TrendingUp className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-white">
+              {winRate.toFixed(1)}%
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {closedTradesCount > 0 ? `${closedTradesCount} closed trades` : 'No trades yet'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Trading Bot & Portfolio Chart */}
@@ -1345,125 +1008,10 @@ export default function PaperTradingPage() {
             />
           </div>
           
-          {/* Portfolio Chart */}
-          <Card className="lg:col-span-2 glass-card">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-white text-xl">Portfolio Performance</CardTitle>
-                <CardDescription className="text-gray-400">Track your paper trading account value</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button 
-                  variant={chartPeriod === '1D' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setChartPeriod('1D')}
-                  className={chartPeriod === '1D' ? 'bg-blue-400' : 'border-gray-600 text-gray-400'}
-                >
-                  Today
-                </Button>
-                <Button 
-                  variant={chartPeriod === '1W' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setChartPeriod('1W')}
-                  className={chartPeriod === '1W' ? 'bg-blue-400' : 'border-gray-600 text-gray-400'}
-                >
-                  Week
-                </Button>
-                <Button 
-                  variant={chartPeriod === '1M' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setChartPeriod('1M')}
-                  className={chartPeriod === '1M' ? 'bg-blue-400' : 'border-gray-600 text-gray-400'}
-                >
-                  Month
-                </Button>
-                <Button 
-                  variant={chartPeriod === '1A' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setChartPeriod('1A')}
-                  className={chartPeriod === '1A' ? 'bg-blue-400' : 'border-gray-600 text-gray-400'}
-                >
-                  Year
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis 
-                      dataKey="time" 
-                      stroke="#9ca3af" 
-                      tick={{ fontSize: 12 }}
-                      angle={-45}
-                      textAnchor="end"
-                      height={80}
-                      tickFormatter={(value) => {
-                        // If in day view, ensure we only show time
-                        // The value should already be formatted correctly, but strip date if present
-                        if (chartPeriod === '1D' && typeof value === 'string') {
-                          // Only remove date part if there's a comma (indicating date, time format)
-                          // e.g., "Jan 8, 7:40 AM" -> "7:40 AM"
-                          if (value.includes(',')) {
-                            return value.split(',').pop()?.trim() || value
-                          }
-                          // If no comma, it's already just time, return as-is
-                          return value
-                        }
-                        return value
-                      }}
-                    />
-                    <YAxis 
-                      stroke="#9ca3af" 
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => {
-                        // Dynamic formatter: Use 'k' format for values > 1000, otherwise standard currency
-                        if (value > 1000) {
-                          return `$${(value / 1000).toFixed(1)}k`
-                        } else {
-                          return `$${Math.round(value)}`
-                        }
-                      }}
-                      domain={calculateYAxisDomain(chartData, ['value'])}
-                    />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1d2e', border: '1px solid #374151', borderRadius: '4px' }}
-                      labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                      formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
-                      labelFormatter={(label) => `Time: ${label}`}
-                      cursor={{ stroke: '#60a5fa', strokeWidth: 1, strokeDasharray: '3 3' }}
-                    />
-                    <Area 
-                      type="linear" 
-                      dataKey="value" 
-                      stroke="#60a5fa" 
-                      strokeWidth={3} 
-                      fillOpacity={1} 
-                      fill="url(#portfolioGradient)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  <div className="text-center">
-                    <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                    <p>No portfolio data available for selected period</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Portfolio Chart */}
+        <div className="lg:col-span-2">
+          <PortfolioChart accountId={selectedAccountId} />
+        </div>
         </div>
       )}
 

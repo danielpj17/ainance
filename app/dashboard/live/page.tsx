@@ -78,7 +78,7 @@ export default function LiveTradingPage() {
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null)
-  const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
+  const [chartPeriod, setChartPeriod] = useState<'1W' | '1M' | '1A'>('1W')
   const [chartData, setChartData] = useState<any[]>([])
   const [currentPositions, setCurrentPositions] = useState<CurrentPosition[]>([])
   const [positionsLoading, setPositionsLoading] = useState(false)
@@ -282,7 +282,6 @@ export default function LiveTradingPage() {
   const loadPortfolioHistory = async () => {
     try {
       const timeframeMap = {
-        '1D': '5Min',
         '1W': '1H',
         '1M': '1D',
         '1A': '1W'
@@ -300,25 +299,13 @@ export default function LiveTradingPage() {
         
         const transformed = timestamps.map((ts: number, idx: number) => {
           const date = new Date(ts * 1000)
-          let timeLabel: string
-          
-          if (chartPeriod === '1D') {
-            // For day view, only show time (use toLocaleTimeString to ensure no date)
-            timeLabel = date.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          } else {
-            // For other views, show date and time
-            timeLabel = date.toLocaleString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          }
+          const timeLabel = date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          })
           
           return {
             time: timeLabel,
@@ -641,16 +628,6 @@ export default function LiveTradingPage() {
           <div className="flex flex-col items-end gap-2">
             <div className="flex gap-2">
               <button
-                onClick={() => setChartPeriod('1D')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1D'
-                    ? 'bg-green-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Today
-              </button>
-              <button
                 onClick={() => setChartPeriod('1W')}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === '1W'
@@ -796,14 +773,6 @@ export default function LiveTradingPage() {
               </div>
               <div className="flex gap-2">
                 <Button 
-                  variant={chartPeriod === '1D' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setChartPeriod('1D')}
-                  className={chartPeriod === '1D' ? 'bg-green-400' : 'border-gray-600 text-gray-400'}
-                >
-                  Today
-                </Button>
-                <Button 
                   variant={chartPeriod === '1W' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setChartPeriod('1W')}
@@ -849,20 +818,7 @@ export default function LiveTradingPage() {
                       angle={-45}
                       textAnchor="end"
                       height={80}
-                      tickFormatter={(value) => {
-                        // If in day view, ensure we only show time
-                        // The value should already be formatted correctly, but strip date if present
-                        if (chartPeriod === '1D' && typeof value === 'string') {
-                          // Only remove date part if there's a comma (indicating date, time format)
-                          // e.g., "Jan 8, 7:40 AM" -> "7:40 AM"
-                          if (value.includes(',')) {
-                            return value.split(',').pop()?.trim() || value
-                          }
-                          // If no comma, it's already just time, return as-is
-                          return value
-                        }
-                        return value
-                      }}
+                      tickFormatter={(value) => value}
                     />
                     <YAxis 
                       stroke="#9ca3af" 

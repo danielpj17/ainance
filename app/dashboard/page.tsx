@@ -19,7 +19,7 @@ export default function DashboardPage() {
   const [tradeMetrics, setTradeMetrics] = useState<any>(null)
   const [winRate, setWinRate] = useState<number>(0)
   const [trendData, setTrendData] = useState<any[]>([])
-  const [chartPeriod, setChartPeriod] = useState<'1D' | '1W' | '1M' | '1A'>('1D')
+  const [chartPeriod, setChartPeriod] = useState<'1W' | '1M' | '1A'>('1W')
   const [totalTrades, setTotalTrades] = useState<number>(0)
   const [recentActivity, setRecentActivity] = useState<any[]>([])
   const [portfolioChange, setPortfolioChange] = useState<number>(0)
@@ -35,7 +35,6 @@ export default function DashboardPage() {
   const loadPortfolioHistory = async () => {
     try {
       const timeframeMap = {
-        '1D': '5Min',
         '1W': '1H',
         '1M': '1D',
         '1A': '1W'
@@ -62,25 +61,13 @@ export default function DashboardPage() {
         
         const transformed = timestamps.map((ts: number, idx: number) => {
           const date = new Date(ts * 1000)
-          let dateLabel: string
-          
-          if (chartPeriod === '1D') {
-            // For day view, only show time
-            dateLabel = date.toLocaleString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          } else {
-            // For other views, show date and time
-            dateLabel = date.toLocaleString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          }
+          const dateLabel = date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          })
           
           return {
             date: dateLabel,
@@ -254,16 +241,6 @@ export default function DashboardPage() {
           <div className="flex flex-col items-end gap-2">
             <div className="flex gap-2">
               <button
-                onClick={() => setChartPeriod('1D')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1D'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Today
-              </button>
-              <button
                 onClick={() => setChartPeriod('1W')}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   chartPeriod === '1W'
@@ -379,7 +356,6 @@ export default function DashboardPage() {
               <div>
                 <CardTitle className="text-white text-xl">Portfolio Trend</CardTitle>
                 <CardDescription className="text-white/70">
-                  {chartPeriod === '1D' && 'Performance today'}
                   {chartPeriod === '1W' && 'Performance over the last 7 days'}
                   {chartPeriod === '1M' && 'Performance over the last 30 days'}
                   {chartPeriod === '1A' && 'Performance over the last year'}
@@ -389,16 +365,6 @@ export default function DashboardPage() {
             
             {/* Period Selector */}
             <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setChartPeriod('1D')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  chartPeriod === '1D'
-                    ? 'bg-blue-400 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                Today
-              </button>
               <button
                 onClick={() => setChartPeriod('1W')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${

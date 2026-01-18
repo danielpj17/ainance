@@ -5,164 +5,121 @@ import { createAlpacaClient } from '@/lib/alpaca-client'
 
 export async function GET(req: NextRequest) {
   try {
-    // Get user ID from request cookies (strict: demo keys only for demo user)
     const { userId, isDemo } = await getUserIdFromRequest(req)
-    console.log('Account History API - User:', { userId, isDemo })
-
-    // Get period and account type from query params
     const { searchParams } = new URL(req.url)
-    const period = searchParams.get('period') || '1D' // 1D, 1W, 1M, 1A
-    const timeframe = searchParams.get('timeframe') || '1Min'
-    const accountType = (searchParams.get('account_type') || 'paper') as 'paper' | 'live'
+
+    // 1. Standardize Parameters
+    const period = searchParams.get('period') || '1W'
     const accountId = searchParams.get('account_id') || undefined
 
-    // Get Alpaca keys (with optional account_id for paper trading)
-    const { apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper } = await getAlpacaKeysForUser(userId, isDemo, accountType, accountId)
-    
-    console.log('Account History API - Account type:', accountType)
-    
-    // If no keys, return empty history (NO demo fallback)
-    if (!alpacaApiKey || !alpacaSecretKey) {
-      console.log('Account History API - No API keys, returning empty history')
-      return NextResponse.json({ 
-        success: true, 
-        data: {
-          timestamp: [],
-          equity: [],
-          profit_loss: [],
-          profit_loss_pct: [],
-          base_value: 0,
-          timeframe: timeframe
-        }
-      })
+    let timeframe = searchParams.get('timeframe')
+    let effectivePeriod = period
+
+    if (!timeframe) {
+      if (period === '1D') timeframe = '5Min'
+      else if (period === '1W') timeframe = '1H'
+      else timeframe = '1D'
     }
-    
-    const baseUrl = paper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets'
-    
+
+    const { apiKey, secretKey, paper } = await getAlpacaKeysForUser(
+      userId,
+      isDemo,
+      'paper',
+      accountId
+    )
+
+    if (!apiKey || !secretKey) {
+      return NextResponse.json({ success: false, error: 'No API keys' })
+    }
+
     const alpaca = createAlpacaClient({
-      apiKey: alpacaApiKey,
-      secretKey: alpacaSecretKey,
-      baseUrl,
-      paper
-    });
+      apiKey,
+      secretKey,
+      baseUrl: '[https://paper-api.alpaca.markets](https://paper-api.alpaca.markets)',
+      paper: true
+    })
     await alpaca.initialize()
-    
-    // Fetch portfolio history
+
+    // 2. Fetch History & Account Info
     const history = await alpaca.getPortfolioHistory({
-      period,
+      period: effectivePeriod,
       timeframe,
-      extended_hours: false
+      extended_hours: true
     })
-    
-    // Log the response structure to debug (especially for week view with 1H timeframe)
-    const isWeekView = period === '1W' && timeframe === '1H'
-    console.log('Account History API - Portfolio history response structure:', {
-      period,
-      timeframe,
-      isWeekView,
-      hasEquity: Array.isArray(history?.equity),
-      equityLength: history?.equity?.length || 0,
-      hasValue: Array.isArray(history?.value),
-      valueLength: history?.value?.length || 0,
-      keys: Object.keys(history || {}),
-      firstEquityValue: history?.equity?.[0],
-      firstValueValue: history?.value?.[0],
-      lastEquityValue: history?.equity?.[history?.equity?.length - 1],
-      lastValueValue: history?.value?.[history?.value?.length - 1],
-      sampleEquity: history?.equity?.slice(0, 5),
-      sampleValue: history?.value?.slice(0, 5),
-      lastFewEquity: history?.equity?.slice(-5),
-      lastFewValue: history?.value?.slice(-5)
-    })
-    
-    // 🔧 FIX: Sanitize equity data - sometimes Alpaca returns P/L in the equity field
-    const baseValue = history?.base_value || history?.BaseValue || 0
-    const profitLossArray = history?.profit_loss || history?.ProfitLoss || []
-    let equityArray = history?.equity || history?.Equity || []
-    
-    // If we have equity data and base_value, check if equity looks like P/L instead of absolute equity
-    if (equityArray.length > 0 && baseValue > 0 && profitLossArray.length === equityArray.length) {
-      // Calculate average equity and compare to base_value
-      const avgEquity = equityArray.reduce((sum: number, val: number) => sum + val, 0) / equityArray.length
-      const avgPL = profitLossArray.reduce((sum: number, val: number) => sum + val, 0) / profitLossArray.length
-      
-      // If equity values are vastly different from base_value (e.g., equity ~100 but base_value ~100,000),
-      // assume equity is incorrectly holding P/L data
-      const equityToBaseRatio = Math.abs(avgEquity / baseValue)
-      const plToEquityMatch = Math.abs(avgEquity - avgPL) / Math.max(Math.abs(avgEquity), 1)
-      
-      console.log('Account History API - Equity validation:', {
-        baseValue,
-        avgEquity,
-        avgPL,
-        equityToBaseRatio,
-        plToEquityMatch,
-        needsCorrection: equityToBaseRatio < 0.1 || plToEquityMatch < 0.1
+    const account = await alpaca.getAccount()
+
+    // 3. Robust Data Reconstruction
+    // We need a reliable "Anchor Point" (Base Value) to draw the graph
+    const currentEquity = parseFloat(account.equity || '0')
+    const lastEquity = parseFloat(account.last_equity || account.equity || '0')
+    const historyBase = history.base_value && history.base_value > 0 ? history.base_value : lastEquity
+    // Guard against obviously bad base values (e.g. 300k+ vs 123k equity)
+    const baseValue =
+      currentEquity > 0 && (historyBase > currentEquity * 1.5 || historyBase < currentEquity * 0.5)
+        ? currentEquity
+        : historyBase
+
+    let finalEquity: number[] = []
+
+    // Match 1W logic for all periods: use raw equity with a sanity check.
+    const rawEquity = (history.equity || []) as Array<number | null>
+
+    const numericEquity = rawEquity.filter((val): val is number => val !== null && val !== undefined)
+    const maxAbsEquity = numericEquity.length
+      ? Math.max(...numericEquity.map((val) => Math.abs(val)))
+      : 0
+    const hasNegative = numericEquity.some((val) => val < 0)
+
+    // Heuristic: if values are all small vs base, or 1D has negatives, treat as P&L
+    const looksLikePnl =
+      (baseValue > 0 && maxAbsEquity < baseValue * 0.2) ||
+      (period === '1D' && hasNegative && maxAbsEquity < baseValue * 0.5)
+
+    finalEquity = rawEquity
+      .map((val: number | null) => {
+        if (val === null || val === undefined) return null
+
+        if (looksLikePnl) {
+          return baseValue + val
+        }
+
+        // Sanity Check: Is this value suspiciously small? (e.g. 50 vs 100,000)
+        if (baseValue > 0 && Math.abs(val) < baseValue * 0.5) {
+          return baseValue + val // Treat as P&L
+        }
+        return val
       })
-      
-      // If equity is less than 10% of base_value OR equity closely matches profit_loss, it's likely P/L data
-      if (equityToBaseRatio < 0.1 || plToEquityMatch < 0.1) {
-        console.log('Account History API - CORRECTING: Equity appears to be P/L data, recalculating as base_value + profit_loss')
-        equityArray = profitLossArray.map((pl: number) => baseValue + pl)
+      .filter((val): val is number => val !== null)
+
+    // 4. Fill Gaps (Smoothing)
+    // If the API returns fewer points than expected, forward-fill the last valid value
+    const cleanEquity: number[] = []
+    let lastValid = baseValue // Start with base value
+
+    for (const val of finalEquity) {
+      if (val && !isNaN(val)) {
+        cleanEquity.push(val)
+        lastValid = val
+      } else {
+        cleanEquity.push(lastValid)
       }
     }
-    
-    // Store corrected equity back in history object
-    history.equity = equityArray
-    
-    // The Alpaca API returns portfolio history with 'equity' field containing total portfolio value
-    // (cash + market value of positions). After sanitization above, we now use the corrected equity.
-    // Handle case-insensitive field access in case SDK returns different casing
-    const finalEquityArray = history?.equity || history?.Equity || []
-    const valueArray = history?.value || history?.Value || []
-    const cashArray = history?.cash || history?.Cash || []
-    
-    // Check if equity and value arrays differ significantly (which would indicate value is cash)
-    if (finalEquityArray.length > 0 && valueArray.length > 0 && finalEquityArray.length === valueArray.length) {
-      const firstDiff = Math.abs(finalEquityArray[0] - valueArray[0])
-      const lastDiff = Math.abs(finalEquityArray[finalEquityArray.length - 1] - valueArray[valueArray.length - 1])
-      const avgEquity = finalEquityArray.reduce((a: number, b: number) => a + b, 0) / finalEquityArray.length
-      const avgValue = valueArray.reduce((a: number, b: number) => a + b, 0) / valueArray.length
-      
-      console.log('Account History API - Equity vs Value comparison:', {
-        firstDiff,
-        lastDiff,
-        avgEquity,
-        avgValue,
-        avgDiff: Math.abs(avgEquity - avgValue),
-        equityIsLarger: avgEquity > avgValue
-      })
-      
-      // If value is significantly smaller than equity, it's likely cash
-      // In that case, we should definitely use equity
-      if (avgValue < avgEquity * 0.9) {
-        console.log('Account History API - Value appears to be cash (smaller than equity), using equity field')
+
+    // 5. Final Safety Check
+    // If we still somehow have 0 data, return a flat line of the current balance
+    if (cleanEquity.length === 0) {
+      cleanEquity.push(currentEquity)
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        timestamp: history.timestamp,
+        equity: cleanEquity
       }
-    }
-    
-    if (finalEquityArray.length === 0 && valueArray.length > 0) {
-      console.warn('Account History API - WARNING: No equity field found, but value field exists. This might be cash, not equity.')
-    }
-    
-    // Return the history with explicit equity field (plus optional series for client comparison)
-    const responseData = {
-      timestamp: history?.timestamp || history?.Timestamp || [],
-      equity: finalEquityArray,
-      value: valueArray,
-      cash: cashArray,
-      profit_loss: history?.profit_loss || history?.ProfitLoss || [],
-      profit_loss_pct: history?.profit_loss_pct || history?.ProfitLossPct || [],
-      base_value: baseValue || (finalEquityArray.length > 0 ? finalEquityArray[0] : 0),
-      timeframe: history?.timeframe || timeframe
-    }
-    
-    return NextResponse.json({ success: true, data: responseData })
+    })
   } catch (error: any) {
-    console.error('Error fetching portfolio history:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message || 'Failed to fetch portfolio history' 
-    }, { status: 500 })
+    console.error('History Error:', error)
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }
-
