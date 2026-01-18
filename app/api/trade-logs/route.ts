@@ -117,8 +117,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<TradeLogsRespo
           accountType,
           accountId,
           supabase,
-          apiKey,
-          secretKey,
+          apiKey: apiKey ?? undefined,
+          secretKey: secretKey ?? undefined,
           isDemo,
           debug
         })
@@ -158,8 +158,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<TradeLogsRespo
           accountType,
           accountId,
           supabase,
-          apiKey,
-          secretKey,
+          apiKey: apiKey ?? undefined,
+          secretKey: secretKey ?? undefined,
           debug
         })
         
