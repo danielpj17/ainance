@@ -199,7 +199,7 @@ class AlpacaWrapper {
       })
       console.log(`Market order placed: ${side} ${qty} ${symbol}`)
       return order as Order
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error placing market order:', error)
       throw this.handleAlpacaError(error)
     }

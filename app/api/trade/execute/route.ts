@@ -85,7 +85,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeExecuteR
       baseUrl: isPaper ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
       paper: isPaper
     })
-    await alpacaClient.initialize()
+    
+    try {
+      await alpacaClient.initialize()
+    } catch (initError: any) {
+      return NextResponse.json({ 
+        success: false, 
+        error: `Alpaca authentication failed: ${initError.message || 'Invalid API keys'}` 
+      }, { status: 401 })
+    }
     
     // Determine the actual side for the Alpaca order
     // For closing: need to determine if it's a long (sell to close) or short (buy to close)
@@ -102,8 +110,54 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeExecuteR
           // If position qty is negative, it's a short position - need to buy to close
           orderSide = positionQty < 0 ? 'buy' : 'sell'
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('[TRADE-EXECUTE] Could not determine position side, defaulting to sell')
+      }
+    }
+    
+    // Check account status and market before placing order
+    let isMarketOpen = false
+    try {
+      await alpacaClient.getAccount()
+      isMarketOpen = await alpacaClient.isMarketOpen()
+    } catch (e) {
+      console.warn('[TRADE-EXECUTE] Could not get account/market status:', e)
+    }
+    
+    // Check if user wants to force queue the order when market is closed
+    const forceQueue = body.force_queue === true
+    
+    // Warn user if market is closed - unless they explicitly chose to queue
+    if (!isMarketOpen && type === 'market' && !forceQueue) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'MARKET_CLOSED',
+        message: 'Market is currently closed. Your order will be queued and executed when the market opens.',
+        market_closed: true
+      }, { status: 400 })
+    }
+    
+    // Cancel any existing open orders for this symbol before placing a close order
+    // This prevents "insufficient qty available" errors when shares are held by pending orders
+    if (action === 'close' || action === 'sell') {
+      try {
+        const openOrders = await alpacaClient.getOpenOrders()
+        const symbolOrders = openOrders.filter((o: any) => o.symbol.toUpperCase() === symbol.toUpperCase())
+        
+        if (symbolOrders.length > 0) {
+          console.log(`[TRADE-EXECUTE] Canceling ${symbolOrders.length} existing order(s) for ${symbol}`)
+          for (const order of symbolOrders) {
+            try {
+              await alpacaClient.cancelOrder(order.id)
+            } catch (cancelErr: any) {
+              console.warn(`[TRADE-EXECUTE] Could not cancel order ${order.id}:`, cancelErr.message)
+            }
+          }
+          // Wait a moment for cancellations to process
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      } catch (err: any) {
+        console.warn('[TRADE-EXECUTE] Could not check/cancel existing orders:', err.message)
       }
     }
     
@@ -261,15 +315,22 @@ export async function POST(req: NextRequest): Promise<NextResponse<TradeExecuteR
     const duration = Date.now() - startTime
     console.log(`[TRADE-EXECUTE] Completed in ${duration}ms`)
     
+    // Determine if order is queued (accepted but not filled, market closed)
+    const isQueued = !isMarketOpen && (orderResult.status === 'accepted' || orderResult.status === 'pending_new')
+    
     return NextResponse.json({
       success: true,
+      queued: isQueued,
+      message: isQueued 
+        ? `Order queued. Your ${orderSide} order for ${qty} shares of ${symbol} will execute when the market opens.`
+        : `Successfully ${orderSide === 'buy' ? 'bought' : 'sold'} ${qty} shares of ${symbol}`,
       trade: {
         id: orderResult.id,
         symbol: orderResult.symbol,
         side: orderSide,
         qty: parseFloat(orderResult.qty || String(qty)),
         price: finalPrice,
-        status: orderResult.status,
+        status: isQueued ? 'queued' : orderResult.status,
         created_at: timestamp,
         trade_log_id: tradeLogId
       }

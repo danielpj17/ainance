@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown, Settings, Check } from 'lucide-react'
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Activity, Wallet, ArrowUpRight, ArrowDownRight, Info, X, ChevronDown, Settings, Check, Clock } from 'lucide-react'
 import TradingBot from '@/components/TradingBot'
 import AccountStrategyModal from '@/components/AccountStrategyModal'
 import PortfolioChart from '@/components/PortfolioChart'
@@ -46,6 +46,22 @@ export default function PaperTradingPage() {
   const [positionToSell, setPositionToSell] = useState<CurrentPosition | null>(null)
   const [selectedCompletedTrade, setSelectedCompletedTrade] = useState<CompletedTrade | null>(null)
   const [showCompletedTradeModal, setShowCompletedTradeModal] = useState(false)
+  const [marketStatus, setMarketStatus] = useState<{ is_open: boolean; next_open: string | null } | null>(null)
+  const [checkingMarketStatus, setCheckingMarketStatus] = useState(false)
+  
+  // Queued orders tracking
+  interface QueuedOrder {
+    orderId: string
+    symbol: string
+    side: 'buy' | 'sell'
+    qty: number
+    queuedAt: string
+    nextMarketOpen: string | null
+  }
+  const [queuedOrders, setQueuedOrders] = useState<Map<string, QueuedOrder>>(new Map())
+  const [showQueuedOrderModal, setShowQueuedOrderModal] = useState(false)
+  const [selectedQueuedOrder, setSelectedQueuedOrder] = useState<QueuedOrder | null>(null)
+  const [cancellingOrder, setCancellingOrder] = useState(false)
   
   // Paper account selection
   const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([])
@@ -99,6 +115,7 @@ export default function PaperTradingPage() {
       const positionsInterval = setInterval(() => {
         loadCurrentPositions()
         loadCompletedTrades()
+        loadOpenOrders()
       }, 30000)
 
       return () => {
@@ -167,7 +184,7 @@ export default function PaperTradingPage() {
     
     try {
       setLoading(true)
-      await Promise.all([loadAccountData(), loadTradesData(), loadCurrentPositions(), loadCompletedTrades()])
+      await Promise.all([loadAccountData(), loadTradesData(), loadCurrentPositions(), loadCompletedTrades(), loadOpenOrders()])
     } catch (error) {
       console.error('Error loading data:', error)
       setMessage({ type: 'error', text: 'Failed to load data' })
@@ -358,6 +375,125 @@ export default function PaperTradingPage() {
     return Number.isFinite(parsed) ? parsed : 0
   }
 
+  const checkMarketStatus = async () => {
+    setCheckingMarketStatus(true)
+    try {
+      const response = await fetch(`/api/market/status?account_id=${selectedAccountId}`)
+      const data = await response.json()
+      if (data.success) {
+        setMarketStatus(data.data)
+      }
+    } catch (error) {
+      console.error('Error checking market status:', error)
+      setMarketStatus({ is_open: false, next_open: null })
+    } finally {
+      setCheckingMarketStatus(false)
+    }
+  }
+
+  // Load open orders from Alpaca to restore queued state after refresh
+  const loadOpenOrders = async () => {
+    try {
+      const response = await fetch(`/api/orders/open?account_type=paper&account_id=${selectedAccountId}`)
+      const data = await response.json()
+      
+      if (data.success && data.orders.length > 0) {
+        const newQueuedOrders = new Map<string, QueuedOrder>()
+        
+        for (const order of data.orders) {
+          // Only track sell orders (closing positions)
+          if (order.side === 'sell' || order.side === 'buy') {
+            newQueuedOrders.set(order.symbol, {
+              orderId: order.id,
+              symbol: order.symbol,
+              side: order.side,
+              qty: order.qty,
+              queuedAt: order.submitted_at || order.created_at,
+              nextMarketOpen: order.next_market_open
+            })
+          }
+        }
+        
+        if (newQueuedOrders.size > 0) {
+          setQueuedOrders(newQueuedOrders)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading open orders:', error)
+    }
+  }
+
+  const handleCancelQueuedOrder = async (queuedOrder: QueuedOrder) => {
+    setCancellingOrder(true)
+    try {
+      const sb = supabaseRef.current
+      const session = sb ? (await sb.auth.getSession()).data.session : null
+      
+      const response = await fetch('/api/trade/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        },
+        body: JSON.stringify({
+          order_id: queuedOrder.orderId,
+          account_type: 'paper',
+          account_id: selectedAccountId
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to cancel order')
+      }
+      
+      // Remove from queued orders
+      setQueuedOrders(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(queuedOrder.symbol)
+        return newMap
+      })
+      
+      setShowQueuedOrderModal(false)
+      setSelectedQueuedOrder(null)
+      setMessage({ type: 'success', text: `Cancelled queued ${queuedOrder.side === 'buy' ? 'buy back' : 'sell'} order for ${queuedOrder.symbol}` })
+      
+    } catch (error: any) {
+      console.error('Error cancelling order:', error)
+      setMessage({ type: 'error', text: error.message || 'Failed to cancel order' })
+    } finally {
+      setCancellingOrder(false)
+    }
+  }
+
+  const formatNextMarketOpen = (nextOpen: string | null): string => {
+    if (!nextOpen) return 'next market open'
+    
+    const date = new Date(nextOpen)
+    const now = new Date()
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const dayName = dayNames[date.getDay()]
+    
+    // Check if it's tomorrow
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const isTomorrow = date.toDateString() === tomorrow.toDateString()
+    
+    // Format time
+    const timeStr = date.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      timeZoneName: 'short'
+    })
+    
+    if (isTomorrow) {
+      return `tomorrow (${dayName}) at ${timeStr}`
+    }
+    
+    return `${dayName} at ${timeStr}`
+  }
+
   const fetchCurrentSellMetrics = async (symbol: string, currentPrice: number) => {
     setLoadingCurrentMetrics(true)
     setCurrentSellMetrics(null)
@@ -454,7 +590,7 @@ export default function PaperTradingPage() {
     }
   }
 
-  const handleSellPosition = async (position: CurrentPosition) => {
+  const handleSellPosition = async (position: CurrentPosition, forceQueue: boolean = false) => {
     setSellingPosition(position.symbol)
     try {
       // Determine if this is a short position (negative qty)
@@ -465,36 +601,61 @@ export default function PaperTradingPage() {
       const session = sb ? (await sb.auth.getSession()).data.session : null
       
       // Use unified trade execution endpoint - handles both Alpaca order and trade log atomically
+      const requestBody = {
+        action: 'close',
+        symbol: position.symbol,
+        qty: absQty,
+        type: 'market',
+        time_in_force: 'day',
+        strategy: position.strategy,
+        account_type: position.account_type,
+        account_id: selectedAccountId,
+        trade_pair_id: position.trade_pair_id,
+        decision_metrics: currentSellMetrics || {},
+        force_queue: forceQueue
+      }
+      
       const response = await fetch('/api/trade/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
         },
-        body: JSON.stringify({
-          action: 'close',
-          symbol: position.symbol,
-          qty: absQty,
-          type: 'market',
-          time_in_force: 'day',
-          strategy: position.strategy,
-          account_type: position.account_type,
-          account_id: selectedAccountId,
-          trade_pair_id: position.trade_pair_id,
-          decision_metrics: currentSellMetrics || {}
-        })
+        body: JSON.stringify(requestBody)
       })
       
       const data = await response.json()
       
       if (!data.success) {
+        // Check if it's a market closed error
+        if (data.error === 'MARKET_CLOSED') {
+          setMessage({ type: 'error', text: data.message || 'Market is closed. Choose "Queue Order" to execute when market opens.' })
+          return
+        }
         throw new Error(data.error || 'Failed to close position')
       }
       
-      const actionText = isShort ? 'bought back' : 'sold'
-      setMessage({ type: 'success', text: `Successfully ${actionText} ${absQty} shares of ${position.symbol}` })
+      // Handle queued orders
+      if (data.queued) {
+        const queuedOrder: QueuedOrder = {
+          orderId: data.trade.id,
+          symbol: position.symbol,
+          side: isShort ? 'buy' : 'sell',
+          qty: absQty,
+          queuedAt: new Date().toISOString(),
+          nextMarketOpen: marketStatus?.next_open || null
+        }
+        setQueuedOrders(prev => new Map(prev).set(position.symbol, queuedOrder))
+        const actionText = isShort ? 'buy back' : 'sell'
+        setMessage({ type: 'success', text: `Order queued! Your ${actionText} order for ${absQty} shares of ${position.symbol} will execute when the market opens.` })
+      } else {
+        const actionText = isShort ? 'bought back' : 'sold'
+        setMessage({ type: 'success', text: `Successfully ${actionText} ${absQty} shares of ${position.symbol}` })
+      }
+      
       setShowSellConfirm(false)
       setPositionToSell(null)
+      setMarketStatus(null)
       
       // Refresh positions
       await loadCurrentPositions()
@@ -901,6 +1062,21 @@ export default function PaperTradingPage() {
                             <Badge variant="outline" className="border-gray-600 text-gray-400">
                               {Math.abs(position.qty)} shares
                             </Badge>
+                            {queuedOrders.has(position.symbol) && (
+                              <Badge 
+                                className="bg-yellow-600 text-white animate-pulse cursor-pointer hover:bg-yellow-500"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const order = queuedOrders.get(position.symbol)
+                                  if (order) {
+                                    setSelectedQueuedOrder(order)
+                                    setShowQueuedOrderModal(true)
+                                  }
+                                }}
+                              >
+                                {position.qty < 0 ? "QUEUED BUY BACK" : "QUEUED SELL"} ⓘ
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-right">
                             <div className={`text-xl font-bold ${position.unrealized_pl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -968,6 +1144,7 @@ export default function PaperTradingPage() {
                                 onClick={() => {
                                   setPositionToSell(position)
                                   setShowSellConfirm(true)
+                                  checkMarketStatus()
                                 }}
                                 disabled={sellingPosition === position.symbol}
                                 className="border-red-500 text-red-400 hover:bg-red-500/10"
@@ -1552,12 +1729,51 @@ export default function PaperTradingPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => {
           setShowSellConfirm(false)
           setPositionToSell(null)
+          setMarketStatus(null)
         }}>
           <div className="bg-[#1a1d2e] rounded-lg border border-gray-700 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <h2 className="text-xl font-bold text-white mb-4">
                 {positionToSell.qty < 0 ? 'Confirm Buy Back (Close Short)' : 'Confirm Sell'}
               </h2>
+              
+              {/* Market Status Banner */}
+              <div className={`mb-4 p-3 rounded-lg border ${
+                checkingMarketStatus 
+                  ? 'bg-gray-800/50 border-gray-600' 
+                  : marketStatus?.is_open 
+                    ? 'bg-green-900/30 border-green-600' 
+                    : 'bg-yellow-900/30 border-yellow-600'
+              }`}>
+                {checkingMarketStatus ? (
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking market status...
+                  </div>
+                ) : marketStatus?.is_open ? (
+                  <div className="flex items-center gap-2 text-green-400">
+                    <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                    <span className="font-medium">Market is OPEN</span>
+                    <span className="text-green-300 text-sm">- Order will execute immediately</span>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 text-yellow-400 mb-1">
+                      <div className="h-2 w-2 rounded-full bg-yellow-400" />
+                      <span className="font-medium">Market is CLOSED</span>
+                    </div>
+                    <p className="text-yellow-300 text-sm">
+                      Orders placed now will be queued and execute when the market opens 
+                      {marketStatus?.next_open && (
+                        <span className="block mt-1 text-yellow-200">
+                          Next open: {new Date(marketStatus.next_open).toLocaleString()}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+              
               <p className="text-gray-400 mb-6">
                 Are you sure you want to {positionToSell.qty < 0 ? 'buy back' : 'sell'} <strong className="text-white">{Math.abs(positionToSell.qty)} shares</strong> of <strong className="text-white">{positionToSell.symbol}</strong>?
                 {positionToSell.qty < 0 && (
@@ -1588,29 +1804,151 @@ export default function PaperTradingPage() {
                   </span>
                 </div>
               </div>
+              
+              {/* Buttons - different options based on market status */}
+              <div className="flex flex-col gap-3">
+                {!marketStatus?.is_open && !checkingMarketStatus && (
+                  <Button
+                    className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
+                    onClick={() => {
+                      handleSellPosition(positionToSell, true)
+                    }}
+                    disabled={sellingPosition === positionToSell.symbol}
+                  >
+                    {sellingPosition === positionToSell.symbol ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Queueing...
+                      </>
+                    ) : (
+                      <>
+                        Queue {positionToSell.qty < 0 ? 'Buy Back' : 'Sell'} Order
+                        <span className="ml-2 text-xs opacity-75">(executes at market open)</span>
+                      </>
+                    )}
+                  </Button>
+                )}
+                
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-gray-600 text-gray-400 hover:bg-gray-700"
+                    onClick={() => {
+                      setShowSellConfirm(false)
+                      setPositionToSell(null)
+                      setMarketStatus(null)
+                    }}
+                  >
+                    {!marketStatus?.is_open && !checkingMarketStatus ? 'Wait for Market Open' : 'Cancel'}
+                  </Button>
+                  
+                  {(marketStatus?.is_open || checkingMarketStatus) && (
+                    <Button
+                      className={`flex-1 ${positionToSell.qty < 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'} text-white`}
+                      onClick={() => {
+                        handleSellPosition(positionToSell, false)
+                      }}
+                      disabled={sellingPosition === positionToSell.symbol || checkingMarketStatus}
+                    >
+                      {sellingPosition === positionToSell.symbol ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {positionToSell.qty < 0 ? 'Buying back...' : 'Selling...'}
+                        </>
+                      ) : (
+                        positionToSell.qty < 0 ? 'Confirm Buy Back' : 'Confirm Sell'
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Queued Order Info Modal */}
+      {showQueuedOrderModal && selectedQueuedOrder && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => {
+          setShowQueuedOrderModal(false)
+          setSelectedQueuedOrder(null)
+        }}>
+          <div className="bg-[#1a1d2e] rounded-lg border border-yellow-600 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-yellow-600/20 flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-yellow-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Queued {selectedQueuedOrder.side === 'buy' ? 'Buy Back' : 'Sell'} Order
+                  </h2>
+                  <p className="text-yellow-400 text-sm">Pending execution</p>
+                </div>
+              </div>
+              
+              <div className="bg-yellow-900/20 border border-yellow-600/50 rounded-lg p-4 mb-6">
+                <p className="text-yellow-200 text-center">
+                  {selectedQueuedOrder.side === 'buy' ? 'Buy back' : 'Sell'} order for <strong className="text-white">{selectedQueuedOrder.qty} shares</strong> of <strong className="text-white">{selectedQueuedOrder.symbol}</strong> is queued for <strong className="text-yellow-400">{formatNextMarketOpen(selectedQueuedOrder.nextMarketOpen)}</strong>
+                </p>
+              </div>
+              
+              <div className="bg-[#252838] p-4 rounded-lg mb-6 space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Symbol:</span>
+                  <span className="text-white font-semibold">{selectedQueuedOrder.symbol}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Order Type:</span>
+                  <span className={`font-semibold ${selectedQueuedOrder.side === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                    {selectedQueuedOrder.side === 'buy' ? 'Buy Back (Close Short)' : 'Sell (Close Long)'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Quantity:</span>
+                  <span className="text-white font-semibold">{selectedQueuedOrder.qty} shares</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Queued At:</span>
+                  <span className="text-white">{new Date(selectedQueuedOrder.queuedAt).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Executes:</span>
+                  <span className="text-yellow-400 font-semibold">
+                    {selectedQueuedOrder.nextMarketOpen 
+                      ? new Date(selectedQueuedOrder.nextMarketOpen).toLocaleString()
+                      : 'Next market open'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Order ID:</span>
+                  <span className="text-gray-300 text-sm font-mono">{selectedQueuedOrder.orderId.slice(0, 8)}...</span>
+                </div>
+              </div>
+              
               <div className="flex gap-3">
                 <Button
                   variant="outline"
                   className="flex-1 border-gray-600 text-gray-400 hover:bg-gray-700"
                   onClick={() => {
-                    setShowSellConfirm(false)
-                    setPositionToSell(null)
+                    setShowQueuedOrderModal(false)
+                    setSelectedQueuedOrder(null)
                   }}
                 >
-                  Cancel
+                  Close
                 </Button>
                 <Button
-                  className={`flex-1 ${positionToSell.qty < 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'} text-white`}
-                  onClick={() => handleSellPosition(positionToSell)}
-                  disabled={sellingPosition === positionToSell.symbol}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => handleCancelQueuedOrder(selectedQueuedOrder)}
+                  disabled={cancellingOrder}
                 >
-                  {sellingPosition === positionToSell.symbol ? (
+                  {cancellingOrder ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {positionToSell.qty < 0 ? 'Buying back...' : 'Selling...'}
+                      Cancelling...
                     </>
                   ) : (
-                    positionToSell.qty < 0 ? 'Confirm Buy Back' : 'Confirm Sell'
+                    'Cancel Queued Order'
                   )}
                 </Button>
               </div>
