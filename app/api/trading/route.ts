@@ -1923,6 +1923,7 @@ async function executeTradeSignal(
     // Get account info for final validation
     const account = await alpacaClient.getAccount()
     const buyingPower = parseFloat(account.buying_power)
+    const cash = parseFloat(account.cash)
     
     // For cash accounts, use true cash (equity - long_market_value) to prevent margin trading
     // For margin accounts, use buying power which includes margin
@@ -1945,11 +1946,12 @@ async function executeTradeSignal(
       }
       
       // Validate trade parameters
+      // Use true cash for accountBalance (for validation), availableFunds for buyingPower
       const validation = TradingErrorHandler.validateTradeParams({
         symbol: signal.symbol,
         quantity: positionSize,
         price: signal.price,
-        accountBalance: cash,
+        accountBalance: isCashAccount ? availableFunds : cash,  // True cash for cash accounts, raw cash for margin
         buyingPower: availableFunds
       })
 
