@@ -794,8 +794,11 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log('═══════════════════════════════════════════════════════════')
 
     // Initialize Alpaca client
-    // Determine if paper trading based on accountType ('paper' or 'live')
-    const isPaper = config.accountType === 'paper'
+    // Determine if paper trading: if accountId is provided, it's paper trading
+    // Otherwise, check config.accountType (which should be 'paper' or 'live' from mode)
+    // Note: config.accountType might be overwritten with 'cash'/'margin' from settings,
+    // so we prioritize accountId presence to determine paper trading
+    const isPaper = accountId !== undefined || config.accountType === 'paper'
     const alpacaKeys = getAlpacaKeys(apiKeys, isPaper)
     const alpacaClient = createAlpacaClient({
       apiKey: alpacaKeys.apiKey,
