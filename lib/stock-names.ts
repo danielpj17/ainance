@@ -101,17 +101,47 @@ const STOCK_DATABASE = [
   { symbol: 'QQQ', name: 'Invesco QQQ Trust', exchange: 'NASDAQ' },
   { symbol: 'IWM', name: 'iShares Russell 2000 ETF', exchange: 'ARCA' },
   { symbol: 'VTI', name: 'Vanguard Total Stock Market ETF', exchange: 'ARCA' },
+  { symbol: 'DIA', name: 'SPDR Dow Jones Industrial Average ETF Trust', exchange: 'ARCA' },
+  { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', exchange: 'ARCA' },
   
   // Communication
   { symbol: 'T', name: 'AT&T Inc.', exchange: 'NYSE' },
   { symbol: 'VZ', name: 'Verizon Communications Inc.', exchange: 'NYSE' },
   { symbol: 'TMUS', name: 'T-Mobile US Inc.', exchange: 'NASDAQ' },
+  { symbol: 'CMCSA', name: 'Comcast Corporation', exchange: 'NASDAQ' },
   
   // Automotive
   { symbol: 'F', name: 'Ford Motor Company', exchange: 'NYSE' },
   { symbol: 'GM', name: 'General Motors Company', exchange: 'NYSE' },
   { symbol: 'RIVN', name: 'Rivian Automotive Inc.', exchange: 'NASDAQ' },
   { symbol: 'LCID', name: 'Lucid Group Inc.', exchange: 'NASDAQ' },
+  { symbol: 'NIO', name: 'NIO Inc.', exchange: 'NYSE' },
+  
+  // Cloud & Software
+  { symbol: 'PLTR', name: 'Palantir Technologies Inc.', exchange: 'NYSE' },
+  { symbol: 'SNOW', name: 'Snowflake Inc.', exchange: 'NYSE' },
+  { symbol: 'DDOG', name: 'Datadog Inc.', exchange: 'NASDAQ' },
+  { symbol: 'NET', name: 'Cloudflare Inc.', exchange: 'NYSE' },
+  { symbol: 'CRWD', name: 'CrowdStrike Holdings Inc.', exchange: 'NASDAQ' },
+  
+  // Crypto & Fintech
+  { symbol: 'RIOT', name: 'Riot Platforms Inc.', exchange: 'NASDAQ' },
+  { symbol: 'MARA', name: 'Marathon Digital Holdings Inc.', exchange: 'NASDAQ' },
+  
+  // Clean Energy
+  { symbol: 'PLUG', name: 'Plug Power Inc.', exchange: 'NASDAQ' },
+  { symbol: 'FCEL', name: 'FuelCell Energy Inc.', exchange: 'NASDAQ' },
+  { symbol: 'ENPH', name: 'Enphase Energy Inc.', exchange: 'NASDAQ' },
+  
+  // Gig Economy
+  { symbol: 'DASH', name: 'DoorDash Inc.', exchange: 'NYSE' },
+  { symbol: 'ABNB', name: 'Airbnb Inc.', exchange: 'NASDAQ' },
+  
+  // Leveraged ETFs
+  { symbol: 'TQQQ', name: 'ProShares UltraPro QQQ', exchange: 'NASDAQ' },
+  { symbol: 'SQQQ', name: 'ProShares UltraPro Short QQQ', exchange: 'NASDAQ' },
+  { symbol: 'SPXL', name: 'Direxion Daily S&P 500 Bull 3X Shares', exchange: 'NYSE' },
+  { symbol: 'SPXS', name: 'Direxion Daily S&P 500 Bear 3X Shares', exchange: 'NYSE' },
 ];
 
 // Create a map for fast lookups

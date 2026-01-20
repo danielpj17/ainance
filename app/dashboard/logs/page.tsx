@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DollarSign, TrendingUp, TrendingDown, Activity, RefreshCw, Loader2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { getCompanyName } from '@/lib/stock-names'
 
 export const dynamic = 'force-dynamic'
 
@@ -270,7 +271,12 @@ export default function TradeLogsPage() {
                     <TableBody>
                       {closedPositions.map((position) => (
                         <TableRow key={position.id.toString()} className="border-gray-800 hover:bg-[#252838]">
-                          <TableCell className="font-medium text-white">{position.symbol}</TableCell>
+                          <TableCell className="font-medium text-white">
+                            {position.symbol}
+                            {getCompanyName(position.symbol) && (
+                              <div className="text-xs text-gray-400">{getCompanyName(position.symbol)}</div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-gray-400">{formatDate(position.entry_date)}</TableCell>
                           <TableCell className="text-gray-400">{formatDate(position.exit_date)}</TableCell>
                           <TableCell className="text-white">{position.qty}</TableCell>
@@ -333,7 +339,12 @@ export default function TradeLogsPage() {
                     <TableBody>
                       {openPositions.map((position) => (
                         <TableRow key={position.symbol} className="border-gray-800 hover:bg-[#252838]">
-                          <TableCell className="font-medium text-white">{position.symbol}</TableCell>
+                          <TableCell className="font-medium text-white">
+                            {position.symbol}
+                            {getCompanyName(position.symbol) && (
+                              <div className="text-xs text-gray-400">{getCompanyName(position.symbol)}</div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-gray-400">{formatDate(position.first_trade_date)}</TableCell>
                           <TableCell className="text-white">{position.total_qty}</TableCell>
                           <TableCell className="text-gray-400">{formatCurrency(position.avg_cost)}</TableCell>
@@ -407,7 +418,12 @@ export default function TradeLogsPage() {
                       {allTrades.map((trade) => (
                         <TableRow key={trade.id.toString()} className="border-gray-800 hover:bg-[#252838]">
                           <TableCell className="text-gray-400">{formatDate(trade.trade_timestamp)}</TableCell>
-                          <TableCell className="font-medium text-white">{trade.symbol}</TableCell>
+                          <TableCell className="font-medium text-white">
+                            {trade.symbol}
+                            {getCompanyName(trade.symbol) && (
+                              <div className="text-xs text-gray-400">{getCompanyName(trade.symbol)}</div>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Badge 
                               variant={trade.action === 'buy' ? 'default' : 'destructive'}
