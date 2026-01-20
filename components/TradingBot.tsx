@@ -755,7 +755,11 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
           {botStatus?.error && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>Bot Error: {botStatus.error}</AlertDescription>
+              <AlertDescription>
+                Bot Error: {typeof botStatus.error === 'string' 
+                  ? botStatus.error 
+                  : JSON.stringify(botStatus.error)}
+              </AlertDescription>
             </Alert>
           )}
 
