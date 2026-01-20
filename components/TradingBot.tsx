@@ -155,7 +155,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
           
           if (strategyData.success && strategyData.settings) {
             // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:160',message:'Account settings loaded',data:{accountId,account_type_from_settings:strategyData.settings.account_type,mode,strategy:strategyData.settings.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:160',message:'Account settings loaded',data:{accountId,account_type_from_settings:strategyData.settings.account_type,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
             // #endregion
             // Update config with actual settings from database
             const accountTypeFromSettings = strategyData.settings.account_type || 'cash'
@@ -173,7 +173,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
               accountType: accountTypeFromSettings // Use account_type from settings, not mode
             }
             // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:178',message:'Config created with accountType',data:{accountType:newConfig.accountType,account_type:newConfig.settings.account_type,strategy:newConfig.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:178',message:'Config created with accountType',data:{accountType:newConfig.accountType,account_type:newConfig.settings.account_type},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
             // #endregion
             setConfig(newConfig)
             setSettingsLoaded(true)
@@ -406,7 +406,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
           const strategyData = await strategyResponse.json()
           if (strategyData.success && strategyData.settings) {
             // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:403',message:'Starting bot - account settings',data:{accountId,account_type_from_settings:strategyData.settings.account_type,mode,strategy:strategyData.settings.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:403',message:'Starting bot - account settings',data:{accountId,account_type_from_settings:strategyData.settings.account_type,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
             // #endregion
             // Update config with actual settings
             const accountTypeFromSettings = strategyData.settings.account_type || 'cash'
@@ -424,7 +424,7 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
               accountType: accountTypeFromSettings // Use account_type from settings, not mode
             }
             // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:421',message:'Bot config created for start',data:{accountType:botConfig.accountType,account_type:botConfig.settings.account_type,strategy:botConfig.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:421',message:'Bot config created for start',data:{accountType:botConfig.accountType,account_type:botConfig.settings.account_type},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
             // #endregion
             console.log('📝 Starting bot with account strategy settings:', botConfig)
           }
