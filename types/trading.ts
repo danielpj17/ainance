@@ -240,6 +240,7 @@ export interface TradeExecuteRequest {
   account_id?: string
   trade_pair_id?: string
   decision_metrics?: DecisionMetrics
+  force_queue?: boolean
 }
 
 /**
