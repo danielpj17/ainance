@@ -82,7 +82,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       // Step 3: Extract Alpaca Keys
       console.log('Step 3: Extracting Alpaca keys...')
-      const alpacaKeys = getAlpacaKeys(apiKeys[0], 'paper', 'cash')
+      const alpacaKeys = getAlpacaKeys(apiKeys[0], true) // true = paper trading
       
       results.step3_alpacaKeys = {
         hasApiKey: !!alpacaKeys.apiKey,
