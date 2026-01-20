@@ -38,13 +38,11 @@ export interface BotConfig {
   symbols: string[]
   interval: number
   settings: {
-    strategy: 'cash' | '25k_plus'
     account_type: 'cash' | 'margin'
     confidence_threshold?: number
     max_exposure?: number
   }
   accountType: string
-  strategy: string
 }
 
 interface TradingBotProps {
@@ -69,12 +67,10 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
     symbols: [], // Will be loaded from account settings or bot status
     interval: 60, // Bot uses 60 seconds
     settings: {
-      strategy: 'cash', // Will be loaded from account settings
       account_type: 'cash',
       max_exposure: 90
     },
-    accountType: mode,
-    strategy: 'cash'
+    accountType: mode
   })
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   
@@ -158,19 +154,27 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
           console.log('📥 Account settings response:', strategyData)
           
           if (strategyData.success && strategyData.settings) {
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:160',message:'Account settings loaded',data:{accountId,account_type_from_settings:strategyData.settings.account_type,mode,strategy:strategyData.settings.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             // Update config with actual settings from database
+            const accountTypeFromSettings = strategyData.settings.account_type || 'cash'
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:165',message:'Setting accountType',data:{accountTypeFromSettings,oldValue:mode,willUse:accountTypeFromSettings},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             const newConfig = {
               symbols: [], // Will show actual scanned stocks from bot status
               interval: 60, // Bot uses 60 seconds
               settings: {
-                strategy: strategyData.settings.strategy || 'cash',
-                account_type: strategyData.settings.account_type || 'cash',
+                account_type: accountTypeFromSettings,
                 confidence_threshold: strategyData.settings.confidence_threshold || 0.65,
                 max_exposure: strategyData.settings.max_exposure || 90
               },
-              accountType: mode,
-              strategy: strategyData.settings.strategy || 'cash'
+              accountType: accountTypeFromSettings // Use account_type from settings, not mode
             }
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:178',message:'Config created with accountType',data:{accountType:newConfig.accountType,account_type:newConfig.settings.account_type,strategy:newConfig.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             setConfig(newConfig)
             setSettingsLoaded(true)
             console.log('✅ Loaded account settings into config:', newConfig)
@@ -401,19 +405,27 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
           })
           const strategyData = await strategyResponse.json()
           if (strategyData.success && strategyData.settings) {
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:403',message:'Starting bot - account settings',data:{accountId,account_type_from_settings:strategyData.settings.account_type,mode,strategy:strategyData.settings.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             // Update config with actual settings
+            const accountTypeFromSettings = strategyData.settings.account_type || 'cash'
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:408',message:'Setting accountType for bot start',data:{accountTypeFromSettings,oldValue:mode,willUse:accountTypeFromSettings},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             botConfig = {
               symbols: [], // Will be populated by scanner in backend
               interval: 60, // 60 seconds between cycles
               settings: {
-                strategy: strategyData.settings.strategy || 'cash',
-                account_type: strategyData.settings.account_type || 'cash',
+                account_type: accountTypeFromSettings,
                 confidence_threshold: strategyData.settings.confidence_threshold,
                 max_exposure: strategyData.settings.max_exposure
               },
-              accountType: mode,
-              strategy: strategyData.settings.strategy || 'cash'
+              accountType: accountTypeFromSettings // Use account_type from settings, not mode
             }
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TradingBot.tsx:421',message:'Bot config created for start',data:{accountType:botConfig.accountType,account_type:botConfig.settings.account_type,strategy:botConfig.strategy},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             console.log('📝 Starting bot with account strategy settings:', botConfig)
           }
         } catch (err) {
@@ -893,13 +905,13 @@ export default function TradingBot({ mode, accountId, accountName, onConfigureSt
                       </div>
                     </div>
                     <div>
-                      <span className="text-gray-400">Strategy:</span>
+                      <span className="text-gray-400">Account Type:</span>
                       <div className="text-white font-medium">
                         {!settingsLoaded ? (
                           <span className="text-gray-500">Loading...</span>
                         ) : (
-                          <span className={botStatus?.config?.settings?.strategy || config.settings.strategy === '25k_plus' ? 'text-green-400' : ''}>
-                            {botStatus?.config?.settings?.strategy || config.settings.strategy}
+                          <span className={botStatus?.config?.settings?.account_type || config.settings.account_type === 'margin' ? 'text-green-400' : ''}>
+                            {botStatus?.config?.settings?.account_type || config.settings.account_type}
                           </span>
                         )}
                       </div>

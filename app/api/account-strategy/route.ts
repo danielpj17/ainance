@@ -5,7 +5,6 @@ import { createClient } from '@/utils/supabase/server'
 import { AlgorithmType } from '@/lib/trading-algorithms'
 
 interface StrategySettings {
-  strategy: 'cash' | '25k_plus'
   account_type: 'cash' | 'margin'
   confidence_threshold: number
   sell_confidence_threshold: number
@@ -61,7 +60,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         settings: {
-          strategy: 'cash',
           account_type: 'cash',
           confidence_threshold: 0.65,
           sell_confidence_threshold: 0.50,
@@ -79,7 +77,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       settings: {
-        strategy: settings.strategy,
         account_type: settings.account_type,
         confidence_threshold: settings.confidence_threshold,
         sell_confidence_threshold: settings.sell_confidence_threshold,
@@ -180,7 +177,6 @@ export async function PUT(req: NextRequest) {
     const rpcParams = {
       account_uuid: account_id,
       user_uuid: userId,
-      p_strategy: settings.strategy || null,
       p_account_type: settings.account_type || null,
       p_confidence_threshold: settings.confidence_threshold !== undefined ? parseFloat(settings.confidence_threshold) : null,
       p_sell_confidence_threshold: settings.sell_confidence_threshold !== undefined ? parseFloat(settings.sell_confidence_threshold) : null,
@@ -229,7 +225,6 @@ export async function PUT(req: NextRequest) {
       success: true,
       message: 'Settings updated successfully',
       settings: {
-        strategy: updated.strategy,
         account_type: updated.account_type,
         confidence_threshold: updated.confidence_threshold,
         sell_confidence_threshold: updated.sell_confidence_threshold,

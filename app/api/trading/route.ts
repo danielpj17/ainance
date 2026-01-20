@@ -4,7 +4,7 @@ export const maxDuration = 30
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, getDemoUserIdServer, getUserIdFromRequest, getAlpacaKeysForUser } from '@/utils/supabase/server'
 import { tradingModel, TradingSignal, TradingSettings } from '@/lib/trading-model'
-import { createAlpacaClient, getAlpacaKeys, isPaperTrading } from '@/lib/alpaca-client'
+import { createAlpacaClient, getAlpacaKeys } from '@/lib/alpaca-client'
 import { initializeNewsAnalyzer, getNewsAnalyzer } from '@/lib/news-sentiment'
 import { TradingErrorHandler, withRetry } from '@/lib/error-handler'
 import { isDemoMode } from '@/lib/demo-user'
@@ -30,7 +30,6 @@ export interface BotConfig {
   interval: number // seconds
   settings: TradingSettings
   accountType: string
-  strategy: string
 }
 
 // In-memory bot state (for interval management)
@@ -795,7 +794,9 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
     console.log('═══════════════════════════════════════════════════════════')
 
     // Initialize Alpaca client
-    const alpacaKeys = getAlpacaKeys(apiKeys, config.accountType, config.strategy)
+    // Determine if paper trading based on accountType ('paper' or 'live')
+    const isPaper = config.accountType === 'paper'
+    const alpacaKeys = getAlpacaKeys(apiKeys, isPaper)
     const alpacaClient = createAlpacaClient({
       apiKey: alpacaKeys.apiKey,
       secretKey: alpacaKeys.secretKey,
@@ -865,8 +866,18 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
       console.warn('⚠️  Could not fetch confidence thresholds, using defaults:', error)
     }
     
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trading/route.ts:868',message:'Checking accountType for cash rules',data:{config_accountType:config.accountType,config_settings_account_type:config.settings?.account_type,isShortSellingEnabled_before:isShortSellingEnabled},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     if (config.accountType === 'cash') {
       isShortSellingEnabled = false
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trading/route.ts:870',message:'Cash account detected - short selling disabled',data:{config_accountType:config.accountType},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+    } else {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/dcfcf856-6408-4731-a070-f14f4cce9c2e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trading/route.ts:873',message:'Non-cash account - short selling check skipped',data:{config_accountType:config.accountType},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     }
 
     // Log the final values being used
@@ -1421,12 +1432,12 @@ export async function executeTradingLoop(supabase: any, userId: string, config: 
 
     // STEP 11: Intelligent Capital Allocation for BUY Signals
     const account = await alpacaClient.getAccount()
-    // For cash accounts, use actual cash to prevent margin trading
+    // For cash accounts, use true cash (equity - long_market_value) to prevent margin trading
     // For margin accounts, use buying power which includes margin
     const isCashAccount = config.accountType === 'cash'
     let availableCash = isCashAccount 
-      ? parseFloat(account.cash) 
-      : parseFloat(account.buying_power)
+      ? parseFloat(account.equity) - parseFloat(account.long_market_value)  // True cash
+      : parseFloat(account.buying_power)  // Margin buying power
     
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`💰 ALLOCATING CAPITAL FOR BUY SIGNALS: ${buySignals.length} candidates`)
@@ -1846,7 +1857,6 @@ async function closeAllPositions(
             qty: qty,
             price: currentPrice,
             trade_timestamp: new Date().toISOString(),
-            strategy: config.strategy,
             account_type: config.accountType,
             alpaca_order_id: order.id,
             order_status: order.status,
@@ -1912,16 +1922,18 @@ async function executeTradeSignal(
 
     // Get account info for final validation
     const account = await alpacaClient.getAccount()
-    const cash = parseFloat(account.cash)
     const buyingPower = parseFloat(account.buying_power)
     
-    // For cash accounts, use actual cash to prevent margin trading
+    // For cash accounts, use true cash (equity - long_market_value) to prevent margin trading
     // For margin accounts, use buying power which includes margin
     const isCashAccount = config.accountType === 'cash'
-    const availableFunds = isCashAccount ? cash : buyingPower
+    const availableFunds = isCashAccount 
+      ? parseFloat(account.equity) - parseFloat(account.long_market_value)  // True cash
+      : buyingPower  // Margin buying power
 
+    // Strictly disable shorting in cash accounts
     if (isCashAccount && signal.action === 'sell' && signal.is_held === false) {
-      console.log(`❌ Cash account short attempt blocked for ${signal.symbol}`)
+      console.log(`❌ Shorting disabled in Cash account for ${signal.symbol}`)
       return
     }
 
@@ -2013,7 +2025,6 @@ async function executeTradeSignal(
         qty: positionSize,
         price: actualPrice, // Use actual execution price
         trade_timestamp: new Date().toISOString(),
-        strategy: config.strategy,
         account_type: config.accountType,
         alpaca_order_id: order.id,
         order_status: order.status,
@@ -2077,7 +2088,6 @@ async function executeTradeSignal(
           buy_timestamp: tradeTimestamp, // Use actual order fill/submit time from Alpaca
           buy_price: actualPrice, // Use actual execution price
           buy_decision_metrics: decisionMetrics,
-          strategy: config.strategy,
           account_type: config.accountType,
           alpaca_order_id: order.id,
           order_status: order.status,

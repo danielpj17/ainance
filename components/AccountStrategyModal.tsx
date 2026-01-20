@@ -20,7 +20,6 @@ interface AccountStrategyModalProps {
 }
 
 interface StrategySettings {
-  strategy: 'cash' | '25k_plus'
   account_type: 'cash' | 'margin'
   confidence_threshold: number
   sell_confidence_threshold: number
@@ -32,7 +31,6 @@ interface StrategySettings {
 
 export default function AccountStrategyModal({ accountId, accountName, isOpen, onClose, onSave }: AccountStrategyModalProps) {
   const [settings, setSettings] = useState<StrategySettings>({
-    strategy: 'cash',
     account_type: 'cash',
     confidence_threshold: 0.65,
     sell_confidence_threshold: 0.50,
@@ -182,25 +180,6 @@ export default function AccountStrategyModal({ accountId, accountName, isOpen, o
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Strategy Type */}
-              <div>
-                <Label htmlFor="strategy" className="text-white">Trading Strategy</Label>
-                <Select value={settings.strategy} onValueChange={(value: any) => setSettings({ ...settings, strategy: value })}>
-                  <SelectTrigger id="strategy" className="bg-[#252838] border-gray-700 text-white mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent container={modalRef.current}>
-                    <SelectItem value="cash">Cash Account</SelectItem>
-                    <SelectItem value="25k_plus">$25k+ Account (Pattern Day Trader)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-400 mt-1">
-                  {settings.strategy === 'cash' 
-                    ? 'Limited to 3 day trades per 5 trading days' 
-                    : 'Unlimited day trades (requires $25k+ balance)'}
-                </p>
-              </div>
-
               {/* Account Type */}
               <div>
                 <Label htmlFor="account_type" className="text-white">Account Type</Label>

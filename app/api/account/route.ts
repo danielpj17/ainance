@@ -65,10 +65,17 @@ export async function GET(req: NextRequest) {
     console.log('Account API - Fetching account data')
     const account = await alpaca.getAccount()
     
+    // Calculate true cash (equity - long_market_value) to show actual settled cash
+    // This ensures dashboard shows actual cash, not 4x margin buying power
+    const true_cash = parseFloat(account.equity) - parseFloat(account.long_market_value)
+    account.cash = true_cash.toString()
+    
     console.log('Account API - Account data received:', {
       equity: account.equity,
       cash: account.cash,
-      buying_power: account.buying_power
+      true_cash: true_cash,
+      buying_power: account.buying_power,
+      long_market_value: account.long_market_value
     })
     
     return NextResponse.json({ success: true, data: account })

@@ -566,19 +566,11 @@ export function createAlpacaClient(config: AlpacaConfig): AlpacaWrapper {
   return new AlpacaWrapper(config)
 }
 
-// Helper function to determine if using paper trading
-export function isPaperTrading(accountType: string, strategy: string): boolean {
-  return accountType === 'paper' || strategy === 'cash'
-}
-
 // Helper function to get appropriate API keys
 export function getAlpacaKeys(
   apiKeys: any,
-  accountType: string,
-  strategy: string
+  isPaper: boolean
 ): { apiKey: string, secretKey: string, paper: boolean } {
-  const isPaper = isPaperTrading(accountType, strategy)
-  
   return {
     apiKey: isPaper ? apiKeys.alpaca_paper_key : apiKeys.alpaca_live_key,
     secretKey: isPaper ? apiKeys.alpaca_paper_secret : apiKeys.alpaca_live_secret,

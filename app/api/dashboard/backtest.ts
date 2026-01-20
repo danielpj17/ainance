@@ -41,7 +41,8 @@ export async function POST(req: NextRequest) {
     if (!settings) {
       return NextResponse.json({ error: 'No API keys found' }, { status: 403 });
     }
-    const alpacaKeys = getAlpacaKeys(settings, narrowedAccountType, narrowedStrategy);
+    // Backtest always uses paper trading
+    const alpacaKeys = getAlpacaKeys(settings, true);
     const alpaca = new AlpacaWrapper({ ...alpacaKeys, baseUrl: 'https://paper-api.alpaca.markets' });
 
     // Fetch 1-min and 5-min bars for all symbols
