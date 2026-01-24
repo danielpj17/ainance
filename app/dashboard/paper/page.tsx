@@ -755,15 +755,17 @@ export default function PaperTradingPage() {
     return account[field] || defaultValue
   }
 
-  const positionsMarketValue = currentPositions.reduce((sum, position) => {
-    return sum + Math.abs(parseAmount(position.current_value))
-  }, 0)
+  const totalPositionValue = useMemo(() => {
+    const positionsMarketValue = currentPositions.reduce((sum, position) => {
+      return sum + Math.abs(parseAmount(position.current_value))
+    }, 0)
 
-  const accountGrossMarketValue = account
-    ? Math.abs(parseAmount(account.long_market_value)) + Math.abs(parseAmount(account.short_market_value))
-    : 0
+    const accountGrossMarketValue = account
+      ? Math.abs(parseAmount(account.long_market_value)) + Math.abs(parseAmount(account.short_market_value))
+      : 0
 
-  const totalPositionValue = positionsMarketValue > 0 ? positionsMarketValue : accountGrossMarketValue
+    return positionsMarketValue > 0 ? positionsMarketValue : accountGrossMarketValue
+  }, [currentPositions, account])
 
   const { winRate, closedTradesCount } = useMemo(() => {
     const closedTradesCount = completedTrades.length
@@ -957,14 +959,14 @@ export default function PaperTradingPage() {
                 if (!account) return '$0.00'
                 
                 const isMarginAccount = accountType === 'margin'
-                const multiplier = parseFloat(account.multiplier || '4')
-                const rawCash = parseFloat(account.raw_cash || account.cash || '0')
-                const longPlusShort = Math.abs(parseFloat(account.long_market_value || '0')) + 
-                                     Math.abs(parseFloat(account.short_market_value || '0'))
+                const positionMarketValue = Math.abs(parseFloat(account.long_market_value || '0')) + 
+                                           Math.abs(parseFloat(account.short_market_value || '0'))
                 
+                // For margin accounts: Buying Power = Cash - Position Market Value
+                // For cash accounts: Buying Power = Equity - Position Market Value
                 const buyingPower = isMarginAccount
-                  ? (rawCash * multiplier) - longPlusShort
-                  : parseFloat(account.equity || '0') - longPlusShort
+                  ? parseFloat(account.raw_cash || account.cash || '0') - positionMarketValue
+                  : parseFloat(account.equity || '0') - positionMarketValue
                 
                 return formatCurrency(buyingPower)
               })()}
@@ -975,17 +977,14 @@ export default function PaperTradingPage() {
                 
                 const isMarginAccount = accountType === 'margin'
                 const multiplier = parseFloat(account.multiplier || '4')
+                const rawCash = parseFloat(account.raw_cash || account.cash || '0')
                 
                 if (isMarginAccount) {
-                  return `${multiplier}x Margin`
+                  // Show raw cash as the margin value
+                  return `${multiplier}x Margin: ${formatCurrency(rawCash)}`
                 } else {
-                  // For cash accounts, show unsettled funds
-                  const rawCash = parseFloat(account.raw_cash || account.cash || '0')
-                  const buyingPower = parseFloat(account.buying_power || '0')
-                  const unsettled = Math.max(0, buyingPower - rawCash)
-                  return unsettled > 0.01 
-                    ? `Unsettled: ${formatCurrency(unsettled)}`
-                    : 'All funds settled'
+                  // For cash accounts, no bottom text
+                  return ''
                 }
               })()}
             </p>
