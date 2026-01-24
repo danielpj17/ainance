@@ -20,6 +20,8 @@ export interface AlpacaAccount {
   currency: string
   buying_power: string
   cash: string
+  raw_cash?: string  // Raw Alpaca cash before overwriting (for margin calculations)
+  multiplier?: string  // Margin multiplier (e.g. "4" for 4x)
   portfolio_value: string
   equity: string
   last_equity: string

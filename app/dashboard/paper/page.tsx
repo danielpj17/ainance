@@ -74,6 +74,9 @@ export default function PaperTradingPage() {
   const [showStrategyModal, setShowStrategyModal] = useState(false)
   const [strategyModalAccountId, setStrategyModalAccountId] = useState<string | null>(null)
   const [strategyModalAccountName, setStrategyModalAccountName] = useState<string>('')
+  
+  // Account type from strategy settings
+  const [accountType, setAccountType] = useState<'cash' | 'margin' | null>(null)
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
@@ -179,12 +182,39 @@ export default function PaperTradingPage() {
     }
   }
 
+  const loadStrategySettings = async () => {
+    if (!selectedAccountId) return
+    
+    try {
+      const response = await authFetch(`/api/account-strategy?account_id=${selectedAccountId}`)
+      const result = await response.json()
+      
+      if (result.success && result.settings) {
+        setAccountType(result.settings.account_type || 'cash')
+      } else {
+        // Default to cash if no strategy found
+        setAccountType('cash')
+      }
+    } catch (error) {
+      console.error('Error loading strategy settings:', error)
+      // Default to cash on error
+      setAccountType('cash')
+    }
+  }
+
   const loadData = async () => {
     if (!selectedAccountId) return
     
     try {
       setLoading(true)
-      await Promise.all([loadAccountData(), loadTradesData(), loadCurrentPositions(), loadCompletedTrades(), loadOpenOrders()])
+      await Promise.all([
+        loadAccountData(), 
+        loadStrategySettings(),
+        loadTradesData(), 
+        loadCurrentPositions(), 
+        loadCompletedTrades(), 
+        loadOpenOrders()
+      ])
     } catch (error) {
       console.error('Error loading data:', error)
       setMessage({ type: 'error', text: 'Failed to load data' })
@@ -301,6 +331,8 @@ export default function PaperTradingPage() {
           currency: 'USD',
           buying_power: '0.00',
           cash: '0.00',
+          raw_cash: '0.00',
+          multiplier: '4',
           portfolio_value: '0.00',
           equity: '0.00',
           last_equity: '0.00',
@@ -897,7 +929,7 @@ export default function PaperTradingPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Equity</CardTitle>
@@ -916,27 +948,47 @@ export default function PaperTradingPage() {
 
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Cash Balance</CardTitle>
-            <Wallet className="h-5 w-5 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-white">
-              {account ? formatCurrency(account.cash) : '$0.00'}
-            </div>
-            <p className="text-xs text-gray-400 mt-1">Available cash</p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-400">Buying Power</CardTitle>
             <TrendingUp className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-white">
-              {account ? formatCurrency(account.buying_power) : '$0.00'}
+              {(() => {
+                if (!account) return '$0.00'
+                
+                const isMarginAccount = accountType === 'margin'
+                const multiplier = parseFloat(account.multiplier || '4')
+                const rawCash = parseFloat(account.raw_cash || account.cash || '0')
+                const longPlusShort = Math.abs(parseFloat(account.long_market_value || '0')) + 
+                                     Math.abs(parseFloat(account.short_market_value || '0'))
+                
+                const buyingPower = isMarginAccount
+                  ? (rawCash * multiplier) - longPlusShort
+                  : parseFloat(account.equity || '0') - longPlusShort
+                
+                return formatCurrency(buyingPower)
+              })()}
             </div>
-            <p className="text-xs text-gray-400 mt-1">Day trades: {account?.daytrade_count || 0}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {(() => {
+                if (!account) return '—'
+                
+                const isMarginAccount = accountType === 'margin'
+                const multiplier = parseFloat(account.multiplier || '4')
+                
+                if (isMarginAccount) {
+                  return `${multiplier}x Margin`
+                } else {
+                  // For cash accounts, show unsettled funds
+                  const rawCash = parseFloat(account.raw_cash || account.cash || '0')
+                  const buyingPower = parseFloat(account.buying_power || '0')
+                  const unsettled = Math.max(0, buyingPower - rawCash)
+                  return unsettled > 0.01 
+                    ? `Unsettled: ${formatCurrency(unsettled)}`
+                    : 'All funds settled'
+                }
+              })()}
+            </p>
           </CardContent>
         </Card>
 

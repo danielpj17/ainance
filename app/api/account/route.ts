@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
         data: {
           equity: '0.00',
           cash: '0.00',
+          raw_cash: '0.00',
           buying_power: '0.00',
           portfolio_value: '0.00',
           day_trading_buying_power: '0.00',
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
           account_blocked: false,
           long_market_value: '0.00',
           short_market_value: '0.00',
+          multiplier: '4',
           account_number: 'N/A',
           status: 'NOT_CONFIGURED'
         }
@@ -65,16 +67,25 @@ export async function GET(req: NextRequest) {
     console.log('Account API - Fetching account data')
     const account = await alpaca.getAccount()
     
+    // Store raw cash before overwriting (needed for margin calculations and unsettled funds)
+    const raw_cash = parseFloat(account.cash)
+    
     // Calculate true cash (equity - long_market_value) to show actual settled cash
     // This ensures dashboard shows actual cash, not 4x margin buying power
     const true_cash = parseFloat(account.equity) - parseFloat(account.long_market_value)
     account.cash = true_cash.toString()
     
+    // Add raw_cash and multiplier to response (multiplier is already in account from Alpaca)
+    ;(account as any).raw_cash = raw_cash.toString()
+    // multiplier is already in account object from Alpaca API
+    
     console.log('Account API - Account data received:', {
       equity: account.equity,
       cash: account.cash,
+      raw_cash: raw_cash,
       true_cash: true_cash,
       buying_power: account.buying_power,
+      multiplier: (account as any).multiplier,
       long_market_value: account.long_market_value
     })
     
