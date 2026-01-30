@@ -320,7 +320,7 @@ export async function getCurrentPositions(params: PositionServiceParams): Promis
                 cumulativeQty += qtyChange
                 if (prevQty !== 0 && cumulativeQty === 0) {
                   sellPrice = parseFloat(order.filled_avg_price || order.filledAvgPrice || '0')
-                  sellTimestamp = order.filled_at
+                  sellTimestamp = order.filled_at || order.created_at
                 }
               }
             }
@@ -365,6 +365,83 @@ export async function getCurrentPositions(params: PositionServiceParams): Promis
             }
           } catch (err) {
             console.error(`[POSITION-SERVICE] Error marking trade ${trade.id} as closed:`, err)
+          }
+        }
+        
+        // Fix orphaned closed trades (already status=closed but missing sell data from old code)
+        const { data: orphanedTrades } = await supabase
+          .from('trade_logs')
+          .select('id, symbol, qty, buy_price, buy_timestamp, timestamp, created_at, account_id')
+          .eq('user_id', userId)
+          .eq('account_type', accountType)
+          .eq('status', 'closed')
+          .eq('action', 'buy')
+          .or('sell_price.is.null,sell_timestamp.is.null')
+          .limit(50)
+        
+        const orphanedFiltered = (orphanedTrades || []).filter((t: any) => {
+          if (accountType === 'paper' && accountId) {
+            return t.account_id === accountId || t.account_id == null
+          }
+          return true
+        })
+        
+        for (const trade of orphanedFiltered) {
+          try {
+            const symbol = (trade.symbol || '').toUpperCase()
+            const buyPrice = parseFloat(trade.buy_price || trade.price || '0')
+            const qty = parseFloat(trade.qty || '0')
+            const buyTimestamp = trade.buy_timestamp || trade.timestamp || trade.created_at
+            
+            let sellPrice: number | null = null
+            let sellTimestamp: string | null = null
+            const orders = ordersBySymbol.get(symbol) || []
+            if (orders.length > 0) {
+              let cumulativeQty = 0
+              for (const order of orders) {
+                const orderQty = parseFloat(order.qty || order.filled_qty || '0')
+                const qtyChange = order.side === 'buy' ? orderQty : -orderQty
+                const prevQty = cumulativeQty
+                cumulativeQty += qtyChange
+                if (prevQty !== 0 && cumulativeQty === 0) {
+                  sellPrice = parseFloat(order.filled_avg_price || order.filledAvgPrice || '0')
+                  sellTimestamp = order.filled_at || order.created_at
+                }
+              }
+            }
+            
+            if (sellPrice != null && sellPrice > 0 && sellTimestamp) {
+              const profitLoss = (sellPrice - buyPrice) * qty
+              const profitLossPercent = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0
+              const buyTime = new Date(buyTimestamp).getTime()
+              const sellTime = new Date(sellTimestamp).getTime()
+              const durationMs = sellTime - buyTime
+              const totalSeconds = Math.floor(durationMs / 1000)
+              const hours = Math.floor(totalSeconds / 3600)
+              const minutes = Math.floor((totalSeconds % 3600) / 60)
+              const seconds = totalSeconds % 60
+              const holdingDuration = `${hours} hours ${minutes} minutes ${seconds} seconds`
+              
+              await supabase
+                .from('trade_logs')
+                .update({
+                  sell_price: sellPrice,
+                  sell_timestamp: sellTimestamp,
+                  profit_loss: profitLoss,
+                  profit_loss_percent: profitLossPercent,
+                  holding_duration: holdingDuration,
+                  sell_decision_metrics: { reasoning: 'Reconciled from Alpaca - orphaned closed trade fixed' },
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', trade.id)
+                .eq('user_id', userId)
+              
+              if (debug) {
+                console.log(`[POSITION-SERVICE] Fixed orphaned trade ${trade.id} (${trade.symbol}) with sell data`)
+              }
+            }
+          } catch (err) {
+            console.error(`[POSITION-SERVICE] Error fixing orphaned trade ${trade.id}:`, err)
           }
         }
       } catch (alpacaError) {
@@ -665,6 +742,83 @@ export async function getCompletedTrades(params: PositionServiceParams): Promise
         )
       }
       
+      // Fix orphaned closed trades (status=closed but missing sell data) before fetching completed
+      const { data: orphanedTrades } = await supabase
+        .from('trade_logs')
+        .select('id, symbol, qty, buy_price, buy_timestamp, timestamp, created_at, account_id')
+        .eq('user_id', userId)
+        .eq('account_type', accountType)
+        .eq('status', 'closed')
+        .eq('action', 'buy')
+        .or('sell_price.is.null,sell_timestamp.is.null')
+        .limit(50)
+      
+      const orphanedFiltered = (orphanedTrades || []).filter((t: any) => {
+        if (accountType === 'paper' && accountId) {
+          return t.account_id === accountId || t.account_id == null
+        }
+        return true
+      })
+      
+      for (const trade of orphanedFiltered) {
+        try {
+          const symbol = (trade.symbol || '').toUpperCase()
+          const buyPrice = parseFloat(trade.buy_price || trade.price || '0')
+          const qty = parseFloat(trade.qty || '0')
+          const buyTimestamp = trade.buy_timestamp || trade.timestamp || trade.created_at
+          
+          let sellPrice: number | null = null
+          let sellTimestamp: string | null = null
+          const orders = alpacaOrdersBySymbol.get(symbol) || []
+          if (orders.length > 0) {
+            let cumulativeQty = 0
+            for (const order of orders) {
+              const orderQty = parseFloat(order.qty || order.filled_qty || '0')
+              const qtyChange = order.side === 'buy' ? orderQty : -orderQty
+              const prevQty = cumulativeQty
+              cumulativeQty += qtyChange
+              if (prevQty !== 0 && cumulativeQty === 0) {
+                sellPrice = parseFloat(order.filled_avg_price || order.filledAvgPrice || '0')
+                sellTimestamp = order.filled_at
+              }
+            }
+          }
+          
+          if (sellPrice != null && sellPrice > 0 && sellTimestamp) {
+            const profitLoss = (sellPrice - buyPrice) * qty
+            const profitLossPercent = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0
+            const buyTime = new Date(buyTimestamp).getTime()
+            const sellTime = new Date(sellTimestamp).getTime()
+            const durationMs = sellTime - buyTime
+            const totalSeconds = Math.floor(durationMs / 1000)
+            const hours = Math.floor(totalSeconds / 3600)
+            const minutes = Math.floor((totalSeconds % 3600) / 60)
+            const seconds = totalSeconds % 60
+            const holdingDuration = `${hours} hours ${minutes} minutes ${seconds} seconds`
+            
+            await supabase
+              .from('trade_logs')
+              .update({
+                sell_price: sellPrice,
+                sell_timestamp: sellTimestamp,
+                profit_loss: profitLoss,
+                profit_loss_percent: profitLossPercent,
+                holding_duration: holdingDuration,
+                sell_decision_metrics: { reasoning: 'Reconciled from Alpaca - orphaned closed trade fixed' },
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', trade.id)
+              .eq('user_id', userId)
+            
+            if (debug) {
+              console.log(`[POSITION-SERVICE] Fixed orphaned trade ${trade.id} (${trade.symbol}) in getCompletedTrades`)
+            }
+          }
+        } catch (err) {
+          console.error(`[POSITION-SERVICE] Error fixing orphaned trade ${trade.id}:`, err)
+        }
+      }
+      
     } catch (err) {
       if (debug) console.warn(`[POSITION-SERVICE] Could not fetch Alpaca order history for completed trades:`, err)
     }
@@ -688,12 +842,12 @@ export async function getCompletedTrades(params: PositionServiceParams): Promise
       return completedTrades
     }
     
-    // Filter to ensure correct user/account
+    // Filter to ensure correct user/account (include legacy trades with null account_id)
     const filteredTrades = trades.filter((t: any) => {
       const tradeUserId = t.user_id || t.userId
       if (tradeUserId && tradeUserId !== userId) return false
       if (t.account_type && t.account_type !== accountType) return false
-      if (accountType === 'paper' && accountId && t.account_id !== accountId) return false
+      if (accountType === 'paper' && accountId && t.account_id != null && t.account_id !== accountId) return false
       return true
     })
     
