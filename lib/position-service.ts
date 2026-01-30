@@ -371,7 +371,7 @@ export async function getCurrentPositions(params: PositionServiceParams): Promis
         // Fix orphaned closed trades (already status=closed but missing sell data from old code)
         const { data: orphanedTrades } = await supabase
           .from('trade_logs')
-          .select('id, symbol, qty, buy_price, buy_timestamp, timestamp, created_at, account_id')
+          .select('id, symbol, qty, buy_price, price, buy_timestamp, timestamp, created_at, account_id')
           .eq('user_id', userId)
           .eq('account_type', accountType)
           .eq('status', 'closed')
@@ -745,7 +745,7 @@ export async function getCompletedTrades(params: PositionServiceParams): Promise
       // Fix orphaned closed trades (status=closed but missing sell data) before fetching completed
       const { data: orphanedTrades } = await supabase
         .from('trade_logs')
-        .select('id, symbol, qty, buy_price, buy_timestamp, timestamp, created_at, account_id')
+        .select('id, symbol, qty, buy_price, price, buy_timestamp, timestamp, created_at, account_id')
         .eq('user_id', userId)
         .eq('account_type', accountType)
         .eq('status', 'closed')
