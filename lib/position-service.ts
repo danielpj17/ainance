@@ -249,6 +249,7 @@ export async function getCurrentPositions(params: PositionServiceParams): Promis
     
     // 2. Cross-reference with Alpaca positions (source of truth)
     const alpacaPositionsMap = new Map<string, AlpacaPosition>()
+    const ordersBySymbol = new Map<string, any[]>()
     
     if (apiKey && secretKey) {
       try {
@@ -277,23 +278,90 @@ export async function getCurrentPositions(params: PositionServiceParams): Promis
         )
         
         // Mark closed positions in database (positions no longer in Alpaca)
+        // Fetch order history BEFORE closedTrades loop so we can populate sell data
+        try {
+          const orderHistory = await alpacaClient.getOrderHistory(500)
+          const filledOrders = orderHistory.filter((o: any) => o.status === 'filled' && o.filled_at)
+          for (const order of filledOrders) {
+            const sym = (order.symbol || '').toUpperCase()
+            if (!ordersBySymbol.has(sym)) ordersBySymbol.set(sym, [])
+            ordersBySymbol.get(sym)!.push(order)
+          }
+          for (const [, orders] of ordersBySymbol) {
+            orders.sort((a: any, b: any) =>
+              new Date(a.filled_at).getTime() - new Date(b.filled_at).getTime()
+            )
+          }
+        } catch (err) {
+          if (debug) console.warn(`[POSITION-SERVICE] Could not fetch order history for reconciliation:`, err)
+        }
+        
         const closedTrades = (supabaseTrades || []).filter((t: any) => 
           !alpacaPositionsMap.has(t.symbol.toUpperCase()) && t.status === 'open'
         )
         
         for (const trade of closedTrades) {
           try {
+            const symbol = (trade.symbol || '').toUpperCase()
+            const buyPrice = parseFloat(trade.buy_price || trade.price || '0')
+            const qty = parseFloat(trade.qty || '0')
+            const buyTimestamp = trade.buy_timestamp || trade.timestamp || trade.created_at
+            
+            // Find sell data from Alpaca order history (when cumulative qty went to 0)
+            let sellPrice: number | null = null
+            let sellTimestamp: string | null = null
+            const orders = ordersBySymbol.get(symbol) || []
+            if (orders.length > 0) {
+              let cumulativeQty = 0
+              for (const order of orders) {
+                const orderQty = parseFloat(order.qty || order.filled_qty || '0')
+                const qtyChange = order.side === 'buy' ? orderQty : -orderQty
+                const prevQty = cumulativeQty
+                cumulativeQty += qtyChange
+                if (prevQty !== 0 && cumulativeQty === 0) {
+                  sellPrice = parseFloat(order.filled_avg_price || order.filledAvgPrice || '0')
+                  sellTimestamp = order.filled_at
+                }
+              }
+            }
+            
+            const updateData: Record<string, unknown> = {
+              status: 'closed',
+              updated_at: new Date().toISOString(),
+              sell_decision_metrics: { reasoning: 'Reconciled from Alpaca - position no longer held' }
+            }
+            
+            if (sellPrice != null && sellPrice > 0 && sellTimestamp) {
+              const profitLoss = (sellPrice - buyPrice) * qty
+              const profitLossPercent = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0
+              const buyTime = new Date(buyTimestamp).getTime()
+              const sellTime = new Date(sellTimestamp).getTime()
+              const durationMs = sellTime - buyTime
+              const totalSeconds = Math.floor(durationMs / 1000)
+              const hours = Math.floor(totalSeconds / 3600)
+              const minutes = Math.floor((totalSeconds % 3600) / 60)
+              const seconds = totalSeconds % 60
+              const holdingDuration = `${hours} hours ${minutes} minutes ${seconds} seconds`
+              
+              Object.assign(updateData, {
+                sell_price: sellPrice,
+                sell_timestamp: sellTimestamp,
+                profit_loss: profitLoss,
+                profit_loss_percent: profitLossPercent,
+                holding_duration: holdingDuration
+              })
+            } else if (debug) {
+              console.warn(`[POSITION-SERVICE] No sell data in order history for ${trade.symbol} (trade ${trade.id}) - marking closed without sell data`)
+            }
+            
             await supabase
               .from('trade_logs')
-              .update({ 
-                status: 'closed',
-                updated_at: new Date().toISOString()
-              })
+              .update(updateData)
               .eq('id', trade.id)
               .eq('user_id', userId)
             
             if (debug) {
-              console.log(`[POSITION-SERVICE] Marked trade ${trade.id} (${trade.symbol}) as closed`)
+              console.log(`[POSITION-SERVICE] Marked trade ${trade.id} (${trade.symbol}) as closed${sellPrice ? ' with sell data' : ''}`)
             }
           } catch (err) {
             console.error(`[POSITION-SERVICE] Error marking trade ${trade.id} as closed:`, err)
@@ -306,31 +374,30 @@ export async function getCurrentPositions(params: PositionServiceParams): Promis
     }
     
     // 3. Build positions from Alpaca data (if available) or Supabase
-    // First, fetch Alpaca order history to get actual fill timestamps (source of truth)
+    // Reuse order history from step 2 (or fetch if not yet populated)
     const alpacaOrderTimestamps = new Map<string, string>()
     if (apiKey && secretKey) {
       try {
-        const alpacaClient = createAlpacaClient({
-          apiKey,
-          secretKey,
-          baseUrl: accountType === 'paper' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
-          paper: accountType === 'paper'
-        })
-        await alpacaClient.initialize()
-        
-        // Fetch filled orders - these have actual fill timestamps
-        const orderHistory = await alpacaClient.getOrderHistory(500)
-        const filledOrders = orderHistory.filter((o: any) => o.status === 'filled' && o.filled_at)
-        
-        
-        // Group orders by symbol
-        const ordersBySymbol = new Map<string, any[]>()
-        for (const order of filledOrders) {
-          const sym = (order.symbol || '').toUpperCase()
-          if (!ordersBySymbol.has(sym)) {
-            ordersBySymbol.set(sym, [])
+        if (ordersBySymbol.size === 0) {
+          const alpacaClient = createAlpacaClient({
+            apiKey,
+            secretKey,
+            baseUrl: accountType === 'paper' ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets',
+            paper: accountType === 'paper'
+          })
+          await alpacaClient.initialize()
+          const orderHistory = await alpacaClient.getOrderHistory(500)
+          const filledOrders = orderHistory.filter((o: any) => o.status === 'filled' && o.filled_at)
+          for (const order of filledOrders) {
+            const sym = (order.symbol || '').toUpperCase()
+            if (!ordersBySymbol.has(sym)) ordersBySymbol.set(sym, [])
+            ordersBySymbol.get(sym)!.push(order)
           }
-          ordersBySymbol.get(sym)!.push(order)
+          for (const [, orders] of ordersBySymbol) {
+            orders.sort((a: any, b: any) =>
+              new Date(a.filled_at).getTime() - new Date(b.filled_at).getTime()
+            )
+          }
         }
         
         // For each symbol with a current position, trace through order history

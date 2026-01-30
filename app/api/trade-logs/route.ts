@@ -30,7 +30,7 @@ import type {
 // ============================================================================
 
 // Cache version - increment when logic changes to invalidate old cached data
-const CACHE_VERSION = 2 // Bumped after timestamp correction fix
+const CACHE_VERSION = 3 // Bumped after position reconciliation fix (sell data) and accountId in cache key
 const cache = new Map<string, { data: any; expires: number; version: number }>()
 const CACHE_TTL = 30000 // 30 seconds
 
@@ -45,16 +45,9 @@ setInterval(() => {
 }, 60000)
 
 function invalidateUserCache(userId: string) {
-  const prefixes = [
-    `trade-logs-${userId}-all-paper`,
-    `trade-logs-${userId}-all-live`,
-    `trade-logs-${userId}-current-paper`,
-    `trade-logs-${userId}-current-live`,
-    `trade-logs-${userId}-completed-paper`,
-    `trade-logs-${userId}-completed-live`
-  ]
-  for (const key of prefixes) {
-    cache.delete(key)
+  const prefix = `trade-logs-${userId}-`
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key)
   }
 }
 
@@ -102,7 +95,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<TradeLogsRespo
     if (view === 'current' || view === 'all' || !view) {
       for (const accountType of accountTypesToFetch) {
         // Check cache (also verify version to invalidate stale logic)
-        const cacheKey = `trade-logs-${userId}-current-${accountType}`
+        const cacheKey = `trade-logs-${userId}-current-${accountType}-${accountId || 'default'}`
         const cached = cache.get(cacheKey)
         if (cached && cached.expires > Date.now() && cached.version === CACHE_VERSION) {
           currentTrades.push(...(cached.data as CurrentPosition[]))
@@ -143,7 +136,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<TradeLogsRespo
     if (view === 'completed' || view === 'all' || !view) {
       for (const accountType of accountTypesToFetch) {
         // Check cache (also verify version to invalidate stale logic)
-        const cacheKey = `trade-logs-${userId}-completed-${accountType}`
+        const cacheKey = `trade-logs-${userId}-completed-${accountType}-${accountId || 'default'}`
         const cached = cache.get(cacheKey)
         if (cached && cached.expires > Date.now() && cached.version === CACHE_VERSION) {
           completedTrades.push(...(cached.data as CompletedTrade[]))
